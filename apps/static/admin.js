@@ -56,6 +56,7 @@ $('login-form').addEventListener('submit', async event => {
 $('upload-form').addEventListener('submit', async event => {
   event.preventDefault();
   const file = $('apk-file').files[0]; if (!file) return;
+  if (file.size > 300 * 1024 * 1024) { message('Select an APK up to 300 MB.'); return; }
   const button = $('upload-form').querySelector('button'); button.disabled = true;
   const progress = $('upload-progress'); progress.hidden = false; progress.value = 0;
   try {
