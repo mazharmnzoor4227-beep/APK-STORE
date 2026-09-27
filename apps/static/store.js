@@ -40,7 +40,7 @@ async function list() {
   try {
     const apps = await read('apps', query);
     results.replaceChildren();
-    if (!apps.length) { empty(q ? 'No matching apps' : 'The store is getting ready', 'Apps appear here after the creator approves their first release.'); return; }
+    if (!apps.length) { empty(q ? 'No matching apps' : 'No apps published yet', q ? 'Try another search term.' : 'The first approved release will appear here automatically.'); return; }
     const grid = node('div', 'app-grid');
     for (const app of apps) {
       const link = node('a', 'app-card'); link.href = './?app=' + encodeURIComponent(app.slug);
