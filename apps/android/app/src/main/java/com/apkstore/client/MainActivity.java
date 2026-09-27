@@ -15,6 +15,7 @@ import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
+import android.widget.ImageView;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.animation.DecelerateInterpolator;
@@ -46,6 +47,7 @@ public class MainActivity extends Activity {
     private LinearLayout body;
     private EditText searchBox;
     private Runnable pendingSearch;
+    private boolean legalPage;
 
     private int bg() { return light ? Color.rgb(247, 250, 247) : Color.rgb(9, 12, 10); }
     private int surface() { return light ? Color.WHITE : Color.rgb(23, 27, 24); }
@@ -100,6 +102,7 @@ public class MainActivity extends Activity {
         });
     }
     private void showTab(int selected) {
+        legalPage = false;
         tab = selected;
         getWindow().setStatusBarColor(bg());
         getWindow().setNavigationBarColor(bg());
@@ -117,7 +120,11 @@ public class MainActivity extends Activity {
         TextView find = action("⌕", "Search apps");
         find.setOnClickListener(v -> showTab(SEARCH));
         header.addView(find, new LinearLayout.LayoutParams(dp(46), dp(48)));
-        TextView download = action("↓", "Latest releases");
+        ImageView download = new ImageView(this);
+        download.setImageResource(com.apkstore.client.R.drawable.ic_download);
+        download.setColorFilter(ink());
+        download.setPadding(dp(12), dp(12), dp(12), dp(12));
+        download.setContentDescription("Latest releases");
         download.setOnClickListener(v -> showTab(UPDATES));
         header.addView(download, new LinearLayout.LayoutParams(dp(46), dp(48)));
         TextView settings = action("⚙", "Settings");
@@ -354,10 +361,7 @@ public class MainActivity extends Activity {
             getPreferences(0).edit().putBoolean("light", light).apply();
             showTab(tab);
         }, sheet);
-        sheetRow(panel, "ⓘ", "About", () -> new AlertDialog.Builder(this)
-                .setTitle("APK STORE")
-                .setMessage("Discover and download independent Android apps. Releases appear after owner approval.")
-                .setPositiveButton("OK", null).show(), sheet);
+        sheetRow(panel, "ⓘ", "About", this::showAbout, sheet);
         sheet.setContentView(panel);
         Window window = sheet.getWindow();
         if (window != null) {
@@ -389,6 +393,86 @@ public class MainActivity extends Activity {
         });
         panel.addView(row);
     }
+    private LinearLayout informationPage(String title, Runnable backAction) {
+        LinearLayout root = vertical(); root.setBackgroundColor(bg());
+        applySafeArea(root); setContentView(root); root.requestApplyInsets();
+        TextView back = text("‹  " + title, 20, ink(), true);
+        back.setPadding(dp(18), dp(14), dp(18), dp(14));
+        back.setOnClickListener(v -> backAction.run());
+        root.addView(back);
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout page = vertical();
+        page.setPadding(dp(20), dp(16), dp(20), dp(36));
+        scroll.addView(page); root.addView(scroll);
+        return page;
+    }
+    private void showAbout() {
+        legalPage = false;
+        LinearLayout page = informationPage("About", () -> showTab(tab));
+        page.addView(text("APK STORE", 28, ink(), true)); space(page, 8);
+        page.addView(text("Independent Android apps, published after owner approval.", 15, muted(), false));
+        space(page, 10);
+        page.addView(text("Version " + BuildConfig.VERSION_NAME, 13, muted(), false));
+        space(page, 26);
+        informationLink(page, "Privacy Policy", "How this app handles data", () -> showLegal("Privacy Policy", privacyPolicy()));
+        informationLink(page, "Terms of Use", "Downloads and use of the store", () -> showLegal("Terms of Use", termsOfUse()));
+        informationLink(page, "Project and contact", "Open the GitHub repository", () -> openLink("https://github.com/mazharmnzoor4227-beep/APK-STORE"));
+        informationLink(page, "Supabase privacy", "Hosting provider's notice", () -> openLink("https://supabase.com/privacy"));
+    }
+    private void openLink(String url) {
+        startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+    }
+    private void informationLink(LinearLayout page, String title, String subtitle, Runnable open) {
+        LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setBackground(shape(surface(), 13)); row.setPadding(dp(16), dp(14), dp(16), dp(14));
+        LinearLayout copy = vertical();
+        copy.addView(text(title, 16, ink(), true)); space(copy, 4);
+        copy.addView(text(subtitle, 12, muted(), false));
+        row.addView(copy, weight()); row.addView(text("›", 25, green(), false));
+        row.setOnClickListener(v -> open.run());
+        page.addView(row); space(page, 12);
+    }
+    private void showLegal(String title, String content) {
+        legalPage = true;
+        LinearLayout page = informationPage(title, this::showAbout);
+        TextView text = text(content, 15, ink(), false);
+        text.setLineSpacing(dp(4), 1f);
+        page.addView(text);
+    }
+    private String privacyPolicy() {
+        return "Updated 27 September 2026\n\n"
+                + "APK STORE lets you browse a public app catalog and download approved Android APK files. "
+                + "This policy covers the APK STORE Android app.\n\n"
+                + "What the app uses\n"
+                + "The app requests internet access to load the catalog from our Supabase hosted service and to open an APK download in your browser. "
+                + "Search text is filtered on your device. Your light or dark mode choice is stored on your device. "
+                + "The app does not ask you to create an account and does not include advertising or analytics SDKs.\n\n"
+                + "Service requests\n"
+                + "When your device contacts the catalog or download service, the hosting provider may process technical request data such as an IP address, time and requested URL in its service logs. "
+                + "APK downloads are served through Supabase Storage. See Supabase's privacy notice for its own practices.\n\n"
+                + "Your choices\n"
+                + "You can clear the saved theme preference by clearing APK STORE app data or uninstalling it. "
+                + "Downloaded APKs are managed by your browser and Android, so remove them there if you no longer want them.\n\n"
+                + "Questions\n"
+                + "For questions about this app, contact the owner through the APK-STORE GitHub repository: github.com/mazharmnzoor4227-beep/APK-STORE.";
+    }
+    private String termsOfUse() {
+        return "Updated 27 September 2026\n\n"
+                + "APK STORE is a catalog for independent Android applications. "
+                + "You may browse listings and download APK files that the owner has approved for publication.\n\n"
+                + "Installing apps\n"
+                + "Downloads open in your browser. Android may ask you to approve installation from that source. "
+                + "Read an app's description and Android permission requests before installing it. "
+                + "Apps listed here are separate software with their own features and terms.\n\n"
+                + "Availability and updates\n"
+                + "Listings and files may change or be removed. A newer APK may require the same package ID and signing certificate to install over an older release. "
+                + "The catalog does not silently install or update apps.\n\n"
+                + "Appropriate use\n"
+                + "Do not abuse the download service or upload software that you do not have the right to distribute. "
+                + "Publishing is subject to owner review.\n\n"
+                + "Contact\n"
+                + "Questions about APK STORE can be raised through github.com/mazharmnzoor4227-beep/APK-STORE.";
+    }
     private void showDetail(JSONObject app) {
         LinearLayout root = vertical(); root.setBackgroundColor(bg());
         applySafeArea(root); setContentView(root); root.requestApplyInsets();
@@ -417,7 +501,7 @@ public class MainActivity extends Activity {
         page.addView(text(app.optString("description"), 15, muted(), false)); space(page, 25);
         page.addView(text("Android will ask you to confirm installation after downloading.", 12, muted(), false));
     }
-    @Override public void onBackPressed() { showTab(APPS); }
+    @Override public void onBackPressed() { if (legalPage) showAbout(); else showTab(APPS); }
     @Override protected void onDestroy() {
         if (pendingSearch != null) handler.removeCallbacks(pendingSearch);
         worker.shutdownNow(); super.onDestroy();
