@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Intent;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -32,6 +34,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashSet;
+import java.util.HashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -44,6 +47,7 @@ public class MainActivity extends Activity {
     private int generation;
     private String query = "", activeCategory = "";
     private JSONArray catalog = new JSONArray();
+    private final HashMap<String, Long> releaseVersions = new HashMap<>();
     private LinearLayout body;
     private EditText searchBox;
     private Runnable pendingSearch;
@@ -192,7 +196,7 @@ public class MainActivity extends Activity {
         worker.execute(() -> {
             try {
                 if (BuildConfig.SUPABASE_KEY.isEmpty()) throw new Exception("Catalog connection is not configured.");
-                String endpoint = BuildConfig.SUPABASE_URL + "/rest/v1/apps?select=id,slug,title,package_id,category,description,created_at,updated_at&visibility=eq.published&current_release_id=not.is.null&order=created_at.desc&limit=100";
+                String endpoint = BuildConfig.SUPABASE_URL + "/rest/v1/apps?select=id,slug,title,package_id,category,description,current_release_id,created_at,updated_at&visibility=eq.published&current_release_id=not.is.null&order=created_at.desc&limit=100";
                 HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
                 connection.setConnectTimeout(12000); connection.setReadTimeout(12000);
                 connection.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
@@ -200,7 +204,13 @@ public class MainActivity extends Activity {
                 if (connection.getResponseCode() != 200) throw new Exception("Catalog temporarily unavailable.");
                 try (InputStream stream = connection.getInputStream()) {
                     JSONArray apps = new JSONArray(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
-                    runOnUiThread(() -> { if (request == generation) { catalog = apps; render(); } });
+                    HashMap<String, Long> versions = loadReleaseVersions(apps);
+                    runOnUiThread(() -> { if (request == generation) {
+                        catalog = apps;
+                        releaseVersions.clear();
+                        releaseVersions.putAll(versions);
+                        render();
+                    } });
                 } finally { connection.disconnect(); }
             } catch (Exception error) {
                 runOnUiThread(() -> { if (request == generation && body != null) {
@@ -210,6 +220,61 @@ public class MainActivity extends Activity {
             }
         });
     }
+    private HashMap<String, Long> loadReleaseVersions(JSONArray apps) throws Exception {
+        HashMap<String, String> packages = new HashMap<>();
+        StringBuilder ids = new StringBuilder();
+        for (int i = 0; i < apps.length(); i++) {
+            JSONObject app = apps.optJSONObject(i);
+            if (app == null) continue;
+            String id = app.optString("current_release_id");
+            if (!id.matches("[0-9a-fA-F-]{36}")) continue;
+            packages.put(id, app.optString("package_id"));
+            if (ids.length() > 0) ids.append(',');
+            ids.append(id);
+        }
+        HashMap<String, Long> versions = new HashMap<>();
+        if (ids.length() == 0) return versions;
+        String endpoint = BuildConfig.SUPABASE_URL + "/rest/v1/releases?select=id,version_code&status=eq.published&id=in.(" + ids + ")&limit=100";
+        HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
+        connection.setConnectTimeout(12000); connection.setReadTimeout(12000);
+        connection.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
+        connection.setRequestProperty("Authorization", "Bearer " + BuildConfig.SUPABASE_KEY);
+        try {
+            if (connection.getResponseCode() != 200) throw new Exception("Release information temporarily unavailable.");
+            try (InputStream stream = connection.getInputStream()) {
+                JSONArray releases = new JSONArray(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
+                for (int i = 0; i < releases.length(); i++) {
+                    JSONObject release = releases.optJSONObject(i);
+                    if (release != null && packages.containsKey(release.optString("id")))
+                        versions.put(packages.get(release.optString("id")), release.optLong("version_code"));
+                }
+            }
+            return versions;
+        } finally { connection.disconnect(); }
+    }
+    private long installedVersion(String packageId) {
+        if (packageId.isEmpty()) return -1;
+        try {
+            PackageInfo info = getPackageManager().getPackageInfo(packageId, 0);
+            return android.os.Build.VERSION.SDK_INT >= 28 ? info.getLongVersionCode() : info.versionCode;
+        } catch (PackageManager.NameNotFoundException ignored) {
+            return -1;
+        }
+    }
+    private boolean updateAvailable(JSONObject app) {
+        String packageId = app.optString("package_id");
+        long installed = installedVersion(packageId);
+        Long latest = releaseVersions.get(packageId);
+        return installed >= 0 && latest != null && latest > installed;
+    }
+    private JSONArray pendingUpdates() {
+        JSONArray apps = new JSONArray();
+        for (int i = 0; i < catalog.length(); i++) {
+            JSONObject app = catalog.optJSONObject(i);
+            if (app != null && updateAvailable(app)) apps.put(app);
+        }
+        return apps;
+    }
     private void render() {
         if (body == null) return;
         if (tab == SEARCH) {
@@ -217,6 +282,12 @@ public class MainActivity extends Activity {
             renderList(filtered(query), false);
         } else if (tab == UPDATES) {
             while (body.getChildCount() > 5) body.removeViewAt(5);
+            JSONArray pending = pendingUpdates();
+            if (pending.length() > 0) {
+                sectionTitle("Updates for your apps", null);
+                renderList(pending, false);
+                space(body, 20);
+            }
             renderList(sortedUpdates(), false);
         } else {
             body.removeAllViews();
@@ -283,7 +354,7 @@ public class MainActivity extends Activity {
             TextView title = text(app.optString("title"), 12, ink(), false);
             title.setSingleLine(true); title.setEllipsize(android.text.TextUtils.TruncateAt.END);
             tile.addView(title);
-            TextView category = text(app.optString("category"), 10, muted(), false);
+            TextView category = text(updateAvailable(app) ? "UPDATE AVAILABLE" : app.optString("category"), 10, updateAvailable(app) ? green() : muted(), false);
             category.setSingleLine(true); tile.addView(category);
             tile.setOnClickListener(v -> showDetail(app));
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(84), -2);
@@ -323,10 +394,10 @@ public class MainActivity extends Activity {
             LinearLayout copy = vertical(); copy.setPadding(dp(11), 0, 0, 0);
             TextView title = text(app.optString("title"), 14, ink(), true); title.setSingleLine(true);
             copy.addView(title);
-            TextView subtitle = text(app.optString("category") + "  ·  APK", 11, muted(), false);
+            TextView subtitle = text(updateAvailable(app) ? "UPDATE AVAILABLE" : app.optString("category") + "  ·  APK", 11, updateAvailable(app) ? green() : muted(), false);
             copy.addView(subtitle);
             row.addView(copy, weight());
-            row.addView(text("›", 22, green(), false));
+            row.addView(text(updateAvailable(app) ? "Update ›" : "›", updateAvailable(app) ? 13 : 22, green(), updateAvailable(app)));
             row.setOnClickListener(v -> showDetail(app));
             body.addView(row); space(body, 12);
         }
@@ -445,6 +516,7 @@ public class MainActivity extends Activity {
                 + "This policy covers the APK STORE Android app.\n\n"
                 + "What the app uses\n"
                 + "The app requests internet access to load the catalog from our Supabase hosted service and to open an APK download in your browser. "
+                + "It checks installed app package IDs and version codes on your device to show available updates; that inventory is not sent to the catalog service. "
                 + "Search text is filtered on your device. Your light or dark mode choice is stored on your device. "
                 + "The app does not ask you to create an account and does not include advertising or analytics SDKs.\n\n"
                 + "Service requests\n"
@@ -486,7 +558,7 @@ public class MainActivity extends Activity {
         page.addView(text(app.optString("title"), 30, ink(), true)); space(page, 6);
         page.addView(text(app.optString("category") + "  ·  " + app.optString("package_id"), 12, muted(), false));
         space(page, 25);
-        TextView download = text("Download APK  ↓", 16, bg(), true);
+        TextView download = text(updateAvailable(app) ? "Update APK  ↓" : "Download APK  ↓", 16, bg(), true);
         download.setGravity(Gravity.CENTER); download.setPadding(dp(18), dp(15), dp(18), dp(15));
         download.setBackground(shape(green(), 12));
         download.setOnClickListener(v -> {
