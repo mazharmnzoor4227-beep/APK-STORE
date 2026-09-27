@@ -3,13 +3,16 @@ package com.apkstore.client;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
+import android.app.DownloadManager;
 import android.content.Intent;
+import android.content.Context;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.database.Cursor;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -39,7 +42,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
-    private static final int APPS = 0, SEARCH = 1, UPDATES = 2;
+    private static final int APPS = 0, SEARCH = 1, UPDATES = 2, FAVORITES = 3;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean light;
@@ -52,6 +55,9 @@ public class MainActivity extends Activity {
     private EditText searchBox;
     private Runnable pendingSearch;
     private boolean legalPage;
+    private final HashMap<String, Long> downloads = new HashMap<>();
+    private final HashMap<String, Long> completedDownloads = new HashMap<>();
+    private final HashMap<String, Runnable> downloadPolls = new HashMap<>();
 
     private int bg() { return light ? Color.rgb(247, 250, 247) : Color.rgb(9, 12, 10); }
     private int surface() { return light ? Color.WHITE : Color.rgb(23, 27, 24); }
@@ -119,8 +125,11 @@ public class MainActivity extends Activity {
         root.requestApplyInsets();
         LinearLayout header = new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(dp(16), dp(5), dp(10), dp(5));
-        TextView title = text(selected == APPS ? "Apps" : selected == SEARCH ? "Search" : "Updates", 20, ink(), false);
+        TextView title = text(selected == APPS ? "Apps" : selected == SEARCH ? "Search" : selected == FAVORITES ? "Favorites" : "Updates", 20, ink(), false);
         header.addView(title, weight());
+        TextView favorites = action("♡", "Favorites");
+        favorites.setOnClickListener(v -> showTab(FAVORITES));
+        header.addView(favorites, new LinearLayout.LayoutParams(dp(46), dp(48)));
         TextView find = action("⌕", "Search apps");
         find.setOnClickListener(v -> showTab(SEARCH));
         header.addView(find, new LinearLayout.LayoutParams(dp(46), dp(48)));
@@ -144,6 +153,7 @@ public class MainActivity extends Activity {
         addNav(nav, "▦", "Apps", APPS);
         addNav(nav, "⌕", "Search", SEARCH);
         addNav(nav, "◷", "Updates", UPDATES);
+        addNav(nav, "♡", "Favorites", FAVORITES);
         root.addView(nav, new LinearLayout.LayoutParams(-1, dp(76)));
 
         if (selected == SEARCH) {
@@ -280,6 +290,9 @@ public class MainActivity extends Activity {
         if (tab == SEARCH) {
             while (body.getChildCount() > 2) body.removeViewAt(2);
             renderList(filtered(query), false);
+        } else if (tab == FAVORITES) {
+            body.removeAllViews();
+            renderList(favoriteApps(), false);
         } else if (tab == UPDATES) {
             while (body.getChildCount() > 5) body.removeViewAt(5);
             JSONArray pending = pendingUpdates();
@@ -314,6 +327,24 @@ public class MainActivity extends Activity {
                     || app.optString("category").toLowerCase().contains(value.trim().toLowerCase()))) found.put(app);
         }
         return found;
+    }
+    private boolean isFavorite(JSONObject app) {
+        return getPreferences(0).getStringSet("favorites", java.util.Collections.emptySet()).contains(app.optString("slug"));
+    }
+    private void toggleFavorite(JSONObject app) {
+        java.util.Set<String> saved = new java.util.HashSet<>(getPreferences(0).getStringSet("favorites", java.util.Collections.emptySet()));
+        String slug = app.optString("slug");
+        if (!saved.add(slug)) saved.remove(slug);
+        getPreferences(0).edit().putStringSet("favorites", saved).apply();
+        showDetail(app);
+    }
+    private JSONArray favoriteApps() {
+        JSONArray result = new JSONArray();
+        for (int i = 0; i < catalog.length(); i++) {
+            JSONObject app = catalog.optJSONObject(i);
+            if (app != null && isFavorite(app)) result.put(app);
+        }
+        return result;
     }
     private JSONArray sortedUpdates() {
         java.util.ArrayList<JSONObject> apps = new java.util.ArrayList<>();
@@ -364,8 +395,8 @@ public class MainActivity extends Activity {
     }
     private void renderList(JSONArray apps, boolean compact) {
         if (apps.length() == 0) {
-            empty(tab == SEARCH ? "No matching apps" : "No apps published yet",
-                    tab == SEARCH ? "Try another search term." : "Approved releases will appear here.");
+            empty(tab == SEARCH ? "No matching apps" : tab == FAVORITES ? "No favorites yet" : "No apps published yet",
+                    tab == SEARCH ? "Try another search term." : tab == FAVORITES ? "Tap the heart on an app to save it here." : "Approved releases will appear here.");
             return;
         }
         if (tab == SEARCH && query.trim().isEmpty()) {
@@ -427,6 +458,7 @@ public class MainActivity extends Activity {
         sheetRow(panel, "▦", "Apps", () -> showTab(APPS), sheet);
         sheetRow(panel, "⌕", "Search", () -> showTab(SEARCH), sheet);
         sheetRow(panel, "◷", "Updates", () -> showTab(UPDATES), sheet);
+        sheetRow(panel, "♡", "Favorites", () -> showTab(FAVORITES), sheet);
         sheetRow(panel, light ? "☾" : "☀", light ? "Dark mode" : "Light mode", () -> {
             light = !light;
             getPreferences(0).edit().putBoolean("light", light).apply();
@@ -515,16 +547,16 @@ public class MainActivity extends Activity {
                 + "APK STORE lets you browse a public app catalog and download approved Android APK files. "
                 + "This policy covers the APK STORE Android app.\n\n"
                 + "What the app uses\n"
-                + "The app requests internet access to load the catalog from our Supabase hosted service and to open an APK download in your browser. "
+                + "The app requests internet access to load the catalog and download approved APKs through Android Download Manager. "
                 + "It checks installed app package IDs and version codes on your device to show available updates; that inventory is not sent to the catalog service. "
-                + "Search text is filtered on your device. Your light or dark mode choice is stored on your device. "
+                + "Search text is filtered on your device. Your theme and favorites are stored on your device. "
                 + "The app does not ask you to create an account and does not include advertising or analytics SDKs.\n\n"
                 + "Service requests\n"
                 + "When your device contacts the catalog or download service, the hosting provider may process technical request data such as an IP address, time and requested URL in its service logs. "
-                + "APK downloads are served through Supabase Storage. See Supabase's privacy notice for its own practices.\n\n"
+                + "APK downloads may be served through Supabase Storage or the publisher's trusted release host. See the providers' privacy notices for their practices.\n\n"
                 + "Your choices\n"
                 + "You can clear the saved theme preference by clearing APK STORE app data or uninstalling it. "
-                + "Downloaded APKs are managed by your browser and Android, so remove them there if you no longer want them.\n\n"
+                + "Downloaded APKs are managed by Android Download Manager; you can remove them in your device's Downloads app.\n\n"
                 + "Questions\n"
                 + "For questions about this app, contact the owner through the APK-STORE GitHub repository: github.com/mazharmnzoor4227-beep/APK-STORE.";
     }
@@ -533,7 +565,7 @@ public class MainActivity extends Activity {
                 + "APK STORE is a catalog for independent Android applications. "
                 + "You may browse listings and download APK files that the owner has approved for publication.\n\n"
                 + "Installing apps\n"
-                + "Downloads open in your browser. Android may ask you to approve installation from that source. "
+                + "Downloads run in the app through Android Download Manager. Android may ask you to approve installation from APK STORE. "
                 + "Read an app's description and Android permission requests before installing it. "
                 + "Apps listed here are separate software with their own features and terms.\n\n"
                 + "Availability and updates\n"
@@ -548,9 +580,15 @@ public class MainActivity extends Activity {
     private void showDetail(JSONObject app) {
         LinearLayout root = vertical(); root.setBackgroundColor(bg());
         applySafeArea(root); setContentView(root); root.requestApplyInsets();
+        LinearLayout top = new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL);
         TextView back = text("‹  Back", 17, ink(), false);
         back.setPadding(dp(16), dp(16), dp(16), dp(16));
-        back.setOnClickListener(v -> showTab(tab)); root.addView(back);
+        back.setOnClickListener(v -> showTab(tab)); top.addView(back, weight());
+        TextView heart = action(isFavorite(app) ? "♥" : "♡", "Toggle favorite");
+        heart.setTextColor(isFavorite(app) ? green() : ink());
+        heart.setOnClickListener(v -> toggleFavorite(app));
+        top.addView(heart, new LinearLayout.LayoutParams(dp(56), dp(52)));
+        root.addView(top);
         ScrollView scroll = new ScrollView(this); root.addView(scroll);
         LinearLayout page = vertical(); page.setPadding(dp(20), dp(22), dp(20), dp(30)); scroll.addView(page);
         page.addView(icon(app, 84), new LinearLayout.LayoutParams(dp(84), dp(84)));
@@ -558,24 +596,85 @@ public class MainActivity extends Activity {
         page.addView(text(app.optString("title"), 30, ink(), true)); space(page, 6);
         page.addView(text(app.optString("category") + "  ·  " + app.optString("package_id"), 12, muted(), false));
         space(page, 25);
-        TextView download = text(updateAvailable(app) ? "Update APK  ↓" : "Download APK  ↓", 16, bg(), true);
+        String slug = app.optString("slug");
+        Long existing = downloads.get(slug);
+        TextView download = text(completedDownloads.containsKey(slug) ? "Open · Install" : existing == null ? (updateAvailable(app) ? "Update  ↓" : "Install  ↓") : "Downloading…", 16, bg(), true);
         download.setGravity(Gravity.CENTER); download.setPadding(dp(18), dp(15), dp(18), dp(15));
         download.setBackground(shape(green(), 12));
-        download.setOnClickListener(v -> {
-            String slug = app.optString("slug");
-            if (!slug.matches("[a-z0-9]+(-[a-z0-9]+)*")) return;
-            Intent intent = new Intent(Intent.ACTION_VIEW,
-                    Uri.parse(BuildConfig.SUPABASE_URL + "/functions/v1/download-apk?slug=" + Uri.encode(slug)));
-            startActivity(intent);
-        });
+        download.setOnClickListener(v -> { if (completedDownloads.containsKey(slug)) openDownloaded(slug, download); else if (downloads.containsKey(slug)) cancelDownload(slug, download); else startDownload(app, download); });
         page.addView(download); space(page, 30);
+        if (existing != null) pollDownload(slug, download);
         page.addView(text("About this app", 19, ink(), true)); space(page, 10);
         page.addView(text(app.optString("description"), 15, muted(), false)); space(page, 25);
         page.addView(text("Android will ask you to confirm installation after downloading.", 12, muted(), false));
     }
+    private void startDownload(JSONObject app, TextView button) {
+        String slug = app.optString("slug");
+        if (!slug.matches("[a-z0-9]+(-[a-z0-9]+)*")) return;
+        try {
+            DownloadManager manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+            Uri url = Uri.parse(BuildConfig.SUPABASE_URL + "/functions/v1/download-apk?slug=" + Uri.encode(slug));
+            DownloadManager.Request request = new DownloadManager.Request(url);
+            request.setTitle(app.optString("title"));
+            request.setDescription("Downloading APK in APK STORE");
+            request.setMimeType("application/vnd.android.package-archive");
+            request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            request.setDestinationInExternalFilesDir(this, android.os.Environment.DIRECTORY_DOWNLOADS, slug + ".apk");
+            long id = manager.enqueue(request);
+            downloads.put(slug, id);
+            pollDownload(slug, button);
+        } catch (Exception e) { button.setText("Download unavailable · Retry"); }
+    }
+    private void openDownloaded(String slug, TextView button) {
+        Long id = completedDownloads.get(slug);
+        if (id == null) return;
+        DownloadManager manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+        Uri file = manager.getUriForDownloadedFile(id);
+        if (file == null) { completedDownloads.remove(slug); button.setText("Install  ↓"); return; }
+        Intent install = new Intent(Intent.ACTION_VIEW);
+        install.setDataAndType(file, "application/vnd.android.package-archive");
+        install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try { startActivity(install); } catch (Exception e) { button.setText("Open in Downloads"); }
+    }
+    private void cancelDownload(String slug, TextView button) {
+        Long id = downloads.remove(slug);
+        Runnable poll = downloadPolls.remove(slug);
+        if (poll != null) handler.removeCallbacks(poll);
+        if (id != null) ((DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE)).remove(id);
+        button.setText("Install  ↓");
+    }
+    private void pollDownload(String slug, TextView button) {
+        Runnable previous = downloadPolls.remove(slug);
+        if (previous != null) handler.removeCallbacks(previous);
+        Runnable poll = new Runnable() {
+            @Override public void run() {
+                Long id = downloads.get(slug);
+                if (id == null) return;
+                DownloadManager manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+                try (Cursor cursor = manager.query(new DownloadManager.Query().setFilterById(id))) {
+                    if (cursor == null || !cursor.moveToFirst()) { cancelDownload(slug, button); return; }
+                    int status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
+                    if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                        downloads.remove(slug); downloadPolls.remove(slug);
+                        completedDownloads.put(slug, id);
+                        button.setText("Open · Install");
+                        return;
+                    }
+                    if (status == DownloadManager.STATUS_FAILED) { cancelDownload(slug, button); button.setText("Download failed · Retry"); return; }
+                    long done = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
+                    long total = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
+                    button.setText(total > 0 ? "Downloading… " + (done * 100 / total) + "% · Cancel" : "Downloading… · Cancel");
+                    handler.postDelayed(this, 500);
+                } catch (Exception e) { cancelDownload(slug, button); button.setText("Download failed · Retry"); }
+            }
+        };
+        downloadPolls.put(slug, poll);
+        handler.post(poll);
+    }
     @Override public void onBackPressed() { if (legalPage) showAbout(); else showTab(APPS); }
     @Override protected void onDestroy() {
         if (pendingSearch != null) handler.removeCallbacks(pendingSearch);
+        for (Runnable poll : downloadPolls.values()) handler.removeCallbacks(poll);
         worker.shutdownNow(); super.onDestroy();
     }
 }
