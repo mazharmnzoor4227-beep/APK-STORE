@@ -1,0 +1,11 @@
+import { mkdir, readFile, copyFile, writeFile } from 'node:fs/promises';
+const root = new URL('./', import.meta.url);
+const props = await readFile(new URL('../android/gradle.properties', root), 'utf8');
+const key = props.match(/^supabasePublishableKey=(.+)$/m)?.[1];
+if (!key) throw new Error('Publishable catalog key is missing');
+await mkdir(new URL('./dist/', root), { recursive: true });
+await copyFile(new URL('./index.html', root), new URL('./dist/index.html', root));
+await copyFile(new URL('./store.js', root), new URL('./dist/store.js', root));
+await copyFile(new URL('../web/app/globals.css', root), new URL('./dist/style.css', root));
+await writeFile(new URL('./dist/style.css', root), (await readFile(new URL('./dist/style.css', root), 'utf8')) + '\n[hidden]{display:none!important}\n');
+await writeFile(new URL('./dist/config.js', root), `window.APK_STORE_CONFIG=${JSON.stringify({ url: 'https://qfbfxencwsgryoczkdyj.supabase.co', key })};\n`);
