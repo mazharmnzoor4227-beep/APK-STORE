@@ -12,12 +12,12 @@ function applyTheme(choice: ThemeChoice) {
 }
 
 export function ThemeControl() {
-  const [choice, setChoice] = useState<ThemeChoice>('system');
+  const [choice, setChoice] = useState<ThemeChoice>('dark');
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     const saved = window.localStorage.getItem('apk-store-theme');
-    const initial: ThemeChoice = saved === 'light' || saved === 'dark' ? saved : 'system';
+    const initial: ThemeChoice = saved === 'light' || saved === 'system' ? saved : 'dark';
     setChoice(initial);
     applyTheme(initial);
   }, []);
