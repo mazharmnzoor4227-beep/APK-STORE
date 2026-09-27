@@ -45,7 +45,11 @@ $('login-form').addEventListener('submit', async event => {
   const email = $('owner-email').value.trim();
   try {
     const response = await fetch(base + '/auth/v1/otp?redirect_to=' + encodeURIComponent(location.origin + '/admin'), { method: 'POST', headers: { apikey: key, 'Content-Type': 'application/json' }, body: JSON.stringify({ email, create_user: true }) });
-    if (!response.ok) throw new Error('Could not send sign-in link.');
+    if (!response.ok) {
+      const failure = await response.json().catch(() => ({}));
+      if (response.status === 429) throw new Error('Email limit reached. Please wait about an hour before requesting another link.');
+      throw new Error(failure.msg || failure.message || 'Could not send sign-in link.');
+    }
     message('Check your email for the sign-in link.');
   } catch (error) { message(error.message); }
 });
