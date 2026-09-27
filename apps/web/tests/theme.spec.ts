@@ -23,3 +23,9 @@ test('mobile visitors can reach search and navigation', async ({ page }) => {
   await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Updates' })).toBeVisible();
 });
+
+test('new visitors see the black and green dark theme by default', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+});
