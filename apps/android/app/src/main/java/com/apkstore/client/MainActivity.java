@@ -2,6 +2,7 @@ package com.apkstore.client;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -14,8 +15,10 @@ import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
-import android.view.inputmethod.InputMethodManager;
-import android.content.Context;
+import android.view.Window;
+import android.view.WindowInsets;
+import android.view.animation.DecelerateInterpolator;
+import android.view.animation.TranslateAnimation;
 import android.widget.EditText;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
@@ -26,7 +29,6 @@ import org.json.JSONObject;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashSet;
 import java.util.concurrent.ExecutorService;
@@ -83,15 +85,34 @@ public class MainActivity extends Activity {
         t.setGravity(Gravity.CENTER); t.setContentDescription(description);
         return t;
     }
+    private void applySafeArea(LinearLayout root) {
+        root.setOnApplyWindowInsetsListener((view, insets) -> {
+            int top, bottom;
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
+                top = bars.top; bottom = bars.bottom;
+            } else {
+                top = insets.getSystemWindowInsetTop();
+                bottom = insets.getSystemWindowInsetBottom();
+            }
+            view.setPadding(0, top, 0, bottom);
+            return insets;
+        });
+    }
     private void showTab(int selected) {
         tab = selected;
         getWindow().setStatusBarColor(bg());
         getWindow().setNavigationBarColor(bg());
         getWindow().getDecorView().setSystemUiVisibility(light ? View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR : 0);
-        LinearLayout root = vertical(); root.setBackgroundColor(bg()); setContentView(root);
+        LinearLayout root = vertical(); root.setBackgroundColor(bg());
+        // Android 15+ draws behind the system bars. Respect the real cutout and
+        // gesture insets instead of guessing a fixed status bar height.
+        applySafeArea(root);
+        setContentView(root);
+        root.requestApplyInsets();
         LinearLayout header = new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(16), dp(4), dp(10), dp(4));
-        TextView title = text(selected == APPS ? "Apps" : selected == SEARCH ? "Search" : "Updates", 19, ink(), false);
+        header.setPadding(dp(16), dp(5), dp(10), dp(5));
+        TextView title = text(selected == APPS ? "Apps" : selected == SEARCH ? "Search" : "Updates", 20, ink(), false);
         header.addView(title, weight());
         TextView find = action("⌕", "Search apps");
         find.setOnClickListener(v -> showTab(SEARCH));
@@ -102,7 +123,7 @@ public class MainActivity extends Activity {
         TextView settings = action("⚙", "Settings");
         settings.setOnClickListener(v -> settings());
         header.addView(settings, new LinearLayout.LayoutParams(dp(46), dp(48)));
-        root.addView(header);
+        root.addView(header, new LinearLayout.LayoutParams(-1, dp(58)));
 
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true);
         body = vertical(); body.setPadding(dp(16), dp(7), dp(16), dp(24));
@@ -112,13 +133,14 @@ public class MainActivity extends Activity {
         addNav(nav, "▦", "Apps", APPS);
         addNav(nav, "⌕", "Search", SEARCH);
         addNav(nav, "◷", "Updates", UPDATES);
-        root.addView(nav, new LinearLayout.LayoutParams(-1, dp(66)));
+        root.addView(nav, new LinearLayout.LayoutParams(-1, dp(76)));
 
         if (selected == SEARCH) {
             makeSearch();
         } else if (selected == UPDATES) {
+            space(body, 16);
             sectionTitle("Latest releases", null);
-            body.addView(text("New and updated apps approved for APK STORE.", 13, muted(), false));
+            body.addView(text("New and updated apps approved for APK STORE.", 14, muted(), false));
             space(body, 18);
         }
         render();
@@ -126,14 +148,15 @@ public class MainActivity extends Activity {
     }
     private void addNav(LinearLayout nav, String glyph, String title, int target) {
         LinearLayout item = vertical(); item.setGravity(Gravity.CENTER);
-        TextView icon = text(glyph, 22, target == tab ? green() : muted(), false);
+        TextView icon = text(glyph, 26, target == tab ? green() : muted(), false);
         icon.setGravity(Gravity.CENTER);
         if (target == tab) {
-            icon.setBackground(shape(raised(), 18));
-            icon.setLayoutParams(new LinearLayout.LayoutParams(dp(64), dp(31)));
+            icon.setBackground(shape(raised(), 19));
+            icon.setLayoutParams(new LinearLayout.LayoutParams(dp(72), dp(36)));
         }
         item.addView(icon);
-        TextView caption = text(title, 11, target == tab ? green() : muted(), target == tab);
+        space(item, 3);
+        TextView caption = text(title, 13, target == tab ? green() : muted(), target == tab);
         caption.setGravity(Gravity.CENTER); item.addView(caption);
         item.setOnClickListener(v -> { if (target != tab) showTab(target); });
         nav.addView(item, new LinearLayout.LayoutParams(0, -1, 1));
@@ -186,7 +209,7 @@ public class MainActivity extends Activity {
             while (body.getChildCount() > 2) body.removeViewAt(2);
             renderList(filtered(query), false);
         } else if (tab == UPDATES) {
-            while (body.getChildCount() > 3) body.removeViewAt(3);
+            while (body.getChildCount() > 5) body.removeViewAt(5);
             renderList(sortedUpdates(), false);
         } else {
             body.removeAllViews();
@@ -313,17 +336,62 @@ public class MainActivity extends Activity {
         if (!updates && searchBox != null) searchBox.setHint(heading + " · Search apps");
     }
     private void settings() {
-        String[] choices = {light ? "Turn on dark mode" : "Turn on light mode", "About APK STORE"};
-        new AlertDialog.Builder(this).setTitle("Settings").setItems(choices, (dialog, which) -> {
-            if (which == 0) {
-                light = !light; getPreferences(0).edit().putBoolean("light", light).apply(); showTab(tab);
-            } else new AlertDialog.Builder(this).setTitle("APK STORE")
-                    .setMessage("Discover and download independent Android apps. Releases appear after owner approval.")
-                    .setPositiveButton("OK", null).show();
-        }).show();
+        Dialog sheet = new Dialog(this);
+        LinearLayout panel = vertical();
+        panel.setPadding(dp(20), dp(15), dp(20), dp(24));
+        panel.setBackground(shape(surface(), 24));
+        TextView handle = text("━━━━", 19, muted(), false);
+        handle.setGravity(Gravity.CENTER);
+        panel.addView(handle);
+        space(panel, 12);
+        panel.addView(text("APK STORE", 19, ink(), true));
+        space(panel, 14);
+        sheetRow(panel, "▦", "Apps", () -> showTab(APPS), sheet);
+        sheetRow(panel, "⌕", "Search", () -> showTab(SEARCH), sheet);
+        sheetRow(panel, "◷", "Updates", () -> showTab(UPDATES), sheet);
+        sheetRow(panel, light ? "☾" : "☀", light ? "Dark mode" : "Light mode", () -> {
+            light = !light;
+            getPreferences(0).edit().putBoolean("light", light).apply();
+            showTab(tab);
+        }, sheet);
+        sheetRow(panel, "ⓘ", "About", () -> new AlertDialog.Builder(this)
+                .setTitle("APK STORE")
+                .setMessage("Discover and download independent Android apps. Releases appear after owner approval.")
+                .setPositiveButton("OK", null).show(), sheet);
+        sheet.setContentView(panel);
+        Window window = sheet.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawableResource(android.R.color.transparent);
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            android.view.WindowManager.LayoutParams attributes = window.getAttributes();
+            attributes.width = -1; attributes.height = -2;
+            attributes.gravity = Gravity.BOTTOM;
+            attributes.dimAmount = 0.55f;
+            window.setAttributes(attributes);
+        }
+        sheet.show();
+        if (window != null) window.setLayout(-1, -2);
+        TranslateAnimation slide = new TranslateAnimation(0, 0, dp(360), 0);
+        slide.setDuration(280);
+        slide.setInterpolator(new DecelerateInterpolator());
+        panel.startAnimation(slide);
+    }
+    private void sheetRow(LinearLayout panel, String glyph, String title, Runnable onClick, Dialog sheet) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        TextView icon = text(glyph, 22, green(), false);
+        row.addView(icon, new LinearLayout.LayoutParams(dp(43), -2));
+        row.addView(text(title, 16, ink(), false), weight());
+        row.setPadding(dp(10), dp(12), dp(10), dp(12));
+        row.setOnClickListener(v -> {
+            sheet.dismiss();
+            onClick.run();
+        });
+        panel.addView(row);
     }
     private void showDetail(JSONObject app) {
-        LinearLayout root = vertical(); root.setBackgroundColor(bg()); setContentView(root);
+        LinearLayout root = vertical(); root.setBackgroundColor(bg());
+        applySafeArea(root); setContentView(root); root.requestApplyInsets();
         TextView back = text("‹  Back", 17, ink(), false);
         back.setPadding(dp(16), dp(16), dp(16), dp(16));
         back.setOnClickListener(v -> showTab(tab)); root.addView(back);
