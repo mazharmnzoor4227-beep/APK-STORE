@@ -15,3 +15,7 @@ export type PublishedApp = CatalogApp & {
 };
 
 export type CatalogPage = { apps: CatalogApp[]; nextCursor: string | null };
+export type RecentUpdate = {
+  id: string; app_id: string; version_name: string; version_code: number; published_at: string; release_notes: string;
+  app: CatalogApp;
+};
