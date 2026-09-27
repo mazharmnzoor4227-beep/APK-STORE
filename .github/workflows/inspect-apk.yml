@@ -1,0 +1,61 @@
+name: Inspect APK candidate
+on:
+  repository_dispatch:
+    types: [inspect-apk]
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Inspect private APK and report result
+        env:
+          CANDIDATE_ID: ${{ github.event.client_payload.candidateId }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          INSPECTION_CALLBACK_URL: ${{ secrets.INSPECTION_CALLBACK_URL }}
+          INSPECTION_CALLBACK_SECRET: ${{ secrets.INSPECTION_CALLBACK_SECRET }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, hmac, json, os, pathlib, re, subprocess, urllib.request
+
+          candidate = os.environ['CANDIDATE_ID']
+          if not re.fullmatch(r'[0-9a-f-]{36}', candidate):
+              raise ValueError('Invalid candidate ID')
+          sdk = pathlib.Path(os.environ['ANDROID_HOME'])
+          analyzers = list(sdk.glob('cmdline-tools/*/bin/apkanalyzer')) + list(sdk.glob('tools/bin/apkanalyzer'))
+          signers = list(sdk.glob('build-tools/*/apksigner'))
+          if not analyzers or not signers:
+              raise RuntimeError('Android APK inspection tools unavailable')
+          analyzer, signer = str(analyzers[-1]), str(sorted(signers)[-1])
+          path = pathlib.Path('candidate.apk')
+          key = 'candidates/' + candidate + '.apk'
+          req = urllib.request.Request(os.environ['SUPABASE_URL'].rstrip('/') + '/storage/v1/object/authenticated/apk-files/' + key,
+              headers={'Authorization': 'Bearer ' + os.environ['SUPABASE_SERVICE_ROLE_KEY']})
+          with urllib.request.urlopen(req, timeout=90) as response, path.open('wb') as output:
+              while chunk := response.read(1024 * 1024): output.write(chunk)
+          def command(*args):
+              return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT).strip()
+          try:
+              certificate = command(signer, 'verify', '--verbose', '--print-certs', str(path))
+              match = re.search(r'Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F:]+)', certificate)
+              if not match: raise ValueError('Signing certificate missing')
+              metadata = {
+                'packageId': command(analyzer, 'manifest', 'application-id', str(path)),
+                'versionCode': int(command(analyzer, 'manifest', 'version-code', str(path))),
+                'versionName': command(analyzer, 'manifest', 'version-name', str(path)),
+                'certificateSha256': match.group(1).replace(':', '').lower(),
+                'apkSha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+                'byteSize': path.stat().st_size,
+              }
+              payload = {'candidateId': candidate, 'metadata': metadata}
+          except Exception as error:
+              payload = {'candidateId': candidate, 'error': str(error)[:300]}
+          body = json.dumps(payload, separators=(',', ':')).encode()
+          signature = hmac.new(os.environ['INSPECTION_CALLBACK_SECRET'].encode(), body, hashlib.sha256).hexdigest()
+          callback = urllib.request.Request(os.environ['INSPECTION_CALLBACK_URL'], data=body,
+              headers={'content-type': 'application/json', 'x-apk-signature': 'sha256=' + signature}, method='POST')
+          with urllib.request.urlopen(callback, timeout=30) as result: result.read()
+          if 'error' in payload: raise RuntimeError(payload['error'])
+          PY
