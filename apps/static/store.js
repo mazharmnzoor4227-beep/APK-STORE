@@ -35,7 +35,7 @@ async function list() {
   const q = (params.get('q') || '').trim().slice(0, 80);
   search.value = q;
   if (params.has('search') || q) document.getElementById('catalog-title').textContent = 'Search results';
-  const query = new URLSearchParams({ select: 'id,slug,title,package_id,category,description', visibility: 'eq.published', current_release_id: 'not.is.null', order: 'created_at.desc', limit: '50' });
+  const query = new URLSearchParams({ select: 'id,slug,title,package_id,category,description,icon_url', visibility: 'eq.published', current_release_id: 'not.is.null', order: 'created_at.desc', limit: '50' });
   if (q) query.set('title', 'ilike.*' + q.replace(/[*,()\\]/g, ' ') + '*');
   try {
     const apps = await read('apps', query);
@@ -45,6 +45,7 @@ async function list() {
     for (const app of apps) {
       const link = node('a', 'app-card'); link.href = './?app=' + encodeURIComponent(app.slug);
       const icon = node('div', 'app-icon', app.title.slice(0, 1).toUpperCase());
+      if (app.icon_url) { const image = node('img'); image.src = app.icon_url; image.alt = ''; image.width = 64; image.height = 64; icon.replaceChildren(image); }
       icon.setAttribute('aria-hidden', 'true');
       const copy = node('div');
       copy.append(node('span', 'section-index', app.category), node('h3', '', app.title), node('p', '', app.description || app.package_id), node('span', 'card-link', 'View app ↗'));
@@ -57,11 +58,12 @@ async function showApp(slug) {
   hero.hidden = true; catalog.hidden = true; detail.hidden = false;
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) { detail.append(node('h1', '', 'App not found')); return; }
   try {
-    const apps = await read('apps', new URLSearchParams({ select: 'id,slug,title,package_id,category,description,current_release_id', slug: 'eq.' + slug, visibility: 'eq.published', limit: '1' }));
+    const apps = await read('apps', new URLSearchParams({ select: 'id,slug,title,package_id,category,description,icon_url,current_release_id', slug: 'eq.' + slug, visibility: 'eq.published', limit: '1' }));
     const app = apps[0]; if (!app) throw new Error('App not found');
     const releases = await read('releases', new URLSearchParams({ select: 'id,version_code,version_name,byte_size,apk_sha256,release_notes', id: 'eq.' + app.current_release_id, status: 'eq.published', limit: '1' }));
     const release = releases[0]; if (!release) throw new Error('Release unavailable');
     detail.append(node('span', 'section-index', 'APP / ' + app.category.toUpperCase()), node('h1', '', app.title), node('p', 'app-description', app.description), node('p', '', app.package_id));
+    if (app.icon_url) { const image = node('img'); image.src = app.icon_url; image.alt = app.title + ' icon'; image.width = 96; image.height = 96; detail.prepend(image); }
     const download = node('a', 'action-button download-button', 'Download APK ↗');
     download.href = url + '/functions/v1/download-apk?slug=' + encodeURIComponent(slug);
     detail.append(download);
