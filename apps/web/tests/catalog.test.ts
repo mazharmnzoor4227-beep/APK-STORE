@@ -52,3 +52,21 @@ test('owner catalog refuses unverified callers before any network request', asyn
   await assert.rejects(listOwnerApps({ url: 'https://example.supabase.co', serviceKey: 'secret', ownerVerified: false, fetcher: async () => { called = true; return new Response('[]'); } }), /Owner authorization required/);
   assert.equal(called, false);
 });
+
+test('updates show only the current release of a published app', async () => {
+  const requests: URL[] = [];
+  const reader = createCatalogReader({ url: 'https://example.supabase.co', key: 'public-key', fetcher: async input => {
+    const target = new URL(String(input));
+    requests.push(target);
+    if (target.pathname.endsWith('/releases')) return new Response(JSON.stringify([
+      { id: 'release-new', app_id: '10000000-0000-4000-8000-000000000001', version_name: '2.0', version_code: 2 },
+      { id: 'release-old', app_id: '10000000-0000-4000-8000-000000000001', version_name: '1.0', version_code: 1 },
+    ]));
+    return new Response(JSON.stringify([{ id: '10000000-0000-4000-8000-000000000001', slug: 'alpha', title: 'Alpha', current_release_id: 'release-new' }]));
+  }});
+  const updates = await reader.listRecentUpdates();
+  assert.deepEqual(updates.map(update => update.id), ['release-new']);
+  assert.equal(updates[0].app.slug, 'alpha');
+  assert.equal(requests[0].searchParams.get('status'), 'eq.published');
+  assert.equal(requests[1].searchParams.get('visibility'), 'eq.published');
+});
