@@ -4,7 +4,7 @@ import { ThemeControl } from './theme-control';
 export function Header() {
   return <header className="site-header"><div className="site-container header-inner">
     <Link href="/" className="brand" aria-label="APK STORE home"><span className="brand-icon" aria-hidden="true"><span /></span><span>APK<span className="brand-light">STORE</span></span><span className="brand-cursor" aria-hidden="true">_</span></Link>
-    <nav className="primary-nav" aria-label="Primary"><Link href="/">Explore</Link><Link href="/search">Search</Link><Link href="/updates">Updates</Link></nav>
+    <form className="header-search" action="/search" role="search"><label className="sr-only" htmlFor="header-query">Search apps</label><span aria-hidden="true">⌕</span><input id="header-query" name="q" type="search" placeholder="Search apps and games" /><button type="submit" aria-label="Submit search">↗</button></form>
     <ThemeControl />
-  </div></header>;
+  </div><nav className="site-container store-tabs" aria-label="Store sections"><Link href="/">Discover</Link><Link href="/search">All apps</Link><Link href="/updates">Updates</Link></nav></header>;
 }
