@@ -1,6 +1,8 @@
 package com.apkstore.client;
 
 import android.app.Activity;
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -143,7 +145,18 @@ public class MainActivity extends Activity {
         page.addView(label(app.optString("title"), 43, white, true)); gap(page, 12);
         page.addView(label(app.optString("package_id"), 13, muted, false)); gap(page, 30);
         page.addView(label(app.optString("description"), 17, white, false)); gap(page, 40);
-        page.addView(label("The download is available on the website after the release is published and hosting is connected.", 14, muted, false));
+        TextView download = label("Download APK  ↗", 17, bg, true);
+        download.setPadding(dp(18), dp(15), dp(18), dp(15));
+        GradientDrawable button = new GradientDrawable(); button.setColor(green); button.setCornerRadius(dp(10));
+        download.setBackground(button);
+        download.setOnClickListener(v -> {
+            String slug = app.optString("slug");
+            if (!slug.matches("[a-z0-9]+(-[a-z0-9]+)*")) return;
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.SUPABASE_URL + "/functions/v1/download-apk?slug=" + slug));
+            startActivity(intent);
+        });
+        page.addView(download); gap(page, 18);
+        page.addView(label("Android will ask you to confirm installation after the APK downloads.", 14, muted, false));
     }
     @Override public void onBackPressed() { showCatalog(); }
     @Override protected void onDestroy() { worker.shutdownNow(); super.onDestroy(); }
