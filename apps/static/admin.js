@@ -116,7 +116,9 @@ $('upload-form').addEventListener('submit', async event => {
       xhr.onerror = () => reject(new Error('Upload connection failed')); xhr.send(file);
     });
     await api('complete', 'POST', { id });
-    message('APK uploaded privately. Choose Inspect APK, then review and approve it to publish.');
+    message('Upload complete. Reading APK package, icon and checksum…');
+    try { await api('inspect', 'POST', { id }); message('APK inspected. Review its details and approve publication below.'); }
+    catch (inspectionError) { message('Upload saved. Inspection needs a retry: ' + inspectionError.message); }
     $('upload-form').reset(); await refresh();
   } catch (error) { message(error.message); }
   finally { button.disabled = false; progress.hidden = true; }
