@@ -6,6 +6,7 @@ if (!key) throw new Error('Publishable catalog key is missing');
 await mkdir(new URL('./dist/', root), { recursive: true });
 await copyFile(new URL('./index.html', root), new URL('./dist/index.html', root));
 await copyFile(new URL('./store.js', root), new URL('./dist/store.js', root));
+await copyFile(new URL('./store-icon.png', root), new URL('./dist/store-icon.png', root));
 await copyFile(new URL('./privacy.html', root), new URL('./dist/privacy.html', root));
 await copyFile(new URL('./terms.html', root), new URL('./dist/terms.html', root));
 await copyFile(new URL('../web/app/globals.css', root), new URL('./dist/style.css', root));
