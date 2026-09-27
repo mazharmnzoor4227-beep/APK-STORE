@@ -1,4 +1,4 @@
-import type { CatalogApp, CatalogPage, PublishedApp } from './types.ts';
+import type { CatalogApp, CatalogPage, PublishedApp, RecentUpdate } from './types.ts';
 
 type Options = { url: string; key: string; fetcher?: typeof fetch };
 type Cursor = { created_at: string; id: string };
@@ -23,6 +23,24 @@ export function createCatalogReader({ url, key, fetcher = fetch }: Options) {
     return response.json() as Promise<T[]>;
   }
   return {
+    async listRecentUpdates(): Promise<RecentUpdate[]> {
+      const releases = await request<Omit<RecentUpdate, 'app'>>('releases', new URLSearchParams({
+        select: 'id,app_id,version_name,version_code,published_at,release_notes',
+        status: 'eq.published', order: 'published_at.desc', limit: '20',
+      }));
+      if (!releases.length) return [];
+      const ids = releases.map(release => release.app_id).filter(id => /^[0-9a-f-]{36}$/i.test(id));
+      if (!ids.length) return [];
+      const apps = await request<CatalogApp>('apps', new URLSearchParams({
+        select: 'id,slug,title,package_id,category,description,created_at,current_release_id',
+        id: `in.(${ids.join(',')})`, visibility: 'eq.published',
+      }));
+      const byId = new Map(apps.map(app => [app.id, app]));
+      return releases.flatMap(release => {
+        const app = byId.get(release.app_id);
+        return app && app.current_release_id === release.id ? [{ ...release, app }] : [];
+      });
+    },
     async listPublishedApps(query = '', cursor: string | null = null): Promise<CatalogPage> {
       const params = new URLSearchParams({ select: 'id,slug,title,package_id,category,description,created_at,current_release_id', visibility: 'eq.published', current_release_id: 'not.is.null', order: 'created_at.desc,id.desc', limit: '20' });
       const search = query.trim().slice(0, 80);
