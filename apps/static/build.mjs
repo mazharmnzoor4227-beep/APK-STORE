@@ -6,6 +6,8 @@ if (!key) throw new Error('Publishable catalog key is missing');
 await mkdir(new URL('./dist/', root), { recursive: true });
 await copyFile(new URL('./index.html', root), new URL('./dist/index.html', root));
 await copyFile(new URL('./store.js', root), new URL('./dist/store.js', root));
+await copyFile(new URL('./privacy.html', root), new URL('./dist/privacy.html', root));
+await copyFile(new URL('./terms.html', root), new URL('./dist/terms.html', root));
 await copyFile(new URL('../web/app/globals.css', root), new URL('./dist/style.css', root));
 await writeFile(new URL('./dist/style.css', root), (await readFile(new URL('./dist/style.css', root), 'utf8')) + '\n[hidden]{display:none!important}\n');
 await writeFile(new URL('./dist/config.js', root), `window.APK_STORE_CONFIG=${JSON.stringify({ url: 'https://qfbfxencwsgryoczkdyj.supabase.co', key })};\n`);
