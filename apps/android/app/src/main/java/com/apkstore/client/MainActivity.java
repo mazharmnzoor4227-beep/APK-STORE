@@ -619,7 +619,7 @@ public class MainActivity extends Activity {
             request.setDescription("Downloading APK in APK STORE");
             request.setMimeType("application/vnd.android.package-archive");
             request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-            request.setDestinationInExternalFilesDir(this, android.os.Environment.DIRECTORY_DOWNLOADS, slug + ".apk");
+            request.setDestinationInExternalFilesDir(this, android.os.Environment.DIRECTORY_DOWNLOADS, slug + "-" + System.currentTimeMillis() + ".apk");
             long id = manager.enqueue(request);
             downloads.put(slug, id);
             pollDownload(slug, button);
