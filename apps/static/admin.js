@@ -44,7 +44,7 @@ $('login-form').addEventListener('submit', async event => {
   event.preventDefault(); message('Sending sign-in link…');
   const email = $('owner-email').value.trim();
   try {
-    const response = await fetch(base + '/auth/v1/otp?redirect_to=' + encodeURIComponent(location.origin + '/admin.html'), { method: 'POST', headers: { apikey: key, 'Content-Type': 'application/json' }, body: JSON.stringify({ email, create_user: true }) });
+    const response = await fetch(base + '/auth/v1/otp?redirect_to=' + encodeURIComponent(location.origin + '/admin'), { method: 'POST', headers: { apikey: key, 'Content-Type': 'application/json' }, body: JSON.stringify({ email, create_user: true }) });
     if (!response.ok) throw new Error('Could not send sign-in link.');
     message('Check your email for the sign-in link.');
   } catch (error) { message(error.message); }
