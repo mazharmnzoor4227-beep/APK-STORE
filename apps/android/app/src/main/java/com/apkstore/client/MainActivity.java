@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -12,6 +14,7 @@ import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.EditText;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -26,18 +29,25 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
-    private final int bg = Color.rgb(8, 13, 10), surface = Color.rgb(17, 25, 19);
-    private final int green = Color.rgb(122, 242, 154), white = Color.rgb(239, 245, 239);
-    private final int muted = Color.rgb(153, 169, 155);
+    private boolean light;
+    private int bg() { return light ? Color.rgb(246, 249, 245) : Color.rgb(8, 13, 10); }
+    private int surface() { return light ? Color.WHITE : Color.rgb(17, 25, 19); }
+    private int green() { return light ? Color.rgb(24, 111, 57) : Color.rgb(122, 242, 154); }
+    private int ink() { return light ? Color.rgb(23, 37, 27) : Color.rgb(239, 245, 239); }
+    private int muted() { return light ? Color.rgb(77, 101, 84) : Color.rgb(153, 169, 155); }
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private Runnable pendingSearch;
     private LinearLayout results;
     private EditText search;
+    private LinearLayout categories;
+    private JSONArray currentApps = new JSONArray();
+    private String activeCategory = "";
     private int generation;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        getWindow().setStatusBarColor(bg);
-        getWindow().setNavigationBarColor(bg);
+        light = getPreferences(0).getBoolean("light", false);
         showCatalog();
     }
 
@@ -50,14 +60,14 @@ public class MainActivity extends Activity {
     }
     private GradientDrawable panel() {
         GradientDrawable shape = new GradientDrawable();
-        shape.setColor(surface); shape.setCornerRadius(dp(16));
-        shape.setStroke(dp(1), Color.rgb(39, 55, 44));
+        shape.setColor(surface()); shape.setCornerRadius(dp(16));
+        shape.setStroke(dp(1), light ? Color.rgb(204, 219, 207) : Color.rgb(39, 55, 44));
         return shape;
     }
     private LinearLayout column() {
         LinearLayout result = new LinearLayout(this);
         result.setOrientation(LinearLayout.VERTICAL);
-        result.setPadding(dp(22), dp(26), dp(22), dp(32));
+        result.setPadding(dp(20), dp(20), dp(20), dp(32));
         return result;
     }
     private void gap(LinearLayout parent, int height) {
@@ -65,36 +75,50 @@ public class MainActivity extends Activity {
         parent.addView(spacer, new LinearLayout.LayoutParams(1, dp(height)));
     }
     private void showCatalog() {
-        ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true); scroll.setBackgroundColor(bg);
+        getWindow().setStatusBarColor(bg());
+        getWindow().setNavigationBarColor(bg());
+        ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true); scroll.setBackgroundColor(bg());
         LinearLayout page = column(); scroll.addView(page); setContentView(scroll);
-        page.addView(label("▢  APK STORE  _", 23, white, true));
-        gap(page, 65);
-        page.addView(label("●  INDEPENDENT ANDROID APPS", 11, green, true));
-        gap(page, 18);
-        page.addView(label("Discover\napps.", 54, white, true));
-        gap(page, 18);
-        page.addView(label("Explore original Android apps and follow their latest releases.", 16, muted, false));
-        gap(page, 31);
+        LinearLayout header = new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL);
+        TextView brand = label("▢  APK STORE", 23, ink(), true);
+        header.addView(brand, new LinearLayout.LayoutParams(0, dp(48), 1));
+        TextView theme = label(light ? "☀" : "◐", 22, green(), false);
+        theme.setGravity(Gravity.CENTER); theme.setContentDescription("Toggle light and dark mode");
+        theme.setBackground(panel()); header.addView(theme, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        theme.setOnClickListener(v -> { light = !light; getPreferences(0).edit().putBoolean("light", light).apply(); showCatalog(); });
+        page.addView(header); gap(page, 30);
+        page.addView(label("Discover", 37, ink(), true)); gap(page, 5);
+        page.addView(label("Apps made to be useful.", 15, muted(), false)); gap(page, 24);
         search = new EditText(this);
-        search.setSingleLine(true); search.setHint("Search apps"); search.setHintTextColor(muted);
-        search.setTextColor(white); search.setTextSize(16); search.setPadding(dp(18), dp(12), dp(18), dp(12));
+        search.setSingleLine(true); search.setHint("⌕   Search apps"); search.setHintTextColor(muted());
+        search.setTextColor(ink()); search.setTextSize(16); search.setPadding(dp(18), dp(12), dp(18), dp(12));
         search.setBackground(panel()); page.addView(search);
-        gap(page, 58);
-        page.addView(label("01 / CATALOG", 11, green, true));
-        gap(page, 14);
-        page.addView(label("Latest apps", 29, white, true));
-        gap(page, 20);
+        gap(page, 28);
+        LinearLayout shelf = new LinearLayout(this); shelf.setGravity(Gravity.CENTER_VERTICAL);
+        shelf.addView(label("Latest apps", 25, ink(), true), new LinearLayout.LayoutParams(0, dp(40), 1));
+        shelf.addView(label("ANDROID  ↗", 11, green(), true)); page.addView(shelf);
+        gap(page, 12);
+        categories = new LinearLayout(this); categories.setOrientation(LinearLayout.HORIZONTAL);
+        HorizontalScrollView categoryScroll = new HorizontalScrollView(this);
+        categoryScroll.setHorizontalScrollBarEnabled(false); categoryScroll.addView(categories);
+        page.addView(categoryScroll);
+        gap(page, 17);
         results = new LinearLayout(this); results.setOrientation(LinearLayout.VERTICAL); page.addView(results);
         search.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            public void onTextChanged(CharSequence s, int start, int before, int count) { load(s.toString()); }
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if (pendingSearch != null) handler.removeCallbacks(pendingSearch);
+                String value = s.toString();
+                pendingSearch = () -> load(value);
+                handler.postDelayed(pendingSearch, 250);
+            }
             public void afterTextChanged(Editable value) {}
         });
         load("");
     }
     private void load(String query) {
         final int request = ++generation;
-        results.removeAllViews(); results.addView(label("Loading catalog…", 15, muted, false));
+        results.removeAllViews(); results.addView(label("Loading catalog…", 15, muted(), false));
         worker.execute(() -> {
             try {
                 if (BuildConfig.SUPABASE_KEY.isEmpty()) throw new Exception("Catalog connection is not configured.");
@@ -111,43 +135,66 @@ public class MainActivity extends Activity {
                 } finally { conn.disconnect(); }
             } catch (Exception error) {
                 runOnUiThread(() -> { if (request == generation) {
-                    results.removeAllViews(); results.addView(label(error.getMessage(), 15, muted, false));
+                    results.removeAllViews(); results.addView(label(error.getMessage(), 15, muted(), false));
                 } });
             }
         });
     }
     private void render(JSONArray apps, String query) {
+        currentApps = apps;
+        categories.removeAllViews();
+        if (apps.length() > 0) {
+            java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
+            names.add("All");
+            for (int i = 0; i < apps.length(); i++) names.add(apps.optJSONObject(i).optString("category"));
+            for (String name : names) {
+                TextView chip = label(name, 13, name.equals(activeCategory.isEmpty() ? "All" : activeCategory) ? bg() : ink(), true);
+                chip.setPadding(dp(14), dp(10), dp(14), dp(10));
+                GradientDrawable shape = panel();
+                if (name.equals(activeCategory.isEmpty() ? "All" : activeCategory)) shape.setColor(green());
+                chip.setBackground(shape);
+                LinearLayout.LayoutParams item = new LinearLayout.LayoutParams(-2, -2); item.setMargins(0, 0, dp(8), 0);
+                categories.addView(chip, item);
+                chip.setOnClickListener(v -> { activeCategory = name.equals("All") ? "" : name; render(currentApps, query); });
+            }
+        }
         results.removeAllViews();
         if (apps.length() == 0) {
-            LinearLayout card = column(); card.setGravity(Gravity.CENTER); card.setBackground(panel());
-            card.addView(label(query.isEmpty() ? "The store is getting ready" : "No matching apps", 20, white, true));
-            gap(card, 12);
-            card.addView(label("Apps appear after the creator approves their release.", 14, muted, false));
+            LinearLayout card = column(); card.setPadding(dp(24), dp(26), dp(24), dp(26)); card.setBackground(panel());
+            card.addView(label("▢", 32, green(), true)); gap(card, 13);
+            card.addView(label(query.isEmpty() ? "No apps published yet" : "No matching apps", 20, ink(), true));
+            gap(card, 8);
+            card.addView(label(query.isEmpty() ? "New apps will appear here as soon as their releases are approved." : "Try another search term.", 14, muted(), false));
             results.addView(card); return;
         }
         for (int i = 0; i < apps.length(); i++) {
             JSONObject app = apps.optJSONObject(i);
-            if (app == null) continue;
-            LinearLayout card = column(); card.setBackground(panel());
-            card.addView(label(app.optString("category").toUpperCase(), 11, green, true)); gap(card, 10);
-            card.addView(label(app.optString("title"), 22, white, true)); gap(card, 9);
-            card.addView(label(app.optString("description"), 14, muted, false)); gap(card, 13);
-            card.addView(label("View app  ↗", 14, green, true));
+            if (app == null || (!activeCategory.isEmpty() && !activeCategory.equals(app.optString("category")))) continue;
+            LinearLayout card = new LinearLayout(this); card.setGravity(Gravity.CENTER_VERTICAL);
+            card.setPadding(dp(16), dp(16), dp(16), dp(16)); card.setBackground(panel());
+            TextView icon = label(app.optString("title").substring(0, 1).toUpperCase(), 27, green(), true);
+            icon.setGravity(Gravity.CENTER); icon.setBackground(panel());
+            card.addView(icon, new LinearLayout.LayoutParams(dp(62), dp(62)));
+            LinearLayout copy = new LinearLayout(this); copy.setOrientation(LinearLayout.VERTICAL); copy.setPadding(dp(15), 0, 0, 0);
+            copy.addView(label(app.optString("title"), 18, ink(), true)); gap(copy, 5);
+            copy.addView(label(app.optString("category") + "  •  APK", 13, muted(), false));
+            card.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
+            card.addView(label("↗", 18, green(), true));
             card.setOnClickListener(v -> showDetail(app));
             results.addView(card); gap(results, 14);
         }
     }
     private void showDetail(JSONObject app) {
-        ScrollView scroll = new ScrollView(this); scroll.setBackgroundColor(bg);
+        ScrollView scroll = new ScrollView(this); scroll.setBackgroundColor(bg());
         LinearLayout page = column(); scroll.addView(page); setContentView(scroll);
-        TextView back = label("←  Back to apps", 15, green, true); back.setOnClickListener(v -> showCatalog()); page.addView(back);
-        gap(page, 60); page.addView(label(app.optString("category").toUpperCase(), 12, green, true)); gap(page, 15);
-        page.addView(label(app.optString("title"), 43, white, true)); gap(page, 12);
-        page.addView(label(app.optString("package_id"), 13, muted, false)); gap(page, 30);
-        page.addView(label(app.optString("description"), 17, white, false)); gap(page, 40);
-        TextView download = label("Download APK  ↗", 17, bg, true);
+        TextView back = label("←  Back to apps", 15, green(), true); back.setOnClickListener(v -> showCatalog()); page.addView(back);
+        gap(page, 40); page.addView(label(app.optString("category").toUpperCase(), 12, green(), true)); gap(page, 15);
+        page.addView(label(app.optString("title"), 43, ink(), true)); gap(page, 12);
+        page.addView(label(app.optString("package_id"), 13, muted(), false)); gap(page, 30);
+        page.addView(label(app.optString("description"), 17, ink(), false)); gap(page, 40);
+        TextView download = label("Download APK  ↗", 17, bg(), true);
         download.setPadding(dp(18), dp(15), dp(18), dp(15));
-        GradientDrawable button = new GradientDrawable(); button.setColor(green); button.setCornerRadius(dp(10));
+        GradientDrawable button = new GradientDrawable(); button.setColor(green()); button.setCornerRadius(dp(10));
         download.setBackground(button);
         download.setOnClickListener(v -> {
             String slug = app.optString("slug");
@@ -156,8 +203,11 @@ public class MainActivity extends Activity {
             startActivity(intent);
         });
         page.addView(download); gap(page, 18);
-        page.addView(label("Android will ask you to confirm installation after the APK downloads.", 14, muted, false));
+        page.addView(label("Android will ask you to confirm installation after the APK downloads.", 14, muted(), false));
     }
     @Override public void onBackPressed() { showCatalog(); }
-    @Override protected void onDestroy() { worker.shutdownNow(); super.onDestroy(); }
+    @Override protected void onDestroy() {
+        if (pendingSearch != null) handler.removeCallbacks(pendingSearch);
+        worker.shutdownNow(); super.onDestroy();
+    }
 }
