@@ -1,4 +1,5 @@
 import { adminDatabase, requireOwner } from '../../../../../../lib/admin/server';
+import { dispatchInspection } from '../../../../../../lib/admin/dispatch-inspection';
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -11,12 +12,16 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (error || !object || Number(object.size) !== Number(candidate.byte_size)) return Response.json({ error: 'Uploaded file missing or size mismatch' }, { status: 409 });
     const { error: updateError } = await db.from('upload_candidates').update({ status: 'uploaded' }).eq('id', id).eq('status', 'uploading');
     if (updateError) throw updateError;
-    const token = process.env.GITHUB_DISPATCH_TOKEN;
-    const repository = process.env.GITHUB_REPOSITORY || 'mazharmnzoor4227-beep/APK-STORE';
-    if (!token) return Response.json({ status: 'uploaded', inspection: 'waiting-for-configuration' }, { status: 202 });
-    const dispatch = await fetch(`https://api.github.com/repos/${repository}/dispatches`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json', 'X-GitHub-Api-Version': '2022-11-28' }, body: JSON.stringify({ event_type: 'inspect-apk', client_payload: { candidateId: id, objectKey: candidate.object_key } }) });
-    if (!dispatch.ok) throw new Error('Could not queue APK inspection');
-    return Response.json({ status: 'uploaded', inspection: 'queued' }, { status: 202 });
+    try {
+      const queued = await dispatchInspection(id, candidate.object_key);
+      if (!queued) {
+        await db.from('upload_candidates').update({ error: 'Inspection service is not configured yet' }).eq('id', id).eq('owner_id', ownerId);
+      }
+      return Response.json({ status: 'uploaded', inspection: queued ? 'queued' : 'waiting-for-configuration' }, { status: 202 });
+    } catch (error) {
+      await db.from('upload_candidates').update({ error: 'Inspection could not be queued; retry from the review panel' }).eq('id', id).eq('owner_id', ownerId);
+      throw error;
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Upload completion failed';
     return Response.json({ error: message }, { status: message.includes('authorization') ? 401 : 500 });
