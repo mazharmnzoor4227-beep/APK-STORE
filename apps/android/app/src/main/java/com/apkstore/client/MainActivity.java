@@ -109,6 +109,7 @@ public class MainActivity extends Activity {
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 if (pendingSearch != null) handler.removeCallbacks(pendingSearch);
                 String value = s.toString();
+                activeCategory = "";
                 pendingSearch = () -> load(value);
                 handler.postDelayed(pendingSearch, 250);
             }
