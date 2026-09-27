@@ -1,4 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.58.0';
+import { S3Client, GetObjectCommand } from 'npm:@aws-sdk/client-s3@3.901.0';
+import { getSignedUrl } from 'npm:@aws-sdk/s3-request-presigner@3.901.0';
 
 const url = Deno.env.get('SUPABASE_URL')!;
 const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -18,6 +20,16 @@ Deno.serve(async (request) => {
       return new Response('Download temporarily unavailable', { status: 503 });
     }
     return Response.redirect(asset, 302);
+  }
+  if (release.storage_key.startsWith('r2/')) {
+    const account = Deno.env.get('R2_ACCOUNT_ID');
+    const key = Deno.env.get('R2_ACCESS_KEY_ID');
+    const secretKey = Deno.env.get('R2_SECRET_ACCESS_KEY');
+    const bucket = Deno.env.get('R2_BUCKET');
+    if (!account || !key || !secretKey || !bucket) return new Response('Download temporarily unavailable', { status: 503 });
+    const r2 = new S3Client({ region: 'auto', endpoint: `https://${account}.r2.cloudflarestorage.com`, credentials: { accessKeyId: key, secretAccessKey: secretKey } });
+    const signedUrl = await getSignedUrl(r2, new GetObjectCommand({ Bucket: bucket, Key: release.storage_key, ResponseContentDisposition: `attachment; filename="${release.package_id}.apk"` }), { expiresIn: 3600 });
+    return Response.redirect(signedUrl, 302);
   }
   const { data, error } = await db.storage.from('apk-files').createSignedUrl(release.storage_key, 60, { download: `${release.package_id}.apk` });
   if (error || !data) return new Response('Download temporarily unavailable', { status: 503 });
