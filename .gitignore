@@ -2,6 +2,7 @@
 .superpowers/
 node_modules/
 .next/
+apps/static/dist/
 test-results/
 playwright-report/
 apps/web/*.tsbuildinfo
