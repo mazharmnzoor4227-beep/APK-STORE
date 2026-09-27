@@ -1,0 +1,17 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.apkstore.client'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.apkstore.client'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '0.1.0'
+        buildConfigField 'String', 'SUPABASE_URL', '"https://qfbfxencwsgryoczkdyj.supabase.co"'
+        buildConfigField 'String', 'SUPABASE_KEY', '"' + (project.findProperty('supabasePublishableKey') ?: '') + '"'
+    }
+    buildFeatures { buildConfig true }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
