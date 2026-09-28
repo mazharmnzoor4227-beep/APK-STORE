@@ -25,6 +25,7 @@ import android.provider.Settings;
 import android.animation.ValueAnimator;
 import android.util.LruCache;
 import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
@@ -299,7 +300,8 @@ public class MainActivity extends Activity {
         }
         item.addView(icon);
         space(item, 3);
-        TextView caption = text(title, 13, target == tab ? green() : muted(), target == tab);
+        int badge = target == UPDATES ? pendingUpdates().length() : 0;
+        TextView caption = text(badge > 0 ? title + "  " + badge : title, 13, target == tab ? green() : muted(), target == tab);
         caption.setGravity(Gravity.CENTER); item.addView(caption);
         item.setOnClickListener(v -> { if (target != tab) { item.animate().scaleX(.93f).scaleY(.93f).setDuration(90).withEndAction(() -> showTab(target)).start(); } });
         nav.addView(item, new LinearLayout.LayoutParams(0, -1, 1));
@@ -317,10 +319,14 @@ public class MainActivity extends Activity {
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 query = s.toString();
                 if (pendingSearch != null) handler.removeCallbacks(pendingSearch);
-                pendingSearch = () -> { render(); if (!query.trim().isEmpty()) saveRecentSearch(query.trim()); };
+                pendingSearch = () -> render();
                 handler.postDelayed(pendingSearch, 250);
             }
             public void afterTextChanged(Editable e) {}
+        });
+        searchBox.setOnEditorActionListener((view, actionId, event) -> {
+            if (!query.trim().isEmpty()) saveRecentSearch(query.trim());
+            return false;
         });
     }
     private void load() {
@@ -550,7 +556,7 @@ public class MainActivity extends Activity {
             if ("Downloading".equals(status)) status += " " + downloadProgress.getOrDefault(slug, attempt.optInt("progress")) + "%";
             labels.addView(text(status + " · " + android.text.format.DateFormat.format("dd MMM yyyy", attempt.optLong("time")), 12, muted(), false));
             if (!attempt.optString("error").isEmpty()) labels.addView(text(attempt.optString("error"), 12, muted(), false));
-            row.addView(labels); row.setMinHeight(dp(72)); page.addView(row);
+            row.addView(labels); row.setMinimumHeight(dp(72)); page.addView(row);
         }
     }
     private void sectionTitle(String title, Runnable more) {
@@ -645,21 +651,31 @@ public class MainActivity extends Activity {
             return;
         }
         if (tab == SEARCH && query.trim().isEmpty()) {
-            LinkedHashSet<String> names = new LinkedHashSet<>(); names.add("All");
-            for (int i = 0; i < apps.length(); i++) names.add(apps.optJSONObject(i).optString("category"));
-            HorizontalScrollView scroller = new HorizontalScrollView(this);
-            scroller.setHorizontalScrollBarEnabled(false);
-            LinearLayout row = new LinearLayout(this);
+            LinkedHashSet<String> names = new LinkedHashSet<>(java.util.Arrays.asList(
+                    "All", "AI agents", "Android Auto", "Android TV", "Audio", "Automation", "Communication",
+                    "Customization", "Development utilities", "Display management", "Entertainment", "File management",
+                    "Games", "Input methods", "Installer & app stores", "Miscellaneous", "Network", "Patching",
+                    "Power management", "Privacy", "Productivity", "Quick settings", "Shizuku implementations",
+                    "Software management", "Task manager"));
+            LinearLayout rows = vertical();
+            LinearLayout row = new LinearLayout(this); rows.addView(row);
+            int width = 0;
             for (String name : names) {
                 boolean selected = name.equals(activeCategory.isEmpty() ? "All" : activeCategory);
-                TextView chip = text(name, 12, selected ? bg() : ink(), true);
+                TextView chip = text("◈  " + name, 12, selected ? bg() : ink(), true);
                 chip.setPadding(dp(13), dp(8), dp(13), dp(8));
                 chip.setBackground(shape(selected ? green() : raised(), 16));
+                int approximate = Math.min(250, 42 + name.length() * 8);
+                int screen = Math.round(getResources().getDisplayMetrics().widthPixels / getResources().getDisplayMetrics().density) - 32;
+                if (width > 0 && width + approximate > screen) {
+                    row = new LinearLayout(this); rows.addView(row); width = 0;
+                }
+                width += approximate + 8;
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
-                lp.setMargins(0, 0, dp(8), 0); row.addView(chip, lp);
+                lp.setMargins(0, 0, dp(8), dp(8)); row.addView(chip, lp);
                 chip.setOnClickListener(v -> { activeCategory = name.equals("All") ? "" : name; render(); });
             }
-            scroller.addView(row); body.addView(scroller); space(body, 13);
+            body.addView(rows); space(body, 13);
         }
         int limit = compact ? Math.min(6, apps.length()) : apps.length();
         for (int i = 0; i < limit; i++) {
@@ -960,6 +976,22 @@ public class MainActivity extends Activity {
         space(page, 20);
         expandable(page, "More about this app", app.optString("description"));
         if (release != null) expandable(page, "Changelog", release.optString("changelog", release.optString("release_notes")));
+        JSONArray screenshots = app.optJSONArray("screenshots");
+        if (screenshots != null && screenshots.length() > 0) {
+            page.addView(text("Screenshots", 19, ink(), true));
+            HorizontalScrollView strip = new HorizontalScrollView(this);
+            LinearLayout tiles = new LinearLayout(this);
+            for (int i = 0; i < screenshots.length(); i++) {
+                String url = screenshots.optString(i);
+                if (!trustedImage(url)) continue;
+                ImageView preview = remoteImage(url);
+                preview.setContentDescription("Screenshot " + (i + 1) + " of " + app.optString("title"));
+                preview.setOnClickListener(v -> showScreenshot(url));
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(140), dp(240));
+                lp.setMargins(0, dp(12), dp(12), dp(18)); tiles.addView(preview, lp);
+            }
+            strip.addView(tiles); page.addView(strip);
+        }
         if (!app.optString("source_url").isEmpty())
             informationLink(page, "Source code", app.optString("source_url"), () -> openLink(app.optString("source_url")));
         if (release != null) expandable(page, "Permissions", release.optJSONArray("permissions") == null ? "Not supplied" : release.optJSONArray("permissions").toString());
@@ -994,6 +1026,43 @@ public class MainActivity extends Activity {
         detail.setVisibility(View.GONE); detail.setPadding(0, dp(8), 0, dp(20));
         header.setOnClickListener(v -> detail.setVisibility(detail.getVisibility() == View.GONE ? View.VISIBLE : View.GONE));
         page.addView(header); page.addView(detail);
+    }
+    private boolean trustedImage(String url) {
+        return url.startsWith(BuildConfig.SUPABASE_URL + "/storage/v1/object/public/app-icons/") ||
+                (url.startsWith("https://apk-store-mazhar.mazharmanzoor4117.chatgpt.site/") && url.endsWith(".png"));
+    }
+    private ImageView remoteImage(String url) {
+        ImageView image = new ImageView(this); image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        image.setBackground(shape(surface(), 12));
+        iconWorker.execute(() -> {
+            try {
+                HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+                connection.setConnectTimeout(8000); connection.setReadTimeout(8000);
+                if (connection.getResponseCode() != 200 || connection.getContentLengthLong() > 5000000) return;
+                Bitmap bitmap;
+                try (InputStream stream = connection.getInputStream()) { bitmap = BitmapFactory.decodeStream(stream); }
+                if (bitmap != null) handler.post(() -> image.setImageBitmap(bitmap));
+                connection.disconnect();
+            } catch (Exception ignored) { }
+        });
+        return image;
+    }
+    private void showScreenshot(String url) {
+        Dialog viewer = new Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        ImageView image = remoteImage(url);
+        ScaleGestureDetector detector = new ScaleGestureDetector(this, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            @Override public boolean onScale(ScaleGestureDetector gesture) {
+                float scale = Math.max(1f, Math.min(4f, image.getScaleX() * gesture.getScaleFactor()));
+                image.setScaleX(scale); image.setScaleY(scale); return true;
+            }
+        });
+        image.setOnTouchListener((view, event) -> { detector.onTouchEvent(event); return true; });
+        FrameLayout frame = new FrameLayout(this);
+        frame.addView(image, new FrameLayout.LayoutParams(-1, -1));
+        TextView close = action("×", "Close screenshot");
+        close.setOnClickListener(v -> viewer.dismiss());
+        frame.addView(close, new FrameLayout.LayoutParams(dp(56), dp(56), Gravity.TOP | Gravity.END));
+        viewer.setContentView(frame); viewer.show();
     }
     private void refreshDetail() {
         if (detailApp == null || detailPrimary == null) return;

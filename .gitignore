@@ -9,3 +9,13 @@ apps/web/*.tsbuildinfo
 supabase/.temp/
 .env*
 !**/.env.example
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.apk
+*.aab
+**/local.properties
+**/build/
+release-signing/
+*signing-password*
