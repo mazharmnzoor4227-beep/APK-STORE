@@ -90,6 +90,7 @@ public class MainActivity extends Activity {
     private final HashMap<String, Integer> downloadProgress = new HashMap<>();
     private final HashMap<String, String> downloadSizes = new HashMap<>();
     private final HashMap<String, String> downloadErrors = new HashMap<>();
+    private Typeface symbolTypeface;
     private final java.util.HashSet<String> previousHomeSlugs = new java.util.HashSet<>();
     private final long randomOrderSeed = new java.security.SecureRandom().nextLong();
 
@@ -210,18 +211,52 @@ public class MainActivity extends Activity {
         return new LinearLayout.LayoutParams(0, -2, 1);
     }
     private TextView action(String glyph, String description) {
-        TextView t = text(glyph, 23, ink(), false);
+        String key = iconName(glyph);
+        TextView t = symbol(key.isEmpty() ? glyph : key, 24, ink());
         t.setGravity(Gravity.CENTER); t.setContentDescription(description);
-        int icon = iconResource(glyph);
-        if (icon != 0) {
-            android.graphics.drawable.Drawable drawable = getDrawable(icon);
-            drawable.setTint(ink()); drawable.setBounds(0, 0, dp(24), dp(24));
-            t.setText(""); t.setCompoundDrawables(null, null, drawable, null);
-            t.setCompoundDrawablePadding(0);
-            // A spacer balances the right drawable so the icon stays centered.
-            t.setPadding(0, 0, dp(12), 0);
-        }
         return t;
+    }
+    private TextView symbol(String key, int size, int color) {
+        int codepoint = MaterialSymbols.codepoint(key);
+        TextView view = text(codepoint == 0 ? key : new String(Character.toChars(codepoint)), size, color, false);
+        if (codepoint != 0) {
+            if (symbolTypeface == null) symbolTypeface = Typeface.createFromAsset(getAssets(), "material_symbols_rounded.ttf");
+            view.setTypeface(symbolTypeface);
+        }
+        view.setGravity(Gravity.CENTER);
+        return view;
+    }
+    private String iconName(String glyph) {
+        switch (glyph) {
+            case "⌕": return "search"; case "⚙": return "settings";
+            case "‹": return "arrow_back"; case "›": return "chevron_right";
+            case "♥": case "♡": return "favorite";
+            case "↗": return "share"; case "⋮": return "more_vert";
+            case "×": return "close"; case "▦": case "▣": return "apps";
+            case "⊘": return "cancel"; case "ⓘ": return "info";
+            case "◷": return "download";
+            default: return "";
+        }
+    }
+    private String categoryIcon(String category) {
+        switch (category) {
+            case "All": return "done_all"; case "AI agents": return "smart_toy";
+            case "Android Auto": return "directions_car"; case "Android TV": return "tv";
+            case "Audio": return "graphic_eq"; case "Automation": return "bolt";
+            case "Communication": return "chat_bubble"; case "Customization": return "palette";
+            case "Development utilities": return "code"; case "Device owner (DPM)": return "admin_panel_settings";
+            case "Display management": return "desktop_windows"; case "Entertainment": return "movie";
+            case "File management": return "folder"; case "Games": return "sports_esports";
+            case "Input methods": return "keyboard"; case "Installer & app stores": return "store";
+            case "Miscellaneous": return "category"; case "Network": return "wifi";
+            case "Patching": return "build"; case "Power management": return "battery_full";
+            case "Privacy": return "lock"; case "Productivity": return "task_alt";
+            case "Quick settings": return "tune"; case "Shizuku implementations": return "extension";
+            case "Software management": return "settings_applications"; case "Task manager": return "list_alt";
+            case "Terminals": return "terminal";
+            case "Google Pixel": case "MIUI": case "Other": case "Samsung OneUI": return "smartphone";
+            default: return "category";
+        }
     }
     private int iconResource(String glyph) {
         switch (glyph) {
@@ -332,15 +367,7 @@ public class MainActivity extends Activity {
     }
     private void addNav(LinearLayout nav, String glyph, String title, int target) {
         LinearLayout item = vertical(); item.setGravity(Gravity.CENTER);
-        TextView icon = text(glyph, 26, target == tab ? green() : muted(), false);
-        icon.setGravity(Gravity.CENTER);
-        int symbol = iconResource(glyph);
-        if (symbol != 0) {
-            android.graphics.drawable.Drawable drawable = getDrawable(symbol);
-            drawable.setTint(target == tab ? green() : muted()); drawable.setBounds(0, 0, dp(24), dp(24));
-            icon.setText(""); icon.setCompoundDrawables(null, null, drawable, null);
-            icon.setPadding(0, 0, dp(12), 0);
-        }
+        TextView icon = symbol(iconName(glyph), 26, target == tab ? green() : muted());
         if (target == tab) {
             icon.setBackground(shape(raised(), 19));
             icon.setLayoutParams(new LinearLayout.LayoutParams(dp(72), dp(36)));
@@ -770,9 +797,12 @@ public class MainActivity extends Activity {
             int width = 0;
             for (String name : names) {
                 boolean selected = name.equals(activeCategory.isEmpty() ? "All" : activeCategory);
-                TextView chip = text(name, 12, selected ? bg() : ink(), true);
-                chip.setPadding(dp(13), dp(8), dp(13), dp(8));
-                chip.setMinHeight(dp(48)); chip.setGravity(Gravity.CENTER_VERTICAL);
+                LinearLayout chip = new LinearLayout(this); chip.setGravity(Gravity.CENTER_VERTICAL);
+                chip.setPadding(dp(10), dp(8), dp(13), dp(8));
+                chip.setMinimumHeight(dp(48));
+                chip.addView(symbol(categoryIcon(name), 18, selected ? bg() : ink()), new LinearLayout.LayoutParams(dp(22), dp(22)));
+                TextView caption = text(name, 12, selected ? bg() : ink(), true);
+                caption.setPadding(dp(5), 0, 0, 0); chip.addView(caption);
                 chip.setBackground(shape(selected ? green() : raised(), 16));
                 int approximate = Math.min(250, 42 + name.length() * 8);
                 int screen = Math.round(getResources().getDisplayMetrics().widthPixels / getResources().getDisplayMetrics().density) - 32;
@@ -914,6 +944,8 @@ public class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this); LinearLayout list = vertical();
         for (String choice : choices) {
             LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setMinimumHeight(dp(52));
+            if ("Filter by category".equals(title))
+                row.addView(symbol(categoryIcon(choice), 24, ink()), new LinearLayout.LayoutParams(dp(40), dp(48)));
             row.addView(text(choice, 15, ink(), false), weight());
             if (choice.equals(selected)) row.addView(text("✓", 19, green(), true));
             row.setOnClickListener(v -> { sheet.dismiss(); onChoose.accept(choice); }); list.addView(row);
@@ -1153,6 +1185,7 @@ public class MainActivity extends Activity {
         back.setOnClickListener(v -> { detailApp = null; showTab(tab); }); top.addView(back, weight());
         TextView heart = action(isFavorite(app) ? "♥" : "♡", "Toggle favorite");
         heart.setTextColor(isFavorite(app) ? green() : ink());
+        heart.setFontVariationSettings(isFavorite(app) ? "'FILL' 1" : "'FILL' 0");
         heart.setOnClickListener(v -> toggleFavorite(app));
         top.addView(heart, new LinearLayout.LayoutParams(dp(56), dp(52)));
         TextView share = action("↗", "Share app");
@@ -1289,11 +1322,23 @@ public class MainActivity extends Activity {
         if (downloads.containsKey(app.optString("slug"))) pollDownload(app.optString("slug"));
     }
     private void expandable(LinearLayout page, String title, String content) {
-        TextView header = text(title + "  ▾", 19, ink(), true); header.setMinHeight(dp(48));
+        LinearLayout header = new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setMinimumHeight(dp(56));
+        String key = title.startsWith("Changelog") ? "history" : title.startsWith("Permissions") ? "shield" :
+                title.startsWith("Sources") ? "inventory_2" : "info";
+        header.addView(symbol(key, 23, green()), new LinearLayout.LayoutParams(dp(40), dp(48)));
+        header.addView(text(title, 16, ink(), true), weight());
+        TextView chevron = symbol("expand_more", 22, muted());
+        header.addView(chevron, new LinearLayout.LayoutParams(dp(40), dp(48)));
         TextView detail = text(content.isEmpty() ? "No information supplied" : content, 15, muted(), false);
         if ("Changelog".equals(title) && !content.isEmpty()) io.noties.markwon.Markwon.create(this).setMarkdown(detail, content);
         detail.setVisibility(View.GONE); detail.setPadding(0, dp(8), 0, dp(20));
-        header.setOnClickListener(v -> detail.setVisibility(detail.getVisibility() == View.GONE ? View.VISIBLE : View.GONE));
+        header.setOnClickListener(v -> {
+            boolean expand = detail.getVisibility() == View.GONE;
+            detail.setVisibility(expand ? View.VISIBLE : View.GONE);
+            int codepoint = MaterialSymbols.codepoint(expand ? "expand_less" : "expand_more");
+            chevron.setText(new String(Character.toChars(codepoint)));
+        });
         page.addView(header); page.addView(detail);
     }
     private void detailChip(LinearLayout row, String value) {
