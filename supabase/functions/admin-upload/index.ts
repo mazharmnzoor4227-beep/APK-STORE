@@ -1,7 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.58.0';
 import { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand } from 'npm:@aws-sdk/client-s3@3.901.0';
 import { getSignedUrl } from 'npm:@aws-sdk/s3-request-presigner@3.901.0';
-import { parseApkUrl } from 'npm:simple-apk-parser@0.1.2';
+import { parseApkFile, parseApkUrl } from 'npm:simple-apk-parser@0.1.2';
 import { createHash } from 'node:crypto';
 
 const origin = 'https://apk-store-mazhar.mazharmanzoor4117.chatgpt.site';
@@ -86,7 +86,11 @@ Deno.serve(async (request) => {
         if (error || !data) throw error || new Error('File unavailable');
         signedUrl = data.signedUrl;
       }
-      const parsed = await parseApkUrl(signedUrl, { locale: 'en-US' });
+      // Supabase Storage does not need HTTP Range for smaller uploads. R2 Range
+      // keeps metadata parsing within the Edge Function memory budget.
+      const parsed = candidate.object_key.startsWith('r2/')
+        ? await parseApkUrl(signedUrl, { locale: 'en-US' })
+        : await parseApkFile(await (await fetch(signedUrl)).blob(), { locale: 'en-US' });
       const certificates = parsed.signatures.filter((s: { found: boolean; certificate?: { sha256?: string } }) => s.found && s.certificate?.sha256).map((s: { certificate: { sha256: string } }) => s.certificate.sha256.toLowerCase());
       if (!parsed.packageName || !Number.isSafeInteger(parsed.versionCode) || parsed.versionCode <= 0 || !certificates.length || new Set(certificates).size !== 1)
         return json({ error: 'APK package, version or signer could not be verified' }, 422);
@@ -123,6 +127,7 @@ Deno.serve(async (request) => {
     }
     return json({ error: 'Not found' }, 404);
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : 'Upload unavailable' }, 500);
+    const detail = error instanceof Error ? error.message : 'Upload unavailable';
+    return json({ error: detail.replace(/https?:\/\/[^\s]+/g, '[private APK URL]') }, 500);
   }
 });
