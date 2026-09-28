@@ -870,7 +870,7 @@ public class MainActivity extends Activity {
         for (int i = 0; i < source.length(); i++) {
             JSONObject app = source.optJSONObject(i);
             if (app == null || blacklisted(app) || (!listCategory.isEmpty() && !listCategory.equals(app.optString("category"))) ||
-                    (!"All".equals(listPrice) && !listPrice.equals(app.optString("price_type", "Free")))) continue;
+                    (!"All".equals(listPrice) && !listPrice.equals(app.optString("price_type")))) continue;
             String needle = listSearch.toLowerCase(java.util.Locale.ROOT);
             if (!needle.isEmpty() && !(app.optString("title") + " " + app.optString("description") + " " + app.optString("package_id"))
                     .toLowerCase(java.util.Locale.ROOT).contains(needle)) continue;
@@ -1150,18 +1150,23 @@ public class MainActivity extends Activity {
         root.addView(top);
         ScrollView scroll = new ScrollView(this); root.addView(scroll);
         LinearLayout page = vertical(); page.setPadding(dp(20), dp(22), dp(20), dp(30)); scroll.addView(page);
+        LinearLayout appHeader = new LinearLayout(this); appHeader.setGravity(Gravity.CENTER_VERTICAL);
         FrameLayout iconFrame = new FrameLayout(this);
         detailIconContainer = new FrameLayout(this);
         detailIconContainer.setBackground(shape(surface(), 16));
         detailIconContainer.setClipToOutline(true);
-        detailIconContainer.addView(icon(app, 104), new FrameLayout.LayoutParams(-1, -1));
-        iconFrame.addView(detailIconContainer, new FrameLayout.LayoutParams(dp(104), dp(104), Gravity.CENTER));
+        detailIconContainer.addView(icon(app, 72), new FrameLayout.LayoutParams(-1, -1));
+        iconFrame.addView(detailIconContainer, new FrameLayout.LayoutParams(dp(72), dp(72), Gravity.CENTER));
         detailRing = new ProgressRing();
-        iconFrame.addView(detailRing, new FrameLayout.LayoutParams(dp(114), dp(114), Gravity.CENTER));
-        page.addView(iconFrame, new LinearLayout.LayoutParams(dp(114), dp(114)));
-        space(page, 17);
-        page.addView(text(app.optString("title"), 30, ink(), true)); space(page, 6);
-        page.addView(text(app.optString("github_owner", "Developer") + "  ·  " + app.optString("package_id"), 12, muted(), false));
+        iconFrame.addView(detailRing, new FrameLayout.LayoutParams(dp(84), dp(84), Gravity.CENTER));
+        appHeader.addView(iconFrame, new LinearLayout.LayoutParams(dp(84), dp(84)));
+        LinearLayout identity = vertical(); identity.setPadding(dp(12), 0, 0, 0);
+        TextView appName = text(app.optString("title"), 22, ink(), true);
+        appName.setMaxLines(2); identity.addView(appName);
+        identity.addView(text(app.optString("github_owner", "Developer"), 14, green(), false));
+        JSONObject currentRelease = app.optJSONObject("release");
+        identity.addView(text((currentRelease == null ? "" : currentRelease.optString("version_name") + " · ") + "GitHub", 12, muted(), false));
+        appHeader.addView(identity, weight()); page.addView(appHeader);
         space(page, 20);
         detailPercent = text("", 13, green(), true); page.addView(detailPercent);
         detailStatus = text("", 12, muted(), false); page.addView(detailStatus); space(page, 9);
@@ -1180,15 +1185,23 @@ public class MainActivity extends Activity {
         detailSecondary = text("", 14, ink(), true);
         detailSecondary.setGravity(Gravity.CENTER); detailSecondary.setPadding(dp(12), dp(15), dp(12), dp(15));
         actions.addView(detailSecondary, new LinearLayout.LayoutParams(0, -2, 1));
-        page.addView(actions); space(page, 24);
+        page.addView(actions);
+        TextView installNote = text("Android will ask you to confirm installation. Updates require the original signing certificate.", 12, muted(), false);
+        installNote.setPadding(0, dp(8), 0, 0); page.addView(installNote);
+        space(page, 24);
         JSONObject release = app.optJSONObject("release");
         String size = release == null ? "" : String.format(java.util.Locale.ROOT, "%.1f MB", release.optLong("byte_size") / 1048576.0);
-        String chips = "★ " + app.optInt("stars") + "  ·  " + app.optString("category") + "  ·  " + size;
+        HorizontalScrollView chipScroll = new HorizontalScrollView(this);
+        chipScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout chipRow = new LinearLayout(this);
+        detailChip(chipRow, "★ " + app.optInt("stars"));
+        if (!app.optString("category").isEmpty()) detailChip(chipRow, app.optString("category"));
+        if (!size.isEmpty()) detailChip(chipRow, size);
         int minSdk = app.optInt("min_sdk", 0);
-        if (minSdk > 0) chips += "  ·  Android " + minSdk + "+";
+        if (minSdk > 0) detailChip(chipRow, "Android " + minSdk + "+");
         String license = app.optString("license");
-        if (!license.isEmpty()) chips += "  ·  " + license;
-        page.addView(text(chips, 13, green(), false));
+        if (!license.isEmpty()) detailChip(chipRow, license);
+        chipScroll.addView(chipRow); page.addView(chipScroll);
         space(page, 20);
         expandable(page, "More about this app", app.optString("description"));
         if (release != null) expandable(page, "Changelog", release.optString("changelog", release.optString("release_notes")));
@@ -1223,7 +1236,6 @@ public class MainActivity extends Activity {
             expandable(page, "Sources", "github".equals(release.optString("source")) ?
                     "✓ GitHub release (via APK STORE download gateway)" : "✓ Supabase storage");
         }
-        page.addView(text("Android asks you to confirm installation. An update also needs the same signing certificate as the installed app.", 12, muted(), false));
         JSONArray suggested = new JSONArray();
         for (int i = 0; i < catalog.length() && suggested.length() < 8; i++) {
             JSONObject candidate = catalog.optJSONObject(i);
@@ -1255,6 +1267,13 @@ public class MainActivity extends Activity {
         detail.setVisibility(View.GONE); detail.setPadding(0, dp(8), 0, dp(20));
         header.setOnClickListener(v -> detail.setVisibility(detail.getVisibility() == View.GONE ? View.VISIBLE : View.GONE));
         page.addView(header); page.addView(detail);
+    }
+    private void detailChip(LinearLayout row, String value) {
+        TextView chip = text(value, 12, ink(), false);
+        chip.setGravity(Gravity.CENTER); chip.setPadding(dp(10), dp(5), dp(10), dp(5));
+        chip.setMinHeight(dp(32)); chip.setBackground(shape(raised(), 8));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(32));
+        lp.setMargins(0, 0, dp(8), 0); row.addView(chip, lp);
     }
     private boolean trustedImage(String url) {
         return url.startsWith(BuildConfig.SUPABASE_URL + "/storage/v1/object/public/app-screenshots/") ||
