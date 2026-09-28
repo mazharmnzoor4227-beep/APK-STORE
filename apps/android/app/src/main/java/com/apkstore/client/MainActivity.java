@@ -209,7 +209,32 @@ public class MainActivity extends Activity {
     private TextView action(String glyph, String description) {
         TextView t = text(glyph, 23, ink(), false);
         t.setGravity(Gravity.CENTER); t.setContentDescription(description);
+        int icon = iconResource(glyph);
+        if (icon != 0) {
+            android.graphics.drawable.Drawable drawable = getDrawable(icon);
+            drawable.setTint(ink()); drawable.setBounds(0, 0, dp(24), dp(24));
+            t.setText(""); t.setCompoundDrawables(null, null, drawable, null);
+            t.setCompoundDrawablePadding(0);
+            // A spacer balances the right drawable so the icon stays centered.
+            t.setPadding(0, 0, dp(12), 0);
+        }
         return t;
+    }
+    private int iconResource(String glyph) {
+        switch (glyph) {
+            case "⌕": return R.drawable.ic_search;
+            case "⚙": return R.drawable.ic_settings;
+            case "‹": return R.drawable.ic_back;
+            case "›": return R.drawable.ic_chevron;
+            case "♥": return R.drawable.ic_favorite;
+            case "♡": return R.drawable.ic_favorite_border;
+            case "↗": return R.drawable.ic_share;
+            case "⋮": return R.drawable.ic_more;
+            case "×": return R.drawable.ic_close;
+            case "▦": return R.drawable.ic_apps;
+            case "◷": return R.drawable.ic_download;
+            default: return 0;
+        }
     }
     private void tap(View view, Runnable next) {
         if (!ValueAnimator.areAnimatorsEnabled()) { next.run(); return; }
@@ -303,6 +328,13 @@ public class MainActivity extends Activity {
         LinearLayout item = vertical(); item.setGravity(Gravity.CENTER);
         TextView icon = text(glyph, 26, target == tab ? green() : muted(), false);
         icon.setGravity(Gravity.CENTER);
+        int symbol = iconResource(glyph);
+        if (symbol != 0) {
+            android.graphics.drawable.Drawable drawable = getDrawable(symbol);
+            drawable.setTint(target == tab ? green() : muted()); drawable.setBounds(0, 0, dp(24), dp(24));
+            icon.setText(""); icon.setCompoundDrawables(null, null, drawable, null);
+            icon.setPadding(0, 0, dp(12), 0);
+        }
         if (target == tab) {
             icon.setBackground(shape(raised(), 19));
             icon.setLayoutParams(new LinearLayout.LayoutParams(dp(72), dp(36)));
@@ -597,7 +629,7 @@ public class MainActivity extends Activity {
         LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
         row.addView(text(title, 17, ink(), true), weight());
         if (more != null) {
-            TextView arrow = text("›", 26, muted(), false);
+            TextView arrow = action("›", "View all " + title);
             arrow.setGravity(Gravity.CENTER); arrow.setContentDescription("View all " + title);
             arrow.setOnClickListener(v -> more.run());
             row.addView(arrow, new LinearLayout.LayoutParams(dp(40), dp(36)));
@@ -1036,7 +1068,7 @@ public class MainActivity extends Activity {
         LinearLayout root = vertical(); root.setBackgroundColor(bg());
         applySafeArea(root); setContentView(root); root.requestApplyInsets();
         LinearLayout top = new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL);
-        TextView back = text("‹  Back", 17, ink(), false);
+        TextView back = action("‹", "Back to Apps");
         back.setPadding(dp(16), dp(16), dp(16), dp(16));
         back.setOnClickListener(v -> { detailApp = null; showTab(tab); }); top.addView(back, weight());
         TextView heart = action(isFavorite(app) ? "♥" : "♡", "Toggle favorite");
