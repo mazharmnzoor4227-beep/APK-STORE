@@ -32,3 +32,21 @@ The release's `apk_sha256` and `byte_size` are the canonical hash and size field
 4. For an update, increment `version_code` and retain the same package ID and signing certificate. Check the Android update list and install flow on a device.
 
 The repository has no signing material. See `docs/superpowers/plans/2026-09-28-apk-store-upgrade.md` for the upgrade milestones and remaining work.
+
+### Add or reorder app screenshots
+
+In Supabase Studio, open Storage → `app-screenshots` and upload WebP images to
+`<slug>/1.webp`, `<slug>/2.webp`, etc. Resize each image to at most 1080 px wide
+and keep it below 300 KB. The bucket is public for reading; upload access is
+restricted to project operators. Copy the public URLs, then in Table Editor →
+`apps` → your app set `screenshots` to the ordered `text[]` of URLs. For example:
+
+```sql
+update public.apps set screenshots = array[
+  'https://qfbfxencwsgryoczkdyj.supabase.co/storage/v1/object/public/app-screenshots/example/1.webp',
+  'https://qfbfxencwsgryoczkdyj.supabase.co/storage/v1/object/public/app-screenshots/example/2.webp'
+] where slug = 'example';
+```
+
+Only publish screenshots you are allowed to redistribute. The app reads the
+array in order after the next catalog refresh; no APK rebuild is needed.
