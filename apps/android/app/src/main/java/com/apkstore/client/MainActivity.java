@@ -69,6 +69,7 @@ public class MainActivity extends Activity {
     private JSONArray catalog = new JSONArray();
     private CatalogRepository repository;
     private DownloadStore history;
+    private SettingsStore settingsStore;
     private final HashMap<String, Long> releaseVersions = new HashMap<>();
     private LinearLayout body;
     private EditText searchBox;
@@ -111,7 +112,8 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        String theme = getPreferences(0).getString("theme", "system");
+        settingsStore = new SettingsStore(this);
+        String theme = settingsStore.theme();
         light = "light".equals(theme) || ("system".equals(theme) &&
                 (getResources().getConfiguration().uiMode & 0x30) == 0x10);
         repository = new CatalogRepository(this);
@@ -141,7 +143,7 @@ public class MainActivity extends Activity {
         scheduleUpdates();
     }
     private void scheduleUpdates() {
-        int hours = getPreferences(0).getInt("update_hours", 12);
+        int hours = settingsStore.updateHours();
         PeriodicWorkRequest request = new PeriodicWorkRequest.Builder(UpdateCheckWorker.class, hours, TimeUnit.HOURS).build();
         WorkManager.getInstance(this).enqueueUniquePeriodicWork("catalog-update-check", ExistingPeriodicWorkPolicy.UPDATE, request);
     }
@@ -409,8 +411,8 @@ public class MainActivity extends Activity {
         long installed = installedVersion(packageId);
         Long latest = releaseVersions.get(packageId);
         return latest != null && UpdateLogic.available(installed, latest,
-                getPreferences(0).getStringSet("ignored", java.util.Collections.emptySet()).contains(app.optString("slug")),
-                getPreferences(0).getStringSet("blacklist", java.util.Collections.emptySet()).contains(app.optString("slug")));
+                settingsStore.contains("ignored", app.optString("slug")),
+                settingsStore.contains("blacklist", app.optString("slug")));
     }
     private JSONArray pendingUpdates() {
         JSONArray apps = new JSONArray();
@@ -471,16 +473,16 @@ public class MainActivity extends Activity {
         return found;
     }
     private boolean isFavorite(JSONObject app) {
-        return getPreferences(0).getStringSet("favorites", java.util.Collections.emptySet()).contains(app.optString("slug"));
+        return settingsStore.contains("favorites", app.optString("slug"));
     }
     private boolean blacklisted(JSONObject app) {
-        return getPreferences(0).getStringSet("blacklist", java.util.Collections.emptySet()).contains(app.optString("slug"));
+        return settingsStore.contains("blacklist", app.optString("slug"));
     }
     private void toggleFavorite(JSONObject app) {
-        java.util.Set<String> saved = new java.util.HashSet<>(getPreferences(0).getStringSet("favorites", java.util.Collections.emptySet()));
+        java.util.Set<String> saved = settingsStore.entries("favorites");
         String slug = app.optString("slug");
         if (!saved.add(slug)) saved.remove(slug);
-        getPreferences(0).edit().putStringSet("favorites", saved).apply();
+        settingsStore.setEntries("favorites", saved);
         showDetail(app);
     }
     private JSONArray favoriteApps() {
@@ -556,7 +558,17 @@ public class MainActivity extends Activity {
             if ("Downloading".equals(status)) status += " " + downloadProgress.getOrDefault(slug, attempt.optInt("progress")) + "%";
             labels.addView(text(status + " · " + android.text.format.DateFormat.format("dd MMM yyyy", attempt.optLong("time")), 12, muted(), false));
             if (!attempt.optString("error").isEmpty()) labels.addView(text(attempt.optString("error"), 12, muted(), false));
-            row.addView(labels); row.setMinimumHeight(dp(72)); page.addView(row);
+            row.addView(labels); row.setMinimumHeight(dp(72));
+            if ("Failed".equals(attempt.optString("status")) || "Cancelled".equals(attempt.optString("status"))) {
+                row.setContentDescription(attempt.optString("title") + ", " + attempt.optString("status") + ", tap to retry");
+                row.setOnClickListener(v -> {
+                    for (int j = 0; j < catalog.length(); j++) {
+                        JSONObject app = catalog.optJSONObject(j);
+                        if (app != null && slug.equals(app.optString("slug"))) { startDownload(app); showDownloads(); break; }
+                    }
+                });
+            }
+            page.addView(row);
         }
     }
     private void sectionTitle(String title, Runnable more) {
@@ -785,13 +797,13 @@ public class MainActivity extends Activity {
     }
     private void showSavedApps(String title, String key) {
         LinearLayout page = informationPage(title, () -> showTab(tab));
-        java.util.Set<String> saved = getPreferences(0).getStringSet(key, java.util.Collections.emptySet());
+        java.util.Set<String> saved = settingsStore.entries(key);
         if (saved.isEmpty()) page.addView(text("No apps here", 15, muted(), false));
         for (String slug : saved) {
             TextView row = text(slug + "   Remove", 16, ink(), false);
             row.setMinHeight(dp(56)); row.setOnClickListener(v -> {
                 java.util.Set<String> updated = new java.util.HashSet<>(saved);
-                updated.remove(slug); getPreferences(0).edit().putStringSet(key, updated).apply();
+                updated.remove(slug); settingsStore.setEntries(key, updated);
                 showSavedApps(title, key);
             }); page.addView(row);
         }
@@ -800,13 +812,13 @@ public class MainActivity extends Activity {
         LinearLayout page = informationPage("Settings", () -> showTab(tab));
         informationLink(page, "Theme", light ? "Light" : "Dark", () -> new AlertDialog.Builder(this)
                 .setItems(new String[]{"System", "Dark", "Light"}, (dialog, which) -> {
-                    getPreferences(0).edit().putString("theme", new String[]{"system", "dark", "light"}[which]).apply();
+                    settingsStore.setTheme(new String[]{"system", "dark", "light"}[which]);
                     light = which == 2 || (which == 0 && (getResources().getConfiguration().uiMode & 0x30) == 0x10);
                     showSettings();
                 }).show());
         informationLink(page, "Update check interval", "Every 6 or 12 hours", () -> new AlertDialog.Builder(this)
                 .setItems(new String[]{"6 hours", "12 hours"}, (dialog, which) -> {
-                    getPreferences(0).edit().putInt("update_hours", which == 0 ? 6 : 12).apply(); scheduleUpdates(); showSettings();
+                    settingsStore.setUpdateHours(which == 0 ? 6 : 12); scheduleUpdates(); showSettings();
                 }).show());
         informationLink(page, "Clear catalog cache", "Reload listings from the network", () -> {
             new File(getFilesDir(), "catalog.json").delete(); load(); showSettings();
@@ -933,8 +945,8 @@ public class MainActivity extends Activity {
                 if (url.startsWith("https://github.com/")) openLink(url);
             } else {
                 String key = which == 0 ? "blacklist" : "ignored";
-                java.util.Set<String> values = new java.util.HashSet<>(getPreferences(0).getStringSet(key, java.util.Collections.emptySet()));
-                values.add(app.optString("slug")); getPreferences(0).edit().putStringSet(key, values).apply();
+                java.util.Set<String> values = settingsStore.entries(key);
+                values.add(app.optString("slug")); settingsStore.setEntries(key, values);
                 if (which == 0) showTab(tab); else refreshDetail();
             }
         }).show());
