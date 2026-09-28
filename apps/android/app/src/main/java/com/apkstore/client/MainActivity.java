@@ -9,6 +9,11 @@ import android.content.Context;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
@@ -16,15 +21,19 @@ import android.database.Cursor;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
+import android.animation.ValueAnimator;
+import android.util.LruCache;
+import android.view.MotionEvent;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.ImageView;
+import android.widget.FrameLayout;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.animation.DecelerateInterpolator;
-import android.view.animation.TranslateAnimation;
 import android.widget.EditText;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
@@ -44,6 +53,8 @@ import java.util.concurrent.Executors;
 public class MainActivity extends Activity {
     private static final int APPS = 0, SEARCH = 1, UPDATES = 2, FAVORITES = 3;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
+    private final ExecutorService iconWorker = Executors.newFixedThreadPool(3);
+    private final LruCache<String, Bitmap> iconCache = new LruCache<>(32);
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean light;
     private int tab = APPS;
@@ -55,9 +66,32 @@ public class MainActivity extends Activity {
     private EditText searchBox;
     private Runnable pendingSearch;
     private boolean legalPage;
+    private boolean firstScreen = true;
     private final HashMap<String, Long> downloads = new HashMap<>();
     private final HashMap<String, Long> completedDownloads = new HashMap<>();
     private final HashMap<String, Runnable> downloadPolls = new HashMap<>();
+    private JSONObject detailApp;
+    private TextView detailPrimary, detailSecondary, detailPercent, detailStatus;
+    private ProgressRing detailRing;
+    private String pendingInstallSlug;
+    private String awaitingInstallerSlug;
+    private final HashMap<String, Integer> downloadProgress = new HashMap<>();
+    private final HashMap<String, String> downloadErrors = new HashMap<>();
+
+    private class ProgressRing extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private int percent;
+        ProgressRing() { super(MainActivity.this); }
+        void setProgress(int value) { percent = Math.max(0, Math.min(100, value)); invalidate(); }
+        @Override protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float stroke = dp(4), inset = stroke / 2 + dp(2);
+            RectF oval = new RectF(inset, inset, getWidth() - inset, getHeight() - inset);
+            paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(stroke); paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setColor(raised()); canvas.drawOval(oval, paint);
+            paint.setColor(green()); canvas.drawArc(oval, -90, 360f * percent / 100f, false, paint);
+        }
+    }
 
     private int bg() { return light ? Color.rgb(247, 250, 247) : Color.rgb(9, 12, 10); }
     private int surface() { return light ? Color.WHITE : Color.rgb(23, 27, 24); }
@@ -71,6 +105,26 @@ public class MainActivity extends Activity {
         super.onCreate(state);
         light = getPreferences(0).getBoolean("light", false);
         showTab(APPS);
+    }
+    @Override protected void onResume() {
+        super.onResume();
+        handler.post(() -> {
+            if (awaitingInstallerSlug != null) {
+                String slug = awaitingInstallerSlug;
+                awaitingInstallerSlug = null;
+                if (detailApp != null && slug.equals(detailApp.optString("slug"))) {
+                    boolean installed = installedVersion(detailApp.optString("package_id")) >= 0;
+                    if (installed) downloadErrors.remove(slug);
+                    else downloadErrors.put(slug, "Install was not completed. Tap Install to try again.");
+                }
+            }
+            if (detailApp != null) refreshDetail();
+            if (pendingInstallSlug != null && getPackageManager().canRequestPackageInstalls()) {
+                String slug = pendingInstallSlug;
+                pendingInstallSlug = null;
+                openDownloaded(slug);
+            }
+        });
     }
     private TextView text(String value, int size, int color, boolean bold) {
         TextView t = new TextView(this);
@@ -97,6 +151,13 @@ public class MainActivity extends Activity {
         t.setGravity(Gravity.CENTER); t.setContentDescription(description);
         return t;
     }
+    private void tap(View view, Runnable next) {
+        if (!ValueAnimator.areAnimatorsEnabled()) { next.run(); return; }
+        view.animate().scaleX(.9f).scaleY(.9f).setDuration(85).withEndAction(() -> {
+            view.animate().scaleX(1f).scaleY(1f).setDuration(160).start();
+            next.run();
+        }).start();
+    }
     private void applySafeArea(LinearLayout root) {
         root.setOnApplyWindowInsetsListener((view, insets) -> {
             int top, bottom;
@@ -112,6 +173,7 @@ public class MainActivity extends Activity {
         });
     }
     private void showTab(int selected) {
+        detailApp = null;
         legalPage = false;
         tab = selected;
         getWindow().setStatusBarColor(bg());
@@ -128,20 +190,20 @@ public class MainActivity extends Activity {
         TextView title = text(selected == APPS ? "Apps" : selected == SEARCH ? "Search" : selected == FAVORITES ? "Favorites" : "Updates", 20, ink(), false);
         header.addView(title, weight());
         TextView favorites = action("♡", "Favorites");
-        favorites.setOnClickListener(v -> showTab(FAVORITES));
+        favorites.setOnClickListener(v -> tap(v, () -> showTab(FAVORITES)));
         header.addView(favorites, new LinearLayout.LayoutParams(dp(46), dp(48)));
         TextView find = action("⌕", "Search apps");
-        find.setOnClickListener(v -> showTab(SEARCH));
+        find.setOnClickListener(v -> tap(v, () -> showTab(SEARCH)));
         header.addView(find, new LinearLayout.LayoutParams(dp(46), dp(48)));
         ImageView download = new ImageView(this);
         download.setImageResource(com.apkstore.client.R.drawable.ic_download);
         download.setColorFilter(ink());
         download.setPadding(dp(12), dp(12), dp(12), dp(12));
         download.setContentDescription("Latest releases");
-        download.setOnClickListener(v -> showTab(UPDATES));
+        download.setOnClickListener(v -> tap(v, () -> showTab(UPDATES)));
         header.addView(download, new LinearLayout.LayoutParams(dp(46), dp(48)));
         TextView settings = action("⚙", "Settings");
-        settings.setOnClickListener(v -> settings());
+        settings.setOnClickListener(v -> tap(v, this::settings));
         header.addView(settings, new LinearLayout.LayoutParams(dp(46), dp(48)));
         root.addView(header, new LinearLayout.LayoutParams(-1, dp(58)));
 
@@ -166,6 +228,14 @@ public class MainActivity extends Activity {
         }
         render();
         if (catalog.length() == 0) load();
+        if (!firstScreen && ValueAnimator.areAnimatorsEnabled()) {
+            header.setAlpha(0.65f); header.setTranslationY(-dp(8));
+            header.animate().alpha(1f).translationY(0).setDuration(220).setInterpolator(new DecelerateInterpolator()).start();
+            scroll.setAlpha(0f); scroll.setTranslationY(dp(12));
+            scroll.animate().alpha(1f).translationY(0).setDuration(280).setInterpolator(new DecelerateInterpolator()).start();
+            nav.setAlpha(0.85f); nav.animate().alpha(1f).setDuration(230).start();
+        }
+        firstScreen = false;
     }
     private void addNav(LinearLayout nav, String glyph, String title, int target) {
         LinearLayout item = vertical(); item.setGravity(Gravity.CENTER);
@@ -179,7 +249,7 @@ public class MainActivity extends Activity {
         space(item, 3);
         TextView caption = text(title, 13, target == tab ? green() : muted(), target == tab);
         caption.setGravity(Gravity.CENTER); item.addView(caption);
-        item.setOnClickListener(v -> { if (target != tab) showTab(target); });
+        item.setOnClickListener(v -> { if (target != tab) { item.animate().scaleX(.93f).scaleY(.93f).setDuration(90).withEndAction(() -> showTab(target)).start(); } });
         nav.addView(item, new LinearLayout.LayoutParams(0, -1, 1));
     }
     private void makeSearch() {
@@ -206,7 +276,7 @@ public class MainActivity extends Activity {
         worker.execute(() -> {
             try {
                 if (BuildConfig.SUPABASE_KEY.isEmpty()) throw new Exception("Catalog connection is not configured.");
-                String endpoint = BuildConfig.SUPABASE_URL + "/rest/v1/apps?select=id,slug,title,package_id,category,description,current_release_id,created_at,updated_at&visibility=eq.published&current_release_id=not.is.null&order=created_at.desc&limit=100";
+                String endpoint = BuildConfig.SUPABASE_URL + "/rest/v1/apps?select=id,slug,title,package_id,category,description,icon_url,current_release_id,created_at,updated_at&visibility=eq.published&current_release_id=not.is.null&order=created_at.desc&limit=100";
                 HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
                 connection.setConnectTimeout(12000); connection.setReadTimeout(12000);
                 connection.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
@@ -366,11 +436,36 @@ public class MainActivity extends Activity {
         }
         body.addView(row); space(body, 10);
     }
-    private TextView icon(JSONObject app, int size) {
+    private View icon(JSONObject app, int size) {
         String title = app.optString("title", "?");
-        TextView icon = text(title.isEmpty() ? "?" : title.substring(0, 1).toUpperCase(), size / 2, green(), true);
-        icon.setGravity(Gravity.CENTER); icon.setBackground(shape(raised(), 13));
-        return icon;
+        TextView fallback = text(title.isEmpty() ? "?" : title.substring(0, 1).toUpperCase(), size / 2, green(), true);
+        fallback.setGravity(Gravity.CENTER); fallback.setBackground(shape(raised(), 13));
+        String url = app.optString("icon_url", "");
+        if (!url.startsWith(BuildConfig.SUPABASE_URL + "/storage/v1/object/public/app-icons/")) return fallback;
+        android.widget.FrameLayout frame = new android.widget.FrameLayout(this);
+        frame.addView(fallback, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        ImageView image = new ImageView(this);
+        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        image.setBackground(shape(raised(), 13));
+        image.setClipToOutline(true);
+        frame.addView(image, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        Bitmap cached = iconCache.get(url);
+        if (cached != null) image.setImageBitmap(cached);
+        else {
+            image.setVisibility(View.GONE);
+            iconWorker.execute(() -> {
+                try {
+                    HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+                    conn.setConnectTimeout(8000); conn.setReadTimeout(8000);
+                    if (conn.getResponseCode() != 200 || conn.getContentLengthLong() > 1048576) { conn.disconnect(); return; }
+                    Bitmap bitmap;
+                    try (InputStream stream = conn.getInputStream()) { bitmap = BitmapFactory.decodeStream(stream); }
+                    conn.disconnect();
+                    if (bitmap != null) { iconCache.put(url, bitmap); handler.post(() -> { image.setImageBitmap(bitmap); image.setVisibility(View.VISIBLE); }); }
+                } catch (Exception ignored) { }
+            });
+        }
+        return frame;
     }
     private void shelf(JSONArray apps, int limit) {
         HorizontalScrollView scroller = new HorizontalScrollView(this);
@@ -380,7 +475,7 @@ public class MainActivity extends Activity {
             JSONObject app = apps.optJSONObject(i);
             if (app == null) continue;
             LinearLayout tile = vertical(); tile.setGravity(Gravity.CENTER_HORIZONTAL);
-            tile.addView(icon(app, 58), new LinearLayout.LayoutParams(dp(58), dp(58)));
+            tile.addView(icon(app, 80), new LinearLayout.LayoutParams(dp(80), dp(80)));
             space(tile, 7);
             TextView title = text(app.optString("title"), 12, ink(), false);
             title.setSingleLine(true); title.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -421,7 +516,7 @@ public class MainActivity extends Activity {
             JSONObject app = apps.optJSONObject(i);
             if (app == null || (!activeCategory.isEmpty() && !activeCategory.equals(app.optString("category")))) continue;
             LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
-            row.addView(icon(app, 48), new LinearLayout.LayoutParams(dp(48), dp(48)));
+            row.addView(icon(app, 62), new LinearLayout.LayoutParams(dp(62), dp(62)));
             LinearLayout copy = vertical(); copy.setPadding(dp(11), 0, 0, 0);
             TextView title = text(app.optString("title"), 14, ink(), true); title.setSingleLine(true);
             copy.addView(title);
@@ -451,6 +546,8 @@ public class MainActivity extends Activity {
         panel.setBackground(shape(surface(), 24));
         TextView handle = text("━━━━", 19, muted(), false);
         handle.setGravity(Gravity.CENTER);
+        handle.setContentDescription("Drag settings up or down; drag down to close");
+        handle.setMinHeight(dp(46));
         panel.addView(handle);
         space(panel, 12);
         panel.addView(text("APK STORE", 19, ink(), true));
@@ -478,10 +575,34 @@ public class MainActivity extends Activity {
         }
         sheet.show();
         if (window != null) window.setLayout(-1, -2);
-        TranslateAnimation slide = new TranslateAnimation(0, 0, dp(360), 0);
-        slide.setDuration(280);
-        slide.setInterpolator(new DecelerateInterpolator());
-        panel.startAnimation(slide);
+        if (ValueAnimator.areAnimatorsEnabled()) {
+            panel.post(() -> {
+                panel.setTranslationY(panel.getHeight());
+                panel.animate().translationY(0).setDuration(330).setInterpolator(new DecelerateInterpolator()).start();
+            });
+        }
+        handle.setOnTouchListener(new View.OnTouchListener() {
+            float startY;
+            @Override public boolean onTouch(View view, MotionEvent event) {
+                if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                    startY = event.getRawY(); panel.animate().cancel(); return true;
+                }
+                if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
+                    float delta = event.getRawY() - startY;
+                    panel.setTranslationY(Math.max(-dp(56), Math.min(panel.getHeight(), delta)));
+                    return true;
+                }
+                if (event.getActionMasked() == MotionEvent.ACTION_UP || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
+                    if (panel.getTranslationY() > dp(90)) {
+                        panel.animate().translationY(panel.getHeight()).setDuration(200).setInterpolator(new DecelerateInterpolator()).withEndAction(sheet::dismiss).start();
+                    } else {
+                        panel.animate().translationY(0).setDuration(260).setInterpolator(new DecelerateInterpolator()).start();
+                    }
+                    return true;
+                }
+                return false;
+            }
+        });
     }
     private void sheetRow(LinearLayout panel, String glyph, String title, Runnable onClick, Dialog sheet) {
         LinearLayout row = new LinearLayout(this);
@@ -578,12 +699,13 @@ public class MainActivity extends Activity {
                 + "Questions about APK STORE can be raised through github.com/mazharmnzoor4227-beep/APK-STORE.";
     }
     private void showDetail(JSONObject app) {
+        detailApp = app;
         LinearLayout root = vertical(); root.setBackgroundColor(bg());
         applySafeArea(root); setContentView(root); root.requestApplyInsets();
         LinearLayout top = new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL);
         TextView back = text("‹  Back", 17, ink(), false);
         back.setPadding(dp(16), dp(16), dp(16), dp(16));
-        back.setOnClickListener(v -> showTab(tab)); top.addView(back, weight());
+        back.setOnClickListener(v -> { detailApp = null; showTab(tab); }); top.addView(back, weight());
         TextView heart = action(isFavorite(app) ? "♥" : "♡", "Toggle favorite");
         heart.setTextColor(isFavorite(app) ? green() : ink());
         heart.setOnClickListener(v -> toggleFavorite(app));
@@ -591,26 +713,92 @@ public class MainActivity extends Activity {
         root.addView(top);
         ScrollView scroll = new ScrollView(this); root.addView(scroll);
         LinearLayout page = vertical(); page.setPadding(dp(20), dp(22), dp(20), dp(30)); scroll.addView(page);
-        page.addView(icon(app, 84), new LinearLayout.LayoutParams(dp(84), dp(84)));
+        FrameLayout iconFrame = new FrameLayout(this);
+        iconFrame.addView(icon(app, 104), new FrameLayout.LayoutParams(dp(104), dp(104)));
+        detailRing = new ProgressRing();
+        iconFrame.addView(detailRing, new FrameLayout.LayoutParams(dp(114), dp(114), Gravity.CENTER));
+        page.addView(iconFrame, new LinearLayout.LayoutParams(dp(114), dp(114)));
         space(page, 17);
         page.addView(text(app.optString("title"), 30, ink(), true)); space(page, 6);
         page.addView(text(app.optString("category") + "  ·  " + app.optString("package_id"), 12, muted(), false));
-        space(page, 25);
-        String slug = app.optString("slug");
-        Long existing = downloads.get(slug);
-        TextView download = text(completedDownloads.containsKey(slug) ? "Open · Install" : existing == null ? (updateAvailable(app) ? "Update  ↓" : "Install  ↓") : "Downloading…", 16, bg(), true);
-        download.setGravity(Gravity.CENTER); download.setPadding(dp(18), dp(15), dp(18), dp(15));
-        download.setBackground(shape(green(), 12));
-        download.setOnClickListener(v -> { if (completedDownloads.containsKey(slug)) openDownloaded(slug, download); else if (downloads.containsKey(slug)) cancelDownload(slug, download); else startDownload(app, download); });
-        page.addView(download); space(page, 30);
-        if (existing != null) pollDownload(slug, download);
+        space(page, 20);
+        detailPercent = text("", 13, green(), true); page.addView(detailPercent);
+        detailStatus = text("", 12, muted(), false); page.addView(detailStatus); space(page, 9);
+        LinearLayout actions = new LinearLayout(this); actions.setGravity(Gravity.CENTER_VERTICAL);
+        detailPrimary = text("Install", 16, bg(), true);
+        detailPrimary.setGravity(Gravity.CENTER); detailPrimary.setPadding(dp(14), dp(15), dp(14), dp(15));
+        detailPrimary.setBackground(shape(green(), 12));
+        detailPrimary.setOnClickListener(v -> {
+            String slug = app.optString("slug");
+            if (downloads.containsKey(slug)) cancelDownload(slug);
+            else if (completedDownloads.containsKey(slug)) openDownloaded(slug);
+            else startDownload(app);
+            refreshDetail();
+        });
+        actions.addView(detailPrimary, new LinearLayout.LayoutParams(0, -2, 1));
+        detailSecondary = text("", 14, ink(), true);
+        detailSecondary.setGravity(Gravity.CENTER); detailSecondary.setPadding(dp(12), dp(15), dp(12), dp(15));
+        actions.addView(detailSecondary, new LinearLayout.LayoutParams(0, -2, 1));
+        page.addView(actions); space(page, 24);
         page.addView(text("About this app", 19, ink(), true)); space(page, 10);
         page.addView(text(app.optString("description"), 15, muted(), false)); space(page, 25);
-        page.addView(text("Android will ask you to confirm installation after downloading.", 12, muted(), false));
+        page.addView(text("Android asks you to confirm installation. An update also needs the same signing certificate as the installed app.", 12, muted(), false));
+        JSONArray suggested = new JSONArray();
+        for (int i = 0; i < catalog.length() && suggested.length() < 8; i++) {
+            JSONObject candidate = catalog.optJSONObject(i);
+            if (candidate != null && !candidate.optString("slug").equals(app.optString("slug"))) suggested.put(candidate);
+        }
+        if (suggested.length() > 0) {
+            space(page, 26); page.addView(text("More apps for you", 19, ink(), true));
+            HorizontalScrollView suggestions = new HorizontalScrollView(this);
+            LinearLayout row = new LinearLayout(this);
+            for (int i = 0; i < suggested.length(); i++) {
+                JSONObject other = suggested.optJSONObject(i);
+                if (other == null) continue;
+                LinearLayout tile = vertical(); tile.addView(icon(other, 76), new LinearLayout.LayoutParams(dp(76), dp(76)));
+                tile.addView(text(other.optString("title"), 12, ink(), true));
+                tile.setOnClickListener(v -> showDetail(other));
+                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(98), -2);
+                params.setMargins(0, dp(12), dp(10), 0); row.addView(tile, params);
+            }
+            suggestions.addView(row); page.addView(suggestions);
+        }
+        refreshDetail();
+        if (downloads.containsKey(app.optString("slug"))) pollDownload(app.optString("slug"));
     }
-    private void startDownload(JSONObject app, TextView button) {
+    private void refreshDetail() {
+        if (detailApp == null || detailPrimary == null) return;
+        String slug = detailApp.optString("slug");
+        boolean running = downloads.containsKey(slug);
+        boolean ready = completedDownloads.containsKey(slug);
+        boolean installed = installedVersion(detailApp.optString("package_id")) >= 0;
+        detailRing.setVisibility(running ? View.VISIBLE : View.GONE);
+        detailRing.setProgress(downloadProgress.getOrDefault(slug, 0));
+        detailPercent.setText(running ? "Downloading " + downloadProgress.getOrDefault(slug, 0) + "%" : "");
+        detailStatus.setText(downloadErrors.getOrDefault(slug, ready ? "Downloaded · Android will confirm installation" : ""));
+        detailPrimary.setText(running ? "Cancel" : ready ? "Install" : updateAvailable(detailApp) ? "Update" : "Install");
+        detailSecondary.setVisibility(installed ? View.VISIBLE : View.GONE);
+        detailSecondary.setText("Uninstall");
+        detailSecondary.setOnClickListener(v -> startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + detailApp.optString("package_id")))));
+        if (installed && !running && !updateAvailable(detailApp)) {
+            detailPrimary.setText("Open");
+            detailPrimary.setOnClickListener(v -> {
+                Intent launch = getPackageManager().getLaunchIntentForPackage(detailApp.optString("package_id"));
+                if (launch != null) startActivity(launch);
+                else { downloadErrors.put(slug, "This app has no launch screen."); refreshDetail(); }
+            });
+        } else {
+            detailPrimary.setOnClickListener(v -> {
+                if (downloads.containsKey(slug)) cancelDownload(slug);
+                else if (completedDownloads.containsKey(slug)) openDownloaded(slug);
+                else startDownload(detailApp);
+                refreshDetail();
+            });
+        }
+    }
+    private void startDownload(JSONObject app) {
         String slug = app.optString("slug");
-        if (!slug.matches("[a-z0-9]+(-[a-z0-9]+)*")) return;
+        if (!slug.matches("[a-z0-9]+(-[a-z0-9]+)*") || downloads.containsKey(slug)) return;
         try {
             DownloadManager manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
             Uri url = Uri.parse(BuildConfig.SUPABASE_URL + "/functions/v1/download-apk?slug=" + Uri.encode(slug));
@@ -621,29 +809,36 @@ public class MainActivity extends Activity {
             request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
             request.setDestinationInExternalFilesDir(this, android.os.Environment.DIRECTORY_DOWNLOADS, slug + "-" + System.currentTimeMillis() + ".apk");
             long id = manager.enqueue(request);
+            downloadErrors.remove(slug); downloadProgress.put(slug, 0);
             downloads.put(slug, id);
-            pollDownload(slug, button);
-        } catch (Exception e) { button.setText("Download unavailable · Retry"); }
+            pollDownload(slug); refreshDetail();
+        } catch (Exception e) { downloadErrors.put(slug, "Download could not start: " + e.getMessage()); refreshDetail(); }
     }
-    private void openDownloaded(String slug, TextView button) {
+    private void openDownloaded(String slug) {
         Long id = completedDownloads.get(slug);
         if (id == null) return;
+        if (android.os.Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
+            pendingInstallSlug = slug;
+            startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getPackageName())));
+            return;
+        }
         DownloadManager manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
         Uri file = manager.getUriForDownloadedFile(id);
-        if (file == null) { completedDownloads.remove(slug); button.setText("Install  ↓"); return; }
-        Intent install = new Intent(Intent.ACTION_VIEW);
-        install.setDataAndType(file, "application/vnd.android.package-archive");
+        if (file == null) { completedDownloads.remove(slug); downloadErrors.put(slug, "APK file is missing. Download again."); refreshDetail(); return; }
+        Intent install = new Intent(Intent.ACTION_INSTALL_PACKAGE);
+        install.setData(file);
         install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        try { startActivity(install); } catch (Exception e) { button.setText("Open in Downloads"); }
+        try { awaitingInstallerSlug = slug; startActivity(install); }
+        catch (Exception e) { downloadErrors.put(slug, "Installer could not open: " + e.getMessage()); refreshDetail(); }
     }
-    private void cancelDownload(String slug, TextView button) {
+    private void cancelDownload(String slug) {
         Long id = downloads.remove(slug);
         Runnable poll = downloadPolls.remove(slug);
         if (poll != null) handler.removeCallbacks(poll);
         if (id != null) ((DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE)).remove(id);
-        button.setText("Install  ↓");
+        downloadProgress.remove(slug); refreshDetail();
     }
-    private void pollDownload(String slug, TextView button) {
+    private void pollDownload(String slug) {
         Runnable previous = downloadPolls.remove(slug);
         if (previous != null) handler.removeCallbacks(previous);
         Runnable poll = new Runnable() {
@@ -652,20 +847,25 @@ public class MainActivity extends Activity {
                 if (id == null) return;
                 DownloadManager manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
                 try (Cursor cursor = manager.query(new DownloadManager.Query().setFilterById(id))) {
-                    if (cursor == null || !cursor.moveToFirst()) { cancelDownload(slug, button); return; }
+                    if (cursor == null || !cursor.moveToFirst()) { cancelDownload(slug); return; }
                     int status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
                     if (status == DownloadManager.STATUS_SUCCESSFUL) {
                         downloads.remove(slug); downloadPolls.remove(slug);
                         completedDownloads.put(slug, id);
-                        button.setText("Open · Install");
+                        downloadProgress.put(slug, 100);
+                        refreshDetail();
+                        openDownloaded(slug);
                         return;
                     }
-                    if (status == DownloadManager.STATUS_FAILED) { cancelDownload(slug, button); button.setText("Download failed · Retry"); return; }
+                    if (status == DownloadManager.STATUS_FAILED) {
+                        int reason = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON));
+                        cancelDownload(slug); downloadErrors.put(slug, "Download failed (" + reason + "). Tap Install to retry."); refreshDetail(); return;
+                    }
                     long done = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
                     long total = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
-                    button.setText(total > 0 ? "Downloading… " + (done * 100 / total) + "% · Cancel" : "Downloading… · Cancel");
-                    handler.postDelayed(this, 500);
-                } catch (Exception e) { cancelDownload(slug, button); button.setText("Download failed · Retry"); }
+                    downloadProgress.put(slug, total > 0 ? (int)Math.min(99, done * 100 / total) : 0);
+                    refreshDetail(); handler.postDelayed(this, 500);
+                } catch (Exception e) { cancelDownload(slug); downloadErrors.put(slug, "Download failed. Tap Install to retry."); refreshDetail(); }
             }
         };
         downloadPolls.put(slug, poll);

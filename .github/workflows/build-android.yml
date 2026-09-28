@@ -1,7 +1,7 @@
 name: Build APK STORE Android
 on:
   push:
-    branches: [feat/web-publishing, main]
+    branches: [feat/web-publishing, publish-icon, main]
     paths: ['apps/android/**', '.github/workflows/build-android.yml']
   workflow_dispatch:
 jobs:

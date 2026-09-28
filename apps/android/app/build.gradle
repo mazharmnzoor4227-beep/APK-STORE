@@ -7,8 +7,8 @@ android {
         applicationId 'com.apkstore.client'
         minSdk 26
         targetSdk 35
-        versionCode 3
-        versionName '1.0.2'
+        versionCode 6
+        versionName '1.0.5'
         buildConfigField 'String', 'SUPABASE_URL', '"https://qfbfxencwsgryoczkdyj.supabase.co"'
         // Publishable keys are public client credentials; RLS controls catalog access.
         buildConfigField 'String', 'SUPABASE_KEY', '"' + (project.findProperty('supabasePublishableKey') ?: 'sb_publishable_RiOpxFwFfj3dRt45AVn3LA_T4C0kAoJ') + '"'
