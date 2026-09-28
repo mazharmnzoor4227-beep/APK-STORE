@@ -689,7 +689,7 @@ public class MainActivity extends Activity {
                         " · " + String.format(java.util.Locale.ROOT, "%.1f MB", release.optLong("byte_size") / 1048576.0));
                 copy.addView(text(meta, 12, muted(), false));
                 row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
-                row.setMinHeight(dp(72)); row.setOnClickListener(v -> showDetail(app)); group.addView(row);
+                row.setMinimumHeight(dp(72)); row.setOnClickListener(v -> showDetail(app)); group.addView(row);
             }
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(260), -2);
             lp.setMargins(0, 0, dp(14), 0); columns.addView(group, lp);
@@ -880,7 +880,7 @@ public class MainActivity extends Activity {
                     .toLowerCase(java.util.Locale.ROOT).contains(needle)) continue;
             matched++;
             if (matched > listCount) continue;
-            LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setMinHeight(dp(80));
+            LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setMinimumHeight(dp(80));
             row.addView(icon(app, 48), new LinearLayout.LayoutParams(dp(48), dp(48)));
             LinearLayout info = vertical(); info.setPadding(dp(12), 0, 0, 0);
             TextView name = text(app.optString("title"), 15, ink(), true); name.setSingleLine(true); info.addView(name);
@@ -913,7 +913,7 @@ public class MainActivity extends Activity {
         panel.addView(text(title, 20, ink(), true)); space(panel, 10);
         ScrollView scroll = new ScrollView(this); LinearLayout list = vertical();
         for (String choice : choices) {
-            LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setMinHeight(dp(52));
+            LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setMinimumHeight(dp(52));
             row.addView(text(choice, 15, ink(), false), weight());
             if (choice.equals(selected)) row.addView(text("✓", 19, green(), true));
             row.setOnClickListener(v -> { sheet.dismiss(); onChoose.accept(choice); }); list.addView(row);
@@ -999,7 +999,7 @@ public class MainActivity extends Activity {
         for (int i = 0; i < catalog.length(); i++) {
             JSONObject app = catalog.optJSONObject(i);
             if (app != null && installedVersion(app.optString("package_id")) >= 0) {
-                LinearLayout item = new LinearLayout(this); item.setGravity(Gravity.CENTER_VERTICAL); item.setMinHeight(dp(64));
+                LinearLayout item = new LinearLayout(this); item.setGravity(Gravity.CENTER_VERTICAL); item.setMinimumHeight(dp(64));
                 item.addView(icon(app, 44), new LinearLayout.LayoutParams(dp(44), dp(44)));
                 TextView label = text(app.optString("title"), 16, ink(), true);
                 label.setPadding(dp(12), 0, 0, 0); item.addView(label);
@@ -1019,7 +1019,7 @@ public class MainActivity extends Activity {
                 JSONObject app = catalog.optJSONObject(i);
                 if (app != null && slug.equals(app.optString("slug"))) { match = app; break; }
             }
-            LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setMinHeight(dp(64));
+            LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setMinimumHeight(dp(64));
             if (match != null) row.addView(icon(match, 44), new LinearLayout.LayoutParams(dp(44), dp(44)));
             TextView label = text(match == null ? slug : match.optString("title"), 16, ink(), true);
             label.setPadding(dp(12), 0, dp(12), 0); row.addView(label, weight());
