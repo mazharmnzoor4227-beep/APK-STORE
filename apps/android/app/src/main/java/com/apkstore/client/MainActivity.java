@@ -844,24 +844,27 @@ public class MainActivity extends Activity {
         HorizontalScrollView filters = new HorizontalScrollView(this); filters.setHorizontalScrollBarEnabled(false);
         LinearLayout chips = new LinearLayout(this); chips.setPadding(dp(16), dp(6), dp(16), dp(10));
         listingChip(chips, listCategory.isEmpty() ? "All" : listCategory, !listCategory.isEmpty(), () -> {
-            java.util.LinkedHashSet<String> categories = new java.util.LinkedHashSet<>(); categories.add("All");
+            java.util.LinkedHashSet<String> categories = new java.util.LinkedHashSet<>(java.util.Arrays.asList(
+                    "All", "AI agents", "Android Auto", "Android TV", "Audio", "Automation", "Communication",
+                    "Customization", "Development utilities", "Device owner (DPM)", "Display management", "Entertainment",
+                    "File management", "Games", "Input methods", "Installer & app stores", "Miscellaneous", "Network",
+                    "Patching", "Power management", "Privacy", "Productivity", "Quick settings",
+                    "Shizuku implementations", "Software management", "Task manager", "Terminals",
+                    "Google Pixel", "MIUI", "Other", "Samsung OneUI"));
             for (int i = 0; i < catalog.length(); i++) {
                 JSONObject app = catalog.optJSONObject(i);
                 if (app != null && !app.optString("category").isEmpty()) categories.add(app.optString("category"));
             }
             String[] choices = categories.toArray(new String[0]);
-            new AlertDialog.Builder(this).setTitle("Filter by category").setSingleChoiceItems(choices,
-                    java.util.Arrays.asList(choices).indexOf(listCategory.isEmpty() ? "All" : listCategory),
-                    (dialog, index) -> { listCategory = index == 0 ? "" : choices[index]; listCount = 30; dialog.dismiss(); renderListing(heading); }).show();
+            showChoiceSheet("Filter by category", choices, listCategory.isEmpty() ? "All" : listCategory,
+                    choice -> { listCategory = "All".equals(choice) ? "" : choice; listCount = 30; renderListing(heading); });
         });
         listingChip(chips, "Recently added", "Recently added".equals(heading), () -> showListing("Recently added", false));
         listingChip(chips, "Recommended", "Recommended".equals(heading), () -> showListing("Recommended", false));
         listingChip(chips, "Price" + ("All".equals(listPrice) ? "" : " · " + listPrice), !"All".equals(listPrice), () -> {
             String[] prices = {"All", "Free", "In-app purchases", "In-app purchases or Paid"};
-            new AlertDialog.Builder(this).setTitle("Filter by price").setSingleChoiceItems(prices,
-                    java.util.Arrays.asList(prices).indexOf(listPrice), (dialog, index) -> {
-                        listPrice = prices[index]; listCount = 30; dialog.dismiss(); renderListing(heading);
-                    }).show();
+            showChoiceSheet("Filter by price", prices, listPrice,
+                    choice -> { listPrice = choice; listCount = 30; renderListing(heading); });
         });
         filters.addView(chips); root.addView(filters);
         ScrollView scroll = new ScrollView(this); root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -899,6 +902,30 @@ public class MainActivity extends Activity {
         chip.setGravity(Gravity.CENTER); chip.setPadding(dp(15), dp(8), dp(15), dp(8)); chip.setMinHeight(dp(48));
         chip.setBackground(shape(selected ? green() : raised(), 24)); chip.setOnClickListener(v -> click.run());
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2); lp.setMargins(0, 0, dp(8), 0); row.addView(chip, lp);
+    }
+    private void showChoiceSheet(String title, String[] choices, String selected, java.util.function.Consumer<String> onChoose) {
+        Dialog sheet = new Dialog(this);
+        LinearLayout panel = vertical(); panel.setBackground(shape(surface(), 28));
+        panel.setPadding(dp(18), dp(8), dp(18), dp(16));
+        TextView handle = text("━━━━", 17, muted(), false); handle.setGravity(Gravity.CENTER);
+        handle.setMinHeight(dp(32)); panel.addView(handle);
+        panel.addView(text(title, 20, ink(), true)); space(panel, 10);
+        ScrollView scroll = new ScrollView(this); LinearLayout list = vertical();
+        for (String choice : choices) {
+            LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setMinHeight(dp(52));
+            row.addView(text(choice, 15, ink(), false), weight());
+            if (choice.equals(selected)) row.addView(text("✓", 19, green(), true));
+            row.setOnClickListener(v -> { sheet.dismiss(); onChoose.accept(choice); }); list.addView(row);
+        }
+        scroll.addView(list); panel.addView(scroll, new LinearLayout.LayoutParams(-1, dp(Math.min(560, choices.length * 52))));
+        sheet.setContentView(panel);
+        Window window = sheet.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawableResource(android.R.color.transparent);
+            window.setGravity(Gravity.BOTTOM);
+            window.setLayout(-1, -2);
+        }
+        sheet.show(); if (window != null) window.setLayout(-1, -2);
     }
     private void settings() {
         Dialog sheet = new Dialog(this);
