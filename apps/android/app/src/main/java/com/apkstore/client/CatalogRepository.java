@@ -32,7 +32,7 @@ final class CatalogRepository {
         JSONArray result = new JSONArray();
         final int pageSize = 100;
         for (int offset = 0; ; offset += pageSize) {
-            String endpoint = BuildConfig.SUPABASE_URL + "/rest/v1/apps?select=id,slug,title,package_id,category,description,icon_url,current_release_id,created_at,updated_at,github_owner,github_repo,license,min_sdk,short_description,screenshots,is_recommended,stars,source_url&visibility=eq.published&current_release_id=not.is.null&order=created_at.desc,id.desc&limit=" + pageSize + "&offset=" + offset;
+            String endpoint = BuildConfig.SUPABASE_URL + "/rest/v1/apps?select=id,slug,title,package_id,category,description,icon_url,current_release_id,created_at,updated_at,github_owner,github_repo,license,min_sdk,short_description,screenshots,is_recommended,stars,source_url,price_type,fdroid_url,vendor&visibility=eq.published&current_release_id=not.is.null&order=created_at.desc,id.desc&limit=" + pageSize + "&offset=" + offset;
             HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
             connection.setConnectTimeout(12000); connection.setReadTimeout(12000);
             connection.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
