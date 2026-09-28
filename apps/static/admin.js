@@ -36,6 +36,11 @@ async function refresh() {
     const name = document.createElement('strong'); name.textContent = candidate.filename;
     const status = document.createElement('p'); status.textContent = candidate.status === 'uploaded' ? 'Uploaded privately · inspection pending' : candidate.status;
     item.append(name, status);
+    if (candidate.inspection) {
+      const info = candidate.inspection;
+      item.append(Object.assign(document.createElement('p'), { textContent: `${info.appName || info.packageId} · ${info.packageId} · ${info.versionName}` }));
+      if (info.iconUrl) { const icon = document.createElement('img'); icon.src = info.iconUrl; icon.alt = (info.appName || info.packageId) + ' icon'; icon.width = 64; icon.height = 64; item.append(icon); }
+    }
     if (candidate.status === 'uploaded') {
       const inspect = document.createElement('button'); inspect.type = 'button'; inspect.textContent = 'Inspect APK';
       inspect.onclick = async () => { inspect.disabled = true; message('Reading APK metadata and checksum…'); try { await api('inspect', 'POST', { id: candidate.id }); message('Inspection complete. Review and publish below.'); await refresh(); } catch (error) { message(error.message); } finally { inspect.disabled = false; } };
@@ -44,7 +49,6 @@ async function refresh() {
     if (candidate.status === 'inspected') {
       const info = candidate.inspection;
       item.append(Object.assign(document.createElement('p'), { textContent: `${info.packageId} · ${info.versionName} (${info.versionCode}) · signer ${info.certificateSha256.slice(0, 16)}…` }));
-      if (info.iconUrl) { const icon = document.createElement('img'); icon.src = info.iconUrl; icon.alt = ''; icon.width = 64; icon.height = 64; item.append(icon); }
       const form = document.createElement('form'); form.className = 'release-form';
       const field = (label, value, maxLength) => { const wrap = document.createElement('label'); wrap.textContent = label; const input = document.createElement('input'); input.value = value; input.maxLength = maxLength; input.required = true; wrap.append(input); form.append(wrap); return input; };
       const title = field('App name', info.appName || info.packageId, 100);
