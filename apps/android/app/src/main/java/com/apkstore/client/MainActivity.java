@@ -487,8 +487,10 @@ public class MainActivity extends Activity {
         JSONArray found = new JSONArray();
         for (int i = 0; i < catalog.length(); i++) {
             JSONObject app = catalog.optJSONObject(i);
-            if (app != null && !blacklisted(app) && (value.trim().isEmpty() || app.optString("title").toLowerCase().contains(value.trim().toLowerCase())
-                    || app.optString("category").toLowerCase().contains(value.trim().toLowerCase()))) found.put(app);
+            String needle = value.trim().toLowerCase(java.util.Locale.ROOT);
+            if (app != null && !blacklisted(app) && (needle.isEmpty() ||
+                    (app.optString("title") + " " + app.optString("description") + " " + app.optString("package_id"))
+                            .toLowerCase(java.util.Locale.ROOT).contains(needle))) found.put(app);
         }
         return found;
     }
@@ -687,16 +689,16 @@ public class MainActivity extends Activity {
         if (tab == SEARCH && query.trim().isEmpty()) {
             LinkedHashSet<String> names = new LinkedHashSet<>(java.util.Arrays.asList(
                     "All", "AI agents", "Android Auto", "Android TV", "Audio", "Automation", "Communication",
-                    "Customization", "Development utilities", "Display management", "Entertainment", "File management",
+                    "Customization", "Development utilities", "Device owner (DPM)", "Display management", "Entertainment", "File management",
                     "Games", "Input methods", "Installer & app stores", "Miscellaneous", "Network", "Patching",
                     "Power management", "Privacy", "Productivity", "Quick settings", "Shizuku implementations",
-                    "Software management", "Task manager"));
+                    "Software management", "Task manager", "Terminals", "Google Pixel", "MIUI", "Other", "Samsung OneUI"));
             LinearLayout rows = vertical();
             LinearLayout row = new LinearLayout(this); rows.addView(row);
             int width = 0;
             for (String name : names) {
                 boolean selected = name.equals(activeCategory.isEmpty() ? "All" : activeCategory);
-                TextView chip = text("◈  " + name, 12, selected ? bg() : ink(), true);
+                TextView chip = text(name, 12, selected ? bg() : ink(), true);
                 chip.setPadding(dp(13), dp(8), dp(13), dp(8));
                 chip.setMinHeight(dp(48)); chip.setGravity(Gravity.CENTER_VERTICAL);
                 chip.setBackground(shape(selected ? green() : raised(), 16));
@@ -1125,7 +1127,18 @@ public class MainActivity extends Activity {
         }
         if (!app.optString("source_url").isEmpty())
             informationLink(page, "Source code", app.optString("source_url"), () -> openLink(app.optString("source_url")));
-        if (release != null) expandable(page, "Permissions", release.optJSONArray("permissions") == null ? "Not supplied" : release.optJSONArray("permissions").toString());
+        if (!app.optString("fdroid_url").isEmpty())
+            informationLink(page, "F-Droid", app.optString("fdroid_url"), () -> openLink(app.optString("fdroid_url")));
+        if (release != null) {
+            JSONArray permissions = release.optJSONArray("permissions");
+            StringBuilder permissionText = new StringBuilder();
+            if (permissions != null) for (int i = 0; i < permissions.length(); i++)
+                permissionText.append(permissions.optString(i)).append('\n');
+            expandable(page, "Permissions · " + (permissions == null ? 0 : permissions.length()) + " requested",
+                    permissionText.toString().trim());
+            expandable(page, "Sources", "github".equals(release.optString("source")) ?
+                    "✓ GitHub release (via APK STORE download gateway)" : "✓ Supabase storage");
+        }
         page.addView(text("Android asks you to confirm installation. An update also needs the same signing certificate as the installed app.", 12, muted(), false));
         JSONArray suggested = new JSONArray();
         for (int i = 0; i < catalog.length() && suggested.length() < 8; i++) {
