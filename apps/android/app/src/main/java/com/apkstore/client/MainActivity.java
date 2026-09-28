@@ -102,12 +102,12 @@ public class MainActivity extends Activity {
         }
     }
 
-    private int bg() { return light ? Color.rgb(247, 250, 247) : Color.rgb(9, 12, 10); }
-    private int surface() { return light ? Color.WHITE : Color.rgb(23, 27, 24); }
-    private int raised() { return light ? Color.rgb(235, 243, 236) : Color.rgb(34, 43, 36); }
-    private int green() { return light ? Color.rgb(24, 118, 60) : Color.rgb(118, 238, 145); }
-    private int ink() { return light ? Color.rgb(21, 33, 24) : Color.rgb(240, 246, 240); }
-    private int muted() { return light ? Color.rgb(93, 107, 95) : Color.rgb(152, 164, 153); }
+    private int bg() { return light ? Color.rgb(248, 248, 251) : Color.rgb(18, 18, 18); }
+    private int surface() { return light ? Color.WHITE : Color.rgb(27, 27, 31); }
+    private int raised() { return light ? Color.rgb(235, 235, 241) : Color.rgb(35, 35, 40); }
+    private int green() { return light ? Color.rgb(69, 82, 157) : Color.rgb(183, 196, 255); }
+    private int ink() { return light ? Color.rgb(28, 28, 34) : Color.rgb(230, 225, 229); }
+    private int muted() { return light ? Color.rgb(97, 97, 108) : Color.rgb(169, 165, 173); }
     private int dp(int n) { return Math.round(n * getResources().getDisplayMetrics().density); }
 
     @Override public void onCreate(Bundle state) {
@@ -613,7 +613,7 @@ public class MainActivity extends Activity {
         String url = app.optString("icon_url", "");
         boolean hostedIcon = url.startsWith("https://apk-store-mazhar.mazharmanzoor4117.chatgpt.site/") && url.endsWith(".png");
         boolean storageIcon = url.startsWith(BuildConfig.SUPABASE_URL + "/storage/v1/object/public/app-icons/");
-        if (!hostedIcon && !storageIcon) return iconProgress(app, fallback);
+        if (!hostedIcon && !storageIcon) return fallback;
         android.widget.FrameLayout frame = new android.widget.FrameLayout(this);
         frame.addView(fallback, new android.widget.FrameLayout.LayoutParams(-1, -1));
         ImageView image = new ImageView(this);
@@ -637,7 +637,7 @@ public class MainActivity extends Activity {
                 } catch (Exception ignored) { }
             });
         }
-        return iconProgress(app, frame);
+        return frame;
     }
     private View iconProgress(JSONObject app, View icon) {
         String slug = app.optString("slug");
@@ -661,20 +661,17 @@ public class MainActivity extends Activity {
             JSONObject app = apps.optJSONObject(i);
             if (app == null || blacklisted(app)) continue;
             LinearLayout tile = vertical(); tile.setGravity(Gravity.CENTER_HORIZONTAL);
-            tile.addView(icon(app, 80), new LinearLayout.LayoutParams(dp(80), dp(80)));
+            tile.addView(icon(app, 64), new LinearLayout.LayoutParams(dp(64), dp(64)));
             space(tile, 7);
             TextView title = text(app.optString("title"), 12, ink(), false);
             title.setSingleLine(true); title.setEllipsize(android.text.TextUtils.TruncateAt.END);
             tile.addView(title);
-            TextView category = text(app.optString("short_description", app.optString("category")), 10, muted(), false);
-            category.setSingleLine(true); tile.addView(category);
             JSONObject release = app.optJSONObject("release");
-            String meta = "★ " + app.optInt("stars") + (release == null ? "" : " · " + release.optString("version_name") +
-                    " · " + String.format(java.util.Locale.ROOT, "%.1f MB", release.optLong("byte_size") / 1048576.0));
-            TextView stats = text(meta, 10, green(), false);
+            String size = release == null ? "" : String.format(java.util.Locale.ROOT, "%.1f MB", release.optLong("byte_size") / 1048576.0);
+            TextView stats = text(size, 12, muted(), false);
             stats.setSingleLine(true); tile.addView(stats);
             tile.setOnClickListener(v -> showDetail(app));
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(160), -2);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(78), -2);
             params.setMargins(0, 0, dp(8), 0); row.addView(tile, params);
         }
         scroller.addView(row); body.addView(scroller);
@@ -1007,8 +1004,12 @@ public class MainActivity extends Activity {
         page.addView(actions); space(page, 24);
         JSONObject release = app.optJSONObject("release");
         String size = release == null ? "" : String.format(java.util.Locale.ROOT, "%.1f MB", release.optLong("byte_size") / 1048576.0);
-        page.addView(text("★ " + app.optInt("stars") + "  ·  " + app.optString("category") + "  ·  " + size +
-                "  ·  Android " + app.optInt("min_sdk") + "+  ·  " + app.optString("license"), 13, green(), false));
+        String chips = "★ " + app.optInt("stars") + "  ·  " + app.optString("category") + "  ·  " + size;
+        int minSdk = app.optInt("min_sdk", 0);
+        if (minSdk > 0) chips += "  ·  Android " + minSdk + "+";
+        String license = app.optString("license");
+        if (!license.isEmpty()) chips += "  ·  " + license;
+        page.addView(text(chips, 13, green(), false));
         space(page, 20);
         expandable(page, "More about this app", app.optString("description"));
         if (release != null) expandable(page, "Changelog", release.optString("changelog", release.optString("release_notes")));
@@ -1125,9 +1126,13 @@ public class MainActivity extends Activity {
         detailPercent.setText(running ? "Downloading " + downloadProgress.getOrDefault(slug, 0) + "%" : "");
         detailStatus.setText(downloadErrors.getOrDefault(slug, ready ? "Downloaded · Android will confirm installation" : ""));
         detailPrimary.setText(running ? "Cancel" : ready ? "Install" : updateAvailable(detailApp) ? "Update" : "Install");
-        detailSecondary.setVisibility(installed ? View.VISIBLE : View.GONE);
-        detailSecondary.setText("Uninstall");
-        detailSecondary.setOnClickListener(v -> startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + detailApp.optString("package_id")))));
+        detailSecondary.setVisibility(running || installed ? View.VISIBLE : View.GONE);
+        detailSecondary.setText(running ? "Open" : "Uninstall");
+        detailSecondary.setEnabled(!running);
+        detailSecondary.setAlpha(running ? 0.38f : 1f);
+        detailSecondary.setOnClickListener(v -> {
+            if (!running) startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + detailApp.optString("package_id"))));
+        });
         if (installed && !running && !updateAvailable(detailApp)) {
             detailPrimary.setText("Open");
             detailPrimary.setOnClickListener(v -> {
