@@ -232,6 +232,9 @@ public class MainActivity extends Activity {
             case "⋮": return R.drawable.ic_more;
             case "×": return R.drawable.ic_close;
             case "▦": return R.drawable.ic_apps;
+            case "▣": return R.drawable.ic_apps;
+            case "⊘": return R.drawable.ic_block;
+            case "ⓘ": return R.drawable.ic_info;
             case "◷": return R.drawable.ic_download;
             default: return 0;
         }
@@ -932,8 +935,11 @@ public class MainActivity extends Activity {
         for (int i = 0; i < catalog.length(); i++) {
             JSONObject app = catalog.optJSONObject(i);
             if (app != null && installedVersion(app.optString("package_id")) >= 0) {
-                TextView item = text(app.optString("title"), 16, ink(), true);
-                item.setMinHeight(dp(56)); item.setOnClickListener(v -> showDetail(app));
+                LinearLayout item = new LinearLayout(this); item.setGravity(Gravity.CENTER_VERTICAL); item.setMinHeight(dp(64));
+                item.addView(icon(app, 44), new LinearLayout.LayoutParams(dp(44), dp(44)));
+                TextView label = text(app.optString("title"), 16, ink(), true);
+                label.setPadding(dp(12), 0, 0, 0); item.addView(label);
+                item.setOnClickListener(v -> showDetail(app));
                 page.addView(item); count++;
             }
         }
@@ -944,8 +950,18 @@ public class MainActivity extends Activity {
         java.util.Set<String> saved = settingsStore.entries(key);
         if (saved.isEmpty()) page.addView(text("No apps here", 15, muted(), false));
         for (String slug : saved) {
-            TextView row = text(slug + "   Remove", 16, ink(), false);
-            row.setMinHeight(dp(56)); row.setOnClickListener(v -> {
+            JSONObject match = null;
+            for (int i = 0; i < catalog.length(); i++) {
+                JSONObject app = catalog.optJSONObject(i);
+                if (app != null && slug.equals(app.optString("slug"))) { match = app; break; }
+            }
+            LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setMinHeight(dp(64));
+            if (match != null) row.addView(icon(match, 44), new LinearLayout.LayoutParams(dp(44), dp(44)));
+            TextView label = text(match == null ? slug : match.optString("title"), 16, ink(), true);
+            label.setPadding(dp(12), 0, dp(12), 0); row.addView(label, weight());
+            TextView remove = text("Remove", 14, green(), true); remove.setGravity(Gravity.CENTER);
+            remove.setMinWidth(dp(72)); remove.setMinHeight(dp(48)); row.addView(remove);
+            remove.setOnClickListener(v -> {
                 java.util.Set<String> updated = new java.util.HashSet<>(saved);
                 updated.remove(slug); settingsStore.setEntries(key, updated);
                 showSavedApps(title, key);
@@ -971,8 +987,8 @@ public class MainActivity extends Activity {
     private void sheetRow(LinearLayout panel, String glyph, String title, Runnable onClick, Dialog sheet) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        TextView icon = text(glyph, 22, green(), false);
-        row.addView(icon, new LinearLayout.LayoutParams(dp(43), -2));
+        TextView icon = action(glyph, title);
+        row.addView(icon, new LinearLayout.LayoutParams(dp(43), dp(48)));
         row.addView(text(title, 16, ink(), false), weight());
         row.setPadding(dp(10), dp(12), dp(10), dp(12));
         row.setOnClickListener(v -> {
