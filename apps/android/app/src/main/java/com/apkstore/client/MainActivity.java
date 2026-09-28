@@ -85,6 +85,7 @@ public class MainActivity extends Activity {
     private JSONObject detailApp;
     private TextView detailPrimary, detailSecondary, detailPercent, detailStatus;
     private ProgressRing detailRing;
+    private FrameLayout detailIconContainer;
     private String pendingInstallSlug;
     private final HashMap<String, Integer> downloadProgress = new HashMap<>();
     private final HashMap<String, String> downloadErrors = new HashMap<>();
@@ -100,7 +101,11 @@ public class MainActivity extends Activity {
             RectF oval = new RectF(inset, inset, getWidth() - inset, getHeight() - inset);
             paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(stroke); paint.setStrokeCap(Paint.Cap.ROUND);
             paint.setColor(raised()); canvas.drawOval(oval, paint);
-            paint.setColor(green()); canvas.drawArc(oval, -90, 360f * percent / 100f, false, paint);
+            paint.setColor(green());
+            if (percent == 0 && getVisibility() == View.VISIBLE) {
+                canvas.drawArc(oval, (android.os.SystemClock.uptimeMillis() / 5) % 360 - 90, 85, false, paint);
+                postInvalidateDelayed(50);
+            } else canvas.drawArc(oval, -90, 360f * percent / 100f, false, paint);
         }
     }
 
@@ -1060,7 +1065,11 @@ public class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this); root.addView(scroll);
         LinearLayout page = vertical(); page.setPadding(dp(20), dp(22), dp(20), dp(30)); scroll.addView(page);
         FrameLayout iconFrame = new FrameLayout(this);
-        iconFrame.addView(icon(app, 104), new FrameLayout.LayoutParams(dp(104), dp(104)));
+        detailIconContainer = new FrameLayout(this);
+        detailIconContainer.setBackground(shape(surface(), 16));
+        detailIconContainer.setClipToOutline(true);
+        detailIconContainer.addView(icon(app, 104), new FrameLayout.LayoutParams(-1, -1));
+        iconFrame.addView(detailIconContainer, new FrameLayout.LayoutParams(dp(104), dp(104), Gravity.CENTER));
         detailRing = new ProgressRing();
         iconFrame.addView(detailRing, new FrameLayout.LayoutParams(dp(114), dp(114), Gravity.CENTER));
         page.addView(iconFrame, new LinearLayout.LayoutParams(dp(114), dp(114)));
@@ -1151,7 +1160,8 @@ public class MainActivity extends Activity {
         page.addView(header); page.addView(detail);
     }
     private boolean trustedImage(String url) {
-        return url.startsWith(BuildConfig.SUPABASE_URL + "/storage/v1/object/public/app-icons/") ||
+        return url.startsWith(BuildConfig.SUPABASE_URL + "/storage/v1/object/public/app-screenshots/") ||
+                url.startsWith(BuildConfig.SUPABASE_URL + "/storage/v1/object/public/app-icons/") ||
                 (url.startsWith("https://apk-store-mazhar.mazharmanzoor4117.chatgpt.site/") && url.endsWith(".png"));
     }
     private ImageView remoteImage(String url) {
@@ -1207,6 +1217,7 @@ public class MainActivity extends Activity {
         boolean installed = installedVersion(detailApp.optString("package_id")) >= 0;
         detailRing.setVisibility(running ? View.VISIBLE : View.GONE);
         detailRing.setProgress(downloadProgress.getOrDefault(slug, 0));
+        if (detailIconContainer != null) detailIconContainer.setBackground(shape(surface(), running ? 52 : 16));
         detailPercent.setText(running ? "Downloading " + downloadProgress.getOrDefault(slug, 0) + "%" : "");
         detailStatus.setText(downloadErrors.getOrDefault(slug, ready ? "Downloaded · Android will confirm installation" : ""));
         detailPrimary.setText(running ? "Cancel" : ready ? "Install" : updateAvailable(detailApp) ? "Update" : "Install");
