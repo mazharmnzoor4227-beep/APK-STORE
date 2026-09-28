@@ -146,7 +146,7 @@ Deno.serve(async (request) => {
       return json({ appId, slug });
     }
     if (request.method === 'GET' && route === 'apps') {
-      const { data, error } = await db.from('apps').select('id,slug,title,package_id,category,description,short_description,icon_url,visibility,current_release_id,updated_at,screenshots,license,source_url,fdroid_url,price_type,is_recommended,min_sdk').order('updated_at', { ascending: false }).limit(200);
+      const { data, error } = await db.from('apps').select('id,slug,title,package_id,category,description,short_description,icon_url,visibility,current_release_id,updated_at,screenshots,license,source_url,fdroid_url,price_type,is_recommended,min_sdk,deleted_at').order('updated_at', { ascending: false }).limit(200);
       if (error) throw error;
       const ids = (data || []).map(app => app.current_release_id).filter(Boolean);
       const { data: releases, error: releaseError } = ids.length
@@ -179,8 +179,9 @@ Deno.serve(async (request) => {
       const input = await request.json();
       const id = String(input.id || '');
       if (!/^[0-9a-f-]{36}$/.test(id)) return json({ error: 'Invalid app' }, 400);
-      const { data: app } = await db.from('apps').select('id,current_release_id').eq('id', id).maybeSingle();
+      const { data: app } = await db.from('apps').select('id,current_release_id,deleted_at').eq('id', id).maybeSingle();
       if (!app) return json({ error: 'App not found' }, 404);
+      if (app.deleted_at) return json({ error: 'Restore this app before editing or republishing it' }, 409);
       const changes: Record<string, unknown> = {};
       if (input.visibility !== undefined) {
         if (!['published','unlisted'].includes(input.visibility) || (input.visibility === 'published' && !app.current_release_id))
@@ -225,6 +226,23 @@ Deno.serve(async (request) => {
       const { data, error } = await db.from('apps').update({ ...changes, updated_at: new Date().toISOString() }).eq('id', id).select('id,visibility,title').single();
       if (error) throw error;
       return json({ app: data });
+    }
+    if (request.method === 'POST' && route === 'delete-app') {
+      const { id, title } = await request.json();
+      if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) return json({ error: 'Invalid app' }, 400);
+      const { data: app } = await db.from('apps').select('title,deleted_at').eq('id', id).maybeSingle();
+      if (!app) return json({ error: 'App not found' }, 404);
+      if (app.title !== title) return json({ error: 'Type the exact app name to confirm deletion' }, 400);
+      const { error } = await db.from('apps').update({ visibility: 'unlisted', deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', id);
+      if (error) throw error;
+      return json({ status: 'deleted' });
+    }
+    if (request.method === 'POST' && route === 'restore-app') {
+      const { id } = await request.json();
+      if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) return json({ error: 'Invalid app' }, 400);
+      const { error } = await db.from('apps').update({ deleted_at: null, visibility: 'unlisted', updated_at: new Date().toISOString() }).eq('id', id).not('deleted_at', 'is', null);
+      if (error) throw error;
+      return json({ status: 'restored_hidden' });
     }
     return json({ error: 'Not found' }, 404);
   } catch (error) {
