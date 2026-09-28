@@ -88,6 +88,7 @@ public class MainActivity extends Activity {
     private FrameLayout detailIconContainer;
     private String pendingInstallSlug;
     private final HashMap<String, Integer> downloadProgress = new HashMap<>();
+    private final HashMap<String, String> downloadSizes = new HashMap<>();
     private final HashMap<String, String> downloadErrors = new HashMap<>();
     private final java.util.HashSet<String> previousHomeSlugs = new java.util.HashSet<>();
     private final long randomOrderSeed = new java.security.SecureRandom().nextLong();
@@ -1399,7 +1400,9 @@ public class MainActivity extends Activity {
         detailRing.setProgress(downloadProgress.getOrDefault(slug, 0));
         if (detailIconContainer != null) detailIconContainer.setBackground(shape(surface(), running ? 52 : 16));
         detailPercent.setText(running ? "Downloading " + downloadProgress.getOrDefault(slug, 0) + "%" : "");
-        detailStatus.setText(downloadErrors.getOrDefault(slug, ready ? "Downloaded · Android will confirm installation" : ""));
+        detailStatus.setText(downloadErrors.getOrDefault(slug,
+                running ? downloadSizes.getOrDefault(slug, "Preparing download…") :
+                        ready ? "Downloaded · Android will confirm installation" : ""));
         detailPrimary.setText(running ? "Cancel" : ready ? "Install" : updateAvailable(detailApp) ? "Update" : "Install");
         detailSecondary.setVisibility(running || installed ? View.VISIBLE : View.GONE);
         detailSecondary.setText(running ? "Open" : "Uninstall");
@@ -1491,6 +1494,7 @@ public class MainActivity extends Activity {
         downloadPaths.remove(slug);
         history.record(slug, slug, "Cancelled", "", id == null ? -1 : id, "", 0);
         downloadProgress.remove(slug); refreshDetail();
+        downloadSizes.remove(slug);
     }
     private void pollDownload(String slug) {
         Runnable previous = downloadPolls.remove(slug);
@@ -1525,6 +1529,9 @@ public class MainActivity extends Activity {
                     long done = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
                     long total = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
                     downloadProgress.put(slug, total > 0 ? (int)Math.min(99, done * 100 / total) : 0);
+                    downloadSizes.put(slug, total > 0 ? String.format(java.util.Locale.ROOT,
+                            "%.1f / %.1f MB", done / 1048576.0, total / 1048576.0) :
+                            String.format(java.util.Locale.ROOT, "%.1f MB downloaded", done / 1048576.0));
                     refreshDetail();
                     if (detailApp == null && body != null) render();
                     handler.postDelayed(this, 500);
