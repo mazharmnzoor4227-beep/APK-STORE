@@ -64,10 +64,12 @@ public class MainActivity extends Activity {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final ExecutorService iconWorker = Executors.newFixedThreadPool(6);
     private final LruCache<String, Bitmap> iconCache = new LruCache<>(32);
+    private final HashMap<String, java.util.ArrayList<ImageView>> pendingIcons = new HashMap<>();
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean light;
     private int tab = APPS;
     private int generation;
+    private long lastCatalogRefresh;
     private String query = "", activeCategory = "";
     private String listCategory = "", listPrice = "All", listSearch = "";
     private int listCount = 30;
@@ -165,6 +167,7 @@ public class MainActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         handler.post(() -> {
+            if (lastCatalogRefresh > 0 && android.os.SystemClock.elapsedRealtime() - lastCatalogRefresh > 15 * 60 * 1000L) load();
             if (detailApp != null) consumeInstallResult(detailApp.optString("slug"));
             if (detailApp != null) refreshDetail();
             if (detailApp != null && completedDownloads.containsKey(detailApp.optString("slug")))
@@ -324,6 +327,10 @@ public class MainActivity extends Activity {
         TextView find = action("⌕", "Search apps");
         find.setOnClickListener(v -> tap(v, () -> showTab(SEARCH)));
         header.addView(find, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        TextView refresh = text("↻", 27, ink(), false);
+        refresh.setGravity(Gravity.CENTER); refresh.setContentDescription("Refresh app catalog");
+        refresh.setOnClickListener(v -> { refresh.animate().rotationBy(360).setDuration(500).start(); load(); });
+        header.addView(refresh, new LinearLayout.LayoutParams(dp(44), dp(48)));
         ImageView download = new ImageView(this);
         download.setImageResource(com.apkstore.client.R.drawable.ic_download);
         download.setColorFilter(ink());
@@ -420,6 +427,7 @@ public class MainActivity extends Activity {
                     runOnUiThread(() -> { if (request == generation) {
                         boolean initial = catalog.length() == 0;
                         catalog = apps;
+                        lastCatalogRefresh = android.os.SystemClock.elapsedRealtime();
                         releaseVersions.clear();
                         releaseVersions.putAll(versions);
                         if (initial && apps.length() > 0) showTab(tab); else render();
@@ -753,28 +761,43 @@ public class MainActivity extends Activity {
         if (cached != null) image.setImageBitmap(cached);
         else {
             image.setVisibility(View.GONE);
+            synchronized (pendingIcons) {
+                java.util.ArrayList<ImageView> waiting = pendingIcons.get(url);
+                if (waiting != null) { waiting.add(image); return frame; }
+                waiting = new java.util.ArrayList<>(); waiting.add(image);
+                pendingIcons.put(url, waiting);
+            }
             iconWorker.execute(() -> {
+                Bitmap loaded = null;
                 try {
                     HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
                     conn.setConnectTimeout(8000); conn.setReadTimeout(8000);
-                    if (conn.getResponseCode() != 200 || conn.getContentLengthLong() > 1048576) { conn.disconnect(); return; }
-                    byte[] bytes;
-                    try (InputStream stream = conn.getInputStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-                        byte[] buffer = new byte[8192]; int count;
-                        while ((count = stream.read(buffer)) != -1) {
-                            if (output.size() + count > 1048576) return;
-                            output.write(buffer, 0, count);
+                    if (conn.getResponseCode() == 200 && conn.getContentLengthLong() <= 1048576) {
+                        byte[] bytes;
+                        try (InputStream stream = conn.getInputStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                            byte[] buffer = new byte[8192]; int count;
+                            while ((count = stream.read(buffer)) != -1) {
+                                if (output.size() + count > 1048576) throw new Exception("Icon too large");
+                                output.write(buffer, 0, count);
+                            }
+                            bytes = output.toByteArray();
                         }
-                        bytes = output.toByteArray();
+                        loaded = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                        if (loaded != null) {
+                            try (FileOutputStream output = new FileOutputStream(diskIcon)) { output.write(bytes); }
+                            iconCache.put(url, loaded);
+                        }
                     }
-                    Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
                     conn.disconnect();
-                    if (bitmap != null) {
-                        try (FileOutputStream output = new FileOutputStream(diskIcon)) { output.write(bytes); }
-                        iconCache.put(url, bitmap);
-                        handler.post(() -> { image.setImageBitmap(bitmap); image.setVisibility(View.VISIBLE); });
-                    }
                 } catch (Exception ignored) { }
+                final Bitmap result = loaded;
+                handler.post(() -> {
+                    java.util.ArrayList<ImageView> waiting;
+                    synchronized (pendingIcons) { waiting = pendingIcons.remove(url); }
+                    if (result != null && waiting != null) for (ImageView target : waiting) {
+                        target.setImageBitmap(result); target.setVisibility(View.VISIBLE);
+                    }
+                });
             });
         }
         return frame;

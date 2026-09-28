@@ -10,6 +10,16 @@ type Candidate = {
   existingApp: ExistingApp | null;
 };
 
+async function uploadIcon(file: File, token: string): Promise<string> {
+  const start = await fetch('/api/admin/icons', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename: file.name, byteSize: file.size }) });
+  const target = await start.json();
+  if (!start.ok) throw new Error(target.error || 'Could not prepare icon upload');
+  const upload = await fetch(target.signedUrl, { method: 'PUT', headers: { 'Content-Type': file.type || 'image/png', 'x-upsert': 'false' }, body: file });
+  if (!upload.ok) throw new Error('Icon upload failed');
+  return target.iconUrl;
+}
+
 export function ReviewPanel() {
   const [items, setItems] = useState<Candidate[]>([]);
   const [token, setToken] = useState('');
@@ -42,6 +52,8 @@ export function ReviewPanel() {
     setBusyId(item.id);
     setMessage(action === 'approve' ? 'Publishing release…' : 'Rejecting upload…');
     try {
+      const icon = form.get('icon');
+      const iconUrl = action === 'approve' && icon instanceof File && icon.size ? await uploadIcon(icon, token) : '';
       const response = await fetch(`/api/admin/candidates/${item.id}/review`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -49,11 +61,12 @@ export function ReviewPanel() {
           action, targetAppId: item.existingApp?.id ?? null,
           slug: form.get('slug'), title: form.get('title'), category: form.get('category'),
           description: form.get('description'), releaseNotes: form.get('releaseNotes'),
+          packageId: form.get('packageId'), iconUrl,
         }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Review failed');
-      setMessage(action === 'approve' ? 'Release published. The store will show it now.' : 'Upload rejected.');
+      setMessage(result.warning || (action === 'approve' ? 'Release published. Refresh the store catalog to see it.' : 'Upload rejected.'));
       await refresh(token);
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Review failed'); }
     finally { setBusyId(''); }
@@ -84,7 +97,11 @@ export function ReviewPanel() {
       {item.existingApp && <p className="update-note">This package matches <strong>{item.existingApp.title}</strong>. Approval will publish a new version of that app after the version and signing checks pass.</p>}
       {item.status === 'uploaded' && <div className="inspection-pending"><p>The APK is private until inspection and your approval are complete.</p><button type="button" disabled={busyId === item.id} onClick={() => retryInspection(item)}>Retry inspection</button></div>}
       {item.status === 'inspected' && <form className="admin-form" onSubmit={event => review(event, item)}>
+        <label htmlFor={`package-${item.id}`}>Package ID (detected from APK)</label><input id={`package-${item.id}`} name="packageId" required defaultValue={item.inspection?.packageId ?? ''} pattern="[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+" />
+        <span className="field-help">You may edit this field, but it must match the inspected APK. A matching package updates the same app when its signing certificate matches and version code increases.</span>
         <label htmlFor={`title-${item.id}`}>App name</label><input id={`title-${item.id}`} name="title" required maxLength={120} defaultValue={item.existingApp?.title ?? ''} />
+        <label htmlFor={`icon-${item.id}`}>App icon</label><input id={`icon-${item.id}`} name="icon" type="file" accept="image/png,image/webp,image/jpeg" />
+        <span className="field-help">PNG, WebP, or JPG, up to 300 KB. Upload an icon for new apps.</span>
         <label htmlFor={`slug-${item.id}`}>Store URL</label><input id={`slug-${item.id}`} name="slug" required pattern="[a-z0-9]+(-[a-z0-9]+)*" defaultValue={item.existingApp?.slug ?? ''} />
         <label htmlFor={`category-${item.id}`}>Category</label><input id={`category-${item.id}`} name="category" required maxLength={80} defaultValue={item.existingApp?.category ?? ''} />
         <label htmlFor={`description-${item.id}`}>Description</label><textarea id={`description-${item.id}`} name="description" maxLength={5000} defaultValue={item.existingApp?.description ?? ''} />
