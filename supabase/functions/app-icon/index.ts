@@ -10,7 +10,9 @@ const ALLOWED_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 Deno.serve(async (request) => {
   if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 });
 
-  const slug = new URL(request.url).searchParams.get('slug') ?? '';
+  const requestUrl = new URL(request.url);
+  if (requestUrl.searchParams.get('client') !== 'apkstore-android') return new Response('Unauthorized', { status: 401 });
+  const slug = requestUrl.searchParams.get('slug') ?? '';
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return new Response('Icon not found', { status: 404 });
 
   const { data: app, error } = await db
