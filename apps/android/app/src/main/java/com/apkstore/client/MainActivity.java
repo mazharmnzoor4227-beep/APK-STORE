@@ -89,6 +89,8 @@ public class MainActivity extends Activity {
     private String pendingInstallSlug;
     private final HashMap<String, Integer> downloadProgress = new HashMap<>();
     private final HashMap<String, String> downloadErrors = new HashMap<>();
+    private final java.util.HashSet<String> previousHomeSlugs = new java.util.HashSet<>();
+    private final long randomOrderSeed = new java.security.SecureRandom().nextLong();
 
     private class ProgressRing extends View {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -492,6 +494,7 @@ public class MainActivity extends Activity {
         } else {
             body.removeAllViews();
             if (catalog.length() == 0) { empty("The store is getting ready", "Approved apps will appear here."); return; }
+            previousHomeSlugs.clear();
             homeSection("Recommended", "Recommended", listingApps("Recommended"), 8);
             homeSection("Recently added", "Recently added", catalog, 12);
             homeSection("Recently updated", "Recently updated", sortedUpdates(), 12);
@@ -553,7 +556,12 @@ public class MainActivity extends Activity {
     private JSONArray sortedUpdates() {
         java.util.ArrayList<JSONObject> apps = new java.util.ArrayList<>();
         for (int i = 0; i < catalog.length(); i++) if (catalog.optJSONObject(i) != null && !blacklisted(catalog.optJSONObject(i))) apps.add(catalog.optJSONObject(i));
-        apps.sort((a, b) -> b.optString("updated_at").compareTo(a.optString("updated_at")));
+        apps.sort((a, b) -> {
+            JSONObject ar = a.optJSONObject("release"), br = b.optJSONObject("release");
+            String at = ar == null ? a.optString("updated_at") : ar.optString("published_at", a.optString("updated_at"));
+            String bt = br == null ? b.optString("updated_at") : br.optString("published_at", b.optString("updated_at"));
+            return bt.compareTo(at);
+        });
         JSONArray result = new JSONArray();
         for (JSONObject app : apps) result.put(app);
         return result;
@@ -563,7 +571,9 @@ public class MainActivity extends Activity {
         for (int i = 0; i < catalog.length(); i++) if (catalog.optJSONObject(i) != null && !blacklisted(catalog.optJSONObject(i))) apps.add(catalog.optJSONObject(i));
         if ("recommended".equals(mode)) apps.sort((a, b) -> Boolean.compare(b.optBoolean("is_recommended"), a.optBoolean("is_recommended")));
         if ("stars".equals(mode)) apps.sort((a, b) -> Integer.compare(b.optInt("stars"), a.optInt("stars")));
-        if ("random".equals(mode)) java.util.Collections.shuffle(apps);
+        if ("random".equals(mode)) apps.sort((a, b) -> Long.compare(
+                (a.optString("slug").hashCode() * 0x9E3779B97F4A7C15L) ^ randomOrderSeed,
+                (b.optString("slug").hashCode() * 0x9E3779B97F4A7C15L) ^ randomOrderSeed));
         JSONArray result = new JSONArray();
         for (JSONObject app : apps) result.put(app);
         return result;
@@ -642,8 +652,48 @@ public class MainActivity extends Activity {
     }
     private void homeSection(String title, String listing, JSONArray apps, int limit) {
         if (apps.length() < 3) return;
+        JSONArray unique = new JSONArray();
+        for (int i = 0; i < apps.length(); i++) {
+            JSONObject app = apps.optJSONObject(i);
+            if (app != null && !previousHomeSlugs.contains(app.optString("slug"))) unique.put(app);
+        }
+        if (unique.length() >= 3) apps = unique;
         sectionTitle(title, () -> showListing(listing, false));
-        shelf(apps, limit); space(body, 22);
+        if ("Most starred".equals(listing)) starShelf(apps, limit);
+        else shelf(apps, limit);
+        space(body, 22);
+        previousHomeSlugs.clear();
+        for (int i = 0; i < Math.min(limit, apps.length()); i++) {
+            JSONObject app = apps.optJSONObject(i);
+            if (app != null) previousHomeSlugs.add(app.optString("slug"));
+        }
+    }
+    private void starShelf(JSONArray apps, int limit) {
+        HorizontalScrollView scroller = new HorizontalScrollView(this);
+        scroller.setHorizontalScrollBarEnabled(false);
+        LinearLayout columns = new LinearLayout(this);
+        for (int column = 0; column * 3 < Math.min(limit, apps.length()); column++) {
+            LinearLayout group = vertical();
+            for (int rowIndex = 0; rowIndex < 3 && column * 3 + rowIndex < Math.min(limit, apps.length()); rowIndex++) {
+                JSONObject app = apps.optJSONObject(column * 3 + rowIndex);
+                if (app == null || blacklisted(app)) continue;
+                LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
+                row.addView(icon(app, 48), new LinearLayout.LayoutParams(dp(48), dp(48)));
+                LinearLayout copy = vertical(); copy.setPadding(dp(10), 0, 0, 0);
+                TextView name = text(app.optString("title"), 14, ink(), true); name.setSingleLine(true); copy.addView(name);
+                TextView description = text(app.optString("short_description"), 12, muted(), false);
+                description.setSingleLine(true); description.setEllipsize(android.text.TextUtils.TruncateAt.END); copy.addView(description);
+                JSONObject release = app.optJSONObject("release");
+                String meta = "★ " + app.optInt("stars") + (release == null ? "" : " · " + release.optString("version_name") +
+                        " · " + String.format(java.util.Locale.ROOT, "%.1f MB", release.optLong("byte_size") / 1048576.0));
+                copy.addView(text(meta, 12, muted(), false));
+                row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
+                row.setMinHeight(dp(72)); row.setOnClickListener(v -> showDetail(app)); group.addView(row);
+            }
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(260), -2);
+            lp.setMargins(0, 0, dp(14), 0); columns.addView(group, lp);
+        }
+        scroller.addView(columns); body.addView(scroller);
     }
     private View icon(JSONObject app, int size) {
         String title = app.optString("title", "?");
@@ -677,20 +727,6 @@ public class MainActivity extends Activity {
             });
         }
         return frame;
-    }
-    private View iconProgress(JSONObject app, View icon) {
-        String slug = app.optString("slug");
-        if (!downloads.containsKey(slug)) return icon;
-        FrameLayout wrapper = new FrameLayout(this);
-        wrapper.addView(icon, new FrameLayout.LayoutParams(-1, -1));
-        ProgressRing ring = new ProgressRing();
-        ring.setProgress(downloadProgress.getOrDefault(slug, 0));
-        wrapper.addView(ring, new FrameLayout.LayoutParams(-1, -1));
-        TextView percent = text(downloadProgress.getOrDefault(slug, 0) + "%", 12, Color.WHITE, true);
-        percent.setGravity(Gravity.CENTER); percent.setBackgroundColor(0x88000000);
-        wrapper.addView(percent, new FrameLayout.LayoutParams(-1, -1));
-        wrapper.setContentDescription(app.optString("title") + " downloading " + downloadProgress.getOrDefault(slug, 0) + " percent");
-        return wrapper;
     }
     private void shelf(JSONArray apps, int limit) {
         HorizontalScrollView scroller = new HorizontalScrollView(this);
