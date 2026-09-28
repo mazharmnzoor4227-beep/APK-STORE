@@ -1,6 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.58.0';
 import { S3Client, GetObjectCommand } from 'npm:@aws-sdk/client-s3@3.901.0';
 import { getSignedUrl } from 'npm:@aws-sdk/s3-request-presigner@3.901.0';
+import { trustedExternalApkUrl } from './trusted-external-apk-url.mjs';
 
 const url = Deno.env.get('SUPABASE_URL')!;
 const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -10,15 +11,19 @@ Deno.serve(async (request) => {
   if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 });
   const slug = new URL(request.url).searchParams.get('slug') ?? '';
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return new Response('App not found', { status: 404 });
-  const { data: app } = await db.from('apps').select('id,current_release_id').eq('slug', slug).eq('visibility', 'published').maybeSingle();
+  const { data: app } = await db.from('apps').select('id,current_release_id,github_owner,github_repo').eq('slug', slug).eq('visibility', 'published').maybeSingle();
   if (!app?.current_release_id) return new Response('App not found', { status: 404 });
   const { data: release } = await db.from('releases').select('storage_key,package_id,external_url').eq('id', app.current_release_id).eq('app_id', app.id).eq('status', 'published').maybeSingle();
   if (!release) return new Response('Release not found', { status: 404 });
   if (release.external_url) {
     const asset = new URL(release.external_url);
-    if (asset.origin !== 'https://apk-store-mazhar.mazharmanzoor4117.chatgpt.site' || !/^\/[A-Za-z0-9._-]+\.apk$/.test(asset.pathname)) {
-      return new Response('Download temporarily unavailable', { status: 503 });
-    }
+    const ownAsset = asset.origin === 'https://apk-store-mazhar.mazharmanzoor4117.chatgpt.site' && /^\/[A-Za-z0-9._-]+\.apk$/.test(asset.pathname);
+    const upstreamAsset = trustedExternalApkUrl(release.external_url, {
+      githubOwner: app.github_owner,
+      githubRepo: app.github_repo,
+      packageId: release.package_id,
+    });
+    if (!ownAsset && !upstreamAsset) return new Response('Download temporarily unavailable', { status: 503 });
     return Response.redirect(asset, 302);
   }
   if (release.storage_key.startsWith('r2/')) {
