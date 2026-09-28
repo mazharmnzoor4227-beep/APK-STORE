@@ -9,6 +9,8 @@ import android.content.Context;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
@@ -16,6 +18,7 @@ import android.database.Cursor;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.LruCache;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
@@ -44,6 +47,8 @@ import java.util.concurrent.Executors;
 public class MainActivity extends Activity {
     private static final int APPS = 0, SEARCH = 1, UPDATES = 2, FAVORITES = 3;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
+    private final ExecutorService iconWorker = Executors.newFixedThreadPool(3);
+    private final LruCache<String, Bitmap> iconCache = new LruCache<>(32);
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean light;
     private int tab = APPS;
@@ -206,7 +211,7 @@ public class MainActivity extends Activity {
         worker.execute(() -> {
             try {
                 if (BuildConfig.SUPABASE_KEY.isEmpty()) throw new Exception("Catalog connection is not configured.");
-                String endpoint = BuildConfig.SUPABASE_URL + "/rest/v1/apps?select=id,slug,title,package_id,category,description,current_release_id,created_at,updated_at&visibility=eq.published&current_release_id=not.is.null&order=created_at.desc&limit=100";
+                String endpoint = BuildConfig.SUPABASE_URL + "/rest/v1/apps?select=id,slug,title,package_id,category,description,icon_url,current_release_id,created_at,updated_at&visibility=eq.published&current_release_id=not.is.null&order=created_at.desc&limit=100";
                 HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
                 connection.setConnectTimeout(12000); connection.setReadTimeout(12000);
                 connection.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
@@ -366,11 +371,36 @@ public class MainActivity extends Activity {
         }
         body.addView(row); space(body, 10);
     }
-    private TextView icon(JSONObject app, int size) {
+    private View icon(JSONObject app, int size) {
         String title = app.optString("title", "?");
-        TextView icon = text(title.isEmpty() ? "?" : title.substring(0, 1).toUpperCase(), size / 2, green(), true);
-        icon.setGravity(Gravity.CENTER); icon.setBackground(shape(raised(), 13));
-        return icon;
+        TextView fallback = text(title.isEmpty() ? "?" : title.substring(0, 1).toUpperCase(), size / 2, green(), true);
+        fallback.setGravity(Gravity.CENTER); fallback.setBackground(shape(raised(), 13));
+        String url = app.optString("icon_url", "");
+        if (!url.startsWith(BuildConfig.SUPABASE_URL + "/storage/v1/object/public/app-icons/")) return fallback;
+        android.widget.FrameLayout frame = new android.widget.FrameLayout(this);
+        frame.addView(fallback, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        ImageView image = new ImageView(this);
+        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        image.setBackground(shape(raised(), 13));
+        image.setClipToOutline(true);
+        frame.addView(image, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        Bitmap cached = iconCache.get(url);
+        if (cached != null) image.setImageBitmap(cached);
+        else {
+            image.setVisibility(View.GONE);
+            iconWorker.execute(() -> {
+                try {
+                    HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+                    conn.setConnectTimeout(8000); conn.setReadTimeout(8000);
+                    if (conn.getResponseCode() != 200 || conn.getContentLengthLong() > 1048576) { conn.disconnect(); return; }
+                    Bitmap bitmap;
+                    try (InputStream stream = conn.getInputStream()) { bitmap = BitmapFactory.decodeStream(stream); }
+                    conn.disconnect();
+                    if (bitmap != null) { iconCache.put(url, bitmap); handler.post(() -> { image.setImageBitmap(bitmap); image.setVisibility(View.VISIBLE); }); }
+                } catch (Exception ignored) { }
+            });
+        }
+        return frame;
     }
     private void shelf(JSONArray apps, int limit) {
         HorizontalScrollView scroller = new HorizontalScrollView(this);
