@@ -90,6 +90,7 @@ public class MainActivity extends Activity {
     private ProgressRing detailRing;
     private FrameLayout detailIconContainer;
     private String pendingInstallSlug;
+    private Runnable installResultPoll;
     private final HashMap<String, Integer> downloadProgress = new HashMap<>();
     private final HashMap<String, String> downloadSizes = new HashMap<>();
     private final HashMap<String, String> downloadErrors = new HashMap<>();
@@ -166,6 +167,8 @@ public class MainActivity extends Activity {
         handler.post(() -> {
             if (detailApp != null) consumeInstallResult(detailApp.optString("slug"));
             if (detailApp != null) refreshDetail();
+            if (detailApp != null && completedDownloads.containsKey(detailApp.optString("slug")))
+                watchInstallResult(detailApp.optString("slug"));
             if (pendingInstallSlug != null && getPackageManager().canRequestPackageInstalls()) {
                 String slug = pendingInstallSlug;
                 pendingInstallSlug = null;
@@ -794,7 +797,7 @@ public class MainActivity extends Activity {
             JSONObject app = apps.optJSONObject(i);
             if (app == null || blacklisted(app)) continue;
             LinearLayout tile = vertical(); tile.setGravity(Gravity.CENTER_HORIZONTAL);
-            tile.addView(icon(app, 64), new LinearLayout.LayoutParams(dp(64), dp(64)));
+            tile.addView(icon(app, 72), new LinearLayout.LayoutParams(dp(72), dp(72)));
             space(tile, 7);
             TextView title = text(app.optString("title"), 12, ink(), false);
             title.setSingleLine(true); title.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -804,7 +807,7 @@ public class MainActivity extends Activity {
             TextView stats = text(size, 12, muted(), false);
             stats.setSingleLine(true); tile.addView(stats);
             tile.setOnClickListener(v -> showDetail(app));
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(78), -2);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(88), -2);
             params.setMargins(0, 0, dp(8), 0); row.addView(tile, params);
         }
         scroller.addView(row); body.addView(scroller);
@@ -851,7 +854,7 @@ public class MainActivity extends Activity {
             JSONObject app = apps.optJSONObject(i);
             if (app == null || blacklisted(app) || (!activeCategory.isEmpty() && !activeCategory.equals(app.optString("category")))) continue;
             LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
-            row.addView(icon(app, 62), new LinearLayout.LayoutParams(dp(62), dp(62)));
+            row.addView(icon(app, 70), new LinearLayout.LayoutParams(dp(70), dp(70)));
             LinearLayout copy = vertical(); copy.setPadding(dp(11), 0, 0, 0);
             TextView title = text(app.optString("title"), 14, ink(), true); title.setSingleLine(true);
             copy.addView(title);
@@ -1253,11 +1256,11 @@ public class MainActivity extends Activity {
         detailIconContainer = new FrameLayout(this);
         detailIconContainer.setBackground(shape(surface(), 16));
         detailIconContainer.setClipToOutline(true);
-        detailIconContainer.addView(icon(app, 72), new FrameLayout.LayoutParams(-1, -1));
-        iconFrame.addView(detailIconContainer, new FrameLayout.LayoutParams(dp(72), dp(72), Gravity.CENTER));
+        detailIconContainer.addView(icon(app, 82), new FrameLayout.LayoutParams(-1, -1));
+        iconFrame.addView(detailIconContainer, new FrameLayout.LayoutParams(dp(82), dp(82), Gravity.CENTER));
         detailRing = new ProgressRing();
-        iconFrame.addView(detailRing, new FrameLayout.LayoutParams(dp(84), dp(84), Gravity.CENTER));
-        appHeader.addView(iconFrame, new LinearLayout.LayoutParams(dp(84), dp(84)));
+        iconFrame.addView(detailRing, new FrameLayout.LayoutParams(dp(96), dp(96), Gravity.CENTER));
+        appHeader.addView(iconFrame, new LinearLayout.LayoutParams(dp(96), dp(96)));
         LinearLayout identity = vertical(); identity.setPadding(dp(12), 0, 0, 0);
         TextView appName = text(app.optString("title"), 22, ink(), true);
         appName.setMaxLines(2); identity.addView(appName);
@@ -1489,11 +1492,12 @@ public class MainActivity extends Activity {
         detailStatus.setVisibility(detailStatus.getText().length() == 0 ? View.GONE : View.VISIBLE);
         detailPrimary.setText(running ? "Open" : ready ? "Install" : updateAvailable(detailApp) ? "Update" : "Install");
         detailPrimary.setEnabled(!running);
-        detailPrimary.setAlpha(running ? 0.5f : 1f);
+        detailPrimary.setBackground(shape(running ? raised() : green(), 12));
+        detailPrimary.setTextColor(running ? muted() : bg());
         detailSecondary.setVisibility(running || installed ? View.VISIBLE : View.GONE);
         detailSecondary.setText(running ? "Cancel" : "Uninstall");
         detailSecondary.setEnabled(true);
-        detailSecondary.setAlpha(1f);
+        detailSecondary.setBackground(shape(running ? surface() : bg(), 12));
         detailSecondary.setOnClickListener(v -> {
             if (running) cancelDownload(slug);
             else startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + detailApp.optString("package_id"))));
@@ -1562,7 +1566,10 @@ public class MainActivity extends Activity {
                 ApkIntegrity.verifyFile(apk, release.optString("apk_sha256"), release.optLong("byte_size"));
                 ApkIntegrity.verifyPackage(this, apk, target.optString("package_id"), release.optString("certificate_sha256"));
                 InstallCoordinator.install(this, apk, slug, target.optString("package_id"));
-                runOnUiThread(() -> { downloadErrors.put(slug, "Waiting for Android installation confirmation"); refreshDetail(); });
+                runOnUiThread(() -> {
+                    downloadErrors.put(slug, "Waiting for Android installation confirmation");
+                    refreshDetail(); watchInstallResult(slug);
+                });
             } catch (Exception error) {
                 runOnUiThread(() -> {
                     downloadErrors.put(slug, error.getMessage() == null ? "APK verification failed." : error.getMessage());
@@ -1615,7 +1622,15 @@ public class MainActivity extends Activity {
                         downloadErrors.remove(slug);
                     long done = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
                     long total = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
-                    downloadProgress.put(slug, total > 0 ? (int)Math.min(99, done * 100 / total) : 0);
+                    JSONObject current = null;
+                    for (int i = 0; i < catalog.length(); i++) {
+                        JSONObject candidate = catalog.optJSONObject(i);
+                        if (candidate != null && slug.equals(candidate.optString("slug"))) { current = candidate; break; }
+                    }
+                    JSONObject release = current == null ? null : current.optJSONObject("release");
+                    long expected = release == null ? 0 : release.optLong("byte_size");
+                    long progressTotal = total > 0 ? total : expected;
+                    downloadProgress.put(slug, progressTotal > 0 ? (int)Math.min(99, done * 100 / progressTotal) : 0);
                     downloadSizes.put(slug, total > 0 ? String.format(java.util.Locale.ROOT,
                             "%.1f / %.1f MB", done / 1048576.0, total / 1048576.0) :
                             String.format(java.util.Locale.ROOT, "%.1f MB downloaded", done / 1048576.0));
@@ -1628,10 +1643,29 @@ public class MainActivity extends Activity {
         downloadPolls.put(slug, poll);
         handler.post(poll);
     }
+    private void watchInstallResult(String slug) {
+        if (installResultPoll != null) handler.removeCallbacks(installResultPoll);
+        final long deadline = android.os.SystemClock.uptimeMillis() + 120000;
+        installResultPoll = new Runnable() {
+            @Override public void run() {
+                if (detailApp == null || !slug.equals(detailApp.optString("slug"))) return;
+                String result = getSharedPreferences(InstallResultReceiver.PREFS, MODE_PRIVATE).getString(slug, null);
+                if (result != null) {
+                    consumeInstallResult(slug);
+                    refreshDetail();
+                    installResultPoll = null;
+                } else if (android.os.SystemClock.uptimeMillis() < deadline) {
+                    handler.postDelayed(this, 700);
+                } else installResultPoll = null;
+            }
+        };
+        handler.postDelayed(installResultPoll, 700);
+    }
     @Override public void onBackPressed() { if (legalPage) showAbout(); else showTab(APPS); }
     @Override protected void onDestroy() {
         if (pendingSearch != null) handler.removeCallbacks(pendingSearch);
         for (Runnable poll : downloadPolls.values()) handler.removeCallbacks(poll);
+        if (installResultPoll != null) handler.removeCallbacks(installResultPoll);
         worker.shutdownNow(); super.onDestroy();
     }
 }
