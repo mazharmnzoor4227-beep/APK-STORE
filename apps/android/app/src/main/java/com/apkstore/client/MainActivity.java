@@ -1182,11 +1182,25 @@ public class MainActivity extends Activity {
         image.setBackground(shape(surface(), 12));
         iconWorker.execute(() -> {
             try {
+                String filename = java.util.UUID.nameUUIDFromBytes(url.getBytes(StandardCharsets.UTF_8)) + ".webp";
+                File cached = new File(getCacheDir(), filename);
+                if (cached.isFile() && cached.length() > 0 && cached.length() <= 5_000_000) {
+                    Bitmap bitmap = BitmapFactory.decodeFile(cached.getAbsolutePath());
+                    if (bitmap != null) { handler.post(() -> image.setImageBitmap(bitmap)); return; }
+                }
                 HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
                 connection.setConnectTimeout(8000); connection.setReadTimeout(8000);
                 if (connection.getResponseCode() != 200 || connection.getContentLengthLong() > 5000000) return;
                 Bitmap bitmap;
-                try (InputStream stream = connection.getInputStream()) { bitmap = BitmapFactory.decodeStream(stream); }
+                try (InputStream stream = connection.getInputStream(); java.io.FileOutputStream output = new java.io.FileOutputStream(cached)) {
+                    byte[] bytes = new byte[8192]; int count; long total = 0;
+                    while ((count = stream.read(bytes)) != -1) {
+                        total += count;
+                        if (total > 5_000_000) throw new java.io.IOException("Image too large");
+                        output.write(bytes, 0, count);
+                    }
+                } catch (Exception error) { cached.delete(); throw error; }
+                bitmap = BitmapFactory.decodeFile(cached.getAbsolutePath());
                 if (bitmap != null) handler.post(() -> image.setImageBitmap(bitmap));
                 connection.disconnect();
             } catch (Exception ignored) { }
@@ -1204,12 +1218,35 @@ public class MainActivity extends Activity {
                 image.setScaleX(scale); image.setScaleY(scale); return true;
             }
         });
-        image.setOnTouchListener((view, event) -> { detector.onTouchEvent(event); return true; });
+        android.view.GestureDetector gestures = new android.view.GestureDetector(this,
+                new android.view.GestureDetector.SimpleOnGestureListener() {
+                    @Override public boolean onDoubleTap(MotionEvent event) {
+                        float scale = image.getScaleX() > 1f ? 1f : 2f;
+                        image.animate().scaleX(scale).scaleY(scale).setDuration(180).start(); return true;
+                    }
+                    @Override public boolean onFling(MotionEvent first, MotionEvent last, float velocityX, float velocityY) {
+                        if (first == null || last == null || image.getScaleX() > 1.1f) return false;
+                        float dx = last.getX() - first.getX(), dy = last.getY() - first.getY();
+                        if (dy > dp(110) && Math.abs(dy) > Math.abs(dx)) { viewer.dismiss(); return true; }
+                        if (Math.abs(dx) > dp(90) && Math.abs(dx) > Math.abs(dy)) {
+                            int next = index + (dx < 0 ? 1 : -1);
+                            if (next >= 0 && next < screenshots.length()) { viewer.dismiss(); showScreenshot(screenshots, next); }
+                            return true;
+                        }
+                        return false;
+                    }
+                });
+        image.setOnTouchListener((view, event) -> {
+            detector.onTouchEvent(event); gestures.onTouchEvent(event); return true;
+        });
         FrameLayout frame = new FrameLayout(this);
         frame.addView(image, new FrameLayout.LayoutParams(-1, -1));
         TextView close = action("×", "Close screenshot");
         close.setOnClickListener(v -> viewer.dismiss());
         frame.addView(close, new FrameLayout.LayoutParams(dp(56), dp(56), Gravity.TOP | Gravity.END));
+        TextView position = text((index + 1) + " / " + screenshots.length(), 14, Color.WHITE, true);
+        position.setPadding(dp(18), dp(15), dp(18), dp(15));
+        frame.addView(position, new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
         if (index > 0) {
             TextView previous = action("‹", "Previous screenshot");
             previous.setOnClickListener(v -> { viewer.dismiss(); showScreenshot(screenshots, index - 1); });
