@@ -8,6 +8,7 @@
   <title>APK STORE</title>
   <link rel="stylesheet" href="./style.css">
   <script>try{document.documentElement.dataset.theme=localStorage.getItem('apk-store-theme')||'dark'}catch{}</script>
+  <script>if(new URLSearchParams(location.hash.slice(1)).get('type')==='recovery'&&location.hash.includes('access_token='))location.replace('./admin'+location.hash);</script>
   <script src="./config.js" defer></script>
   <script src="./store.js" defer></script>
 </head>
