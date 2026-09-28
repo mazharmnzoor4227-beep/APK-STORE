@@ -44,9 +44,12 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.InputStream;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.LinkedHashSet;
 import java.util.HashMap;
 import java.util.concurrent.ExecutorService;
@@ -59,7 +62,7 @@ import java.util.concurrent.TimeUnit;
 public class MainActivity extends Activity {
     private static final int APPS = 0, SEARCH = 1, UPDATES = 2, FAVORITES = 3;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
-    private final ExecutorService iconWorker = Executors.newFixedThreadPool(3);
+    private final ExecutorService iconWorker = Executors.newFixedThreadPool(6);
     private final LruCache<String, Bitmap> iconCache = new LruCache<>(32);
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean light;
@@ -739,6 +742,11 @@ public class MainActivity extends Activity {
         image.setClipToOutline(true);
         frame.addView(image, new android.widget.FrameLayout.LayoutParams(-1, -1));
         Bitmap cached = iconCache.get(url);
+        File diskIcon = iconFile(url);
+        if (cached == null && diskIcon.isFile()) {
+            cached = BitmapFactory.decodeFile(diskIcon.getAbsolutePath());
+            if (cached != null) iconCache.put(url, cached);
+        }
         if (cached != null) image.setImageBitmap(cached);
         else {
             image.setVisibility(View.GONE);
@@ -747,14 +755,36 @@ public class MainActivity extends Activity {
                     HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
                     conn.setConnectTimeout(8000); conn.setReadTimeout(8000);
                     if (conn.getResponseCode() != 200 || conn.getContentLengthLong() > 1048576) { conn.disconnect(); return; }
-                    Bitmap bitmap;
-                    try (InputStream stream = conn.getInputStream()) { bitmap = BitmapFactory.decodeStream(stream); }
+                    byte[] bytes;
+                    try (InputStream stream = conn.getInputStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                        byte[] buffer = new byte[8192]; int count;
+                        while ((count = stream.read(buffer)) != -1) {
+                            if (output.size() + count > 1048576) return;
+                            output.write(buffer, 0, count);
+                        }
+                        bytes = output.toByteArray();
+                    }
+                    Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
                     conn.disconnect();
-                    if (bitmap != null) { iconCache.put(url, bitmap); handler.post(() -> { image.setImageBitmap(bitmap); image.setVisibility(View.VISIBLE); }); }
+                    if (bitmap != null) {
+                        try (FileOutputStream output = new FileOutputStream(diskIcon)) { output.write(bytes); }
+                        iconCache.put(url, bitmap);
+                        handler.post(() -> { image.setImageBitmap(bitmap); image.setVisibility(View.VISIBLE); });
+                    }
                 } catch (Exception ignored) { }
             });
         }
         return frame;
+    }
+    private File iconFile(String url) {
+        File directory = new File(getCacheDir(), "app-icons");
+        if (!directory.isDirectory()) directory.mkdirs();
+        try {
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(url.getBytes(StandardCharsets.UTF_8));
+            StringBuilder name = new StringBuilder();
+            for (byte value : hash) name.append(String.format(java.util.Locale.ROOT, "%02x", value & 255));
+            return new File(directory, name + ".img");
+        } catch (Exception ignored) { return new File(directory, Integer.toHexString(url.hashCode()) + ".img"); }
     }
     private void shelf(JSONArray apps, int limit) {
         HorizontalScrollView scroller = new HorizontalScrollView(this);
@@ -973,16 +1003,22 @@ public class MainActivity extends Activity {
         space(panel, 12);
         panel.addView(text("APK STORE", 19, ink(), true));
         space(panel, 14);
-        sheetRow(panel, "▦", "Apps", () -> showTab(APPS), sheet);
-        sheetRow(panel, "⌕", "Search", () -> showTab(SEARCH), sheet);
-        sheetRow(panel, "◷", "Updates", () -> showTab(UPDATES), sheet);
-        sheetRow(panel, "▣", "My apps", this::showMyApps, sheet);
-        sheetRow(panel, "♡", "Favourites", () -> showTab(FAVORITES), sheet);
-        sheetRow(panel, "⊘", "Blacklist", () -> showSavedApps("Blacklist", "blacklist"), sheet);
-        sheetRow(panel, "◷", "Ignored updates", () -> showSavedApps("Ignored updates", "ignored"), sheet);
-        sheetRow(panel, "⚙", "Settings", this::showSettings, sheet);
-        sheetRow(panel, "♥", "Donate", () -> openLink("https://github.com/mazharmnzoor4227-beep/APK-STORE"), sheet);
-        sheetRow(panel, "ⓘ", "About", this::showAbout, sheet);
+        ScrollView menuScroll = new ScrollView(this);
+        menuScroll.setFillViewport(false);
+        LinearLayout rows = vertical();
+        sheetRow(rows, "▦", "Apps", () -> showTab(APPS), sheet);
+        sheetRow(rows, "⌕", "Search", () -> showTab(SEARCH), sheet);
+        sheetRow(rows, "◷", "Updates", () -> showTab(UPDATES), sheet);
+        sheetRow(rows, "▣", "My apps", this::showMyApps, sheet);
+        sheetRow(rows, "♡", "Favourites", () -> showTab(FAVORITES), sheet);
+        sheetRow(rows, "⊘", "Blacklist", () -> showSavedApps("Blacklist", "blacklist"), sheet);
+        sheetRow(rows, "◷", "Ignored updates", () -> showSavedApps("Ignored updates", "ignored"), sheet);
+        sheetRow(rows, "⚙", "Settings", this::showSettings, sheet);
+        sheetRow(rows, "♥", "Donate", () -> openLink("https://github.com/mazharmnzoor4227-beep/APK-STORE"), sheet);
+        sheetRow(rows, "ⓘ", "About", this::showAbout, sheet);
+        menuScroll.addView(rows);
+        int sheetHeight = Math.min(dp(440), getResources().getDisplayMetrics().heightPixels / 2);
+        panel.addView(menuScroll, new LinearLayout.LayoutParams(-1, Math.max(dp(170), sheetHeight - dp(135))));
         sheet.setContentView(panel);
         Window window = sheet.getWindow();
         if (window != null) {
@@ -1182,7 +1218,8 @@ public class MainActivity extends Activity {
         LinearLayout top = new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL);
         TextView back = action("‹", "Back to Apps");
         back.setPadding(dp(16), dp(16), dp(16), dp(16));
-        back.setOnClickListener(v -> { detailApp = null; showTab(tab); }); top.addView(back, weight());
+        back.setOnClickListener(v -> { detailApp = null; showTab(tab); }); top.addView(back, new LinearLayout.LayoutParams(dp(64), dp(52)));
+        top.addView(new View(this), new LinearLayout.LayoutParams(0, dp(52), 1));
         TextView heart = action(isFavorite(app) ? "♥" : "♡", "Toggle favorite");
         heart.setTextColor(isFavorite(app) ? green() : ink());
         heart.setFontVariationSettings(isFavorite(app) ? "'FILL' 1" : "'FILL' 0");
@@ -1283,9 +1320,9 @@ public class MainActivity extends Activity {
             }
             strip.addView(tiles); page.addView(strip);
         }
-        if (!app.optString("source_url").isEmpty())
+        if (app.optString("source_url").startsWith("https://"))
             informationLink(page, "Source code", app.optString("source_url"), () -> openLink(app.optString("source_url")));
-        if (!app.optString("fdroid_url").isEmpty())
+        if (app.optString("fdroid_url").startsWith("https://"))
             informationLink(page, "F-Droid", app.optString("fdroid_url"), () -> openLink(app.optString("fdroid_url")));
         if (release != null) {
             JSONArray permissions = release.optJSONArray("permissions");
@@ -1445,16 +1482,21 @@ public class MainActivity extends Activity {
         detailRing.setProgress(downloadProgress.getOrDefault(slug, 0));
         if (detailIconContainer != null) detailIconContainer.setBackground(shape(surface(), running ? 52 : 16));
         detailPercent.setText(running ? "Downloading " + downloadProgress.getOrDefault(slug, 0) + "%" : "");
+        detailPercent.setVisibility(running ? View.VISIBLE : View.GONE);
         detailStatus.setText(downloadErrors.getOrDefault(slug,
                 running ? downloadSizes.getOrDefault(slug, "Preparing download…") :
                         ready ? "Downloaded · Android will confirm installation" : ""));
-        detailPrimary.setText(running ? "Cancel" : ready ? "Install" : updateAvailable(detailApp) ? "Update" : "Install");
+        detailStatus.setVisibility(detailStatus.getText().length() == 0 ? View.GONE : View.VISIBLE);
+        detailPrimary.setText(running ? "Open" : ready ? "Install" : updateAvailable(detailApp) ? "Update" : "Install");
+        detailPrimary.setEnabled(!running);
+        detailPrimary.setAlpha(running ? 0.5f : 1f);
         detailSecondary.setVisibility(running || installed ? View.VISIBLE : View.GONE);
-        detailSecondary.setText(running ? "Open" : "Uninstall");
-        detailSecondary.setEnabled(!running);
-        detailSecondary.setAlpha(running ? 0.38f : 1f);
+        detailSecondary.setText(running ? "Cancel" : "Uninstall");
+        detailSecondary.setEnabled(true);
+        detailSecondary.setAlpha(1f);
         detailSecondary.setOnClickListener(v -> {
-            if (!running) startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + detailApp.optString("package_id"))));
+            if (running) cancelDownload(slug);
+            else startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + detailApp.optString("package_id"))));
         });
         if (installed && !running && !updateAvailable(detailApp)) {
             detailPrimary.setText("Open");
