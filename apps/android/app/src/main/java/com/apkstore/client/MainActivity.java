@@ -441,7 +441,10 @@ public class MainActivity extends Activity {
                 updateAll.setMinHeight(dp(48)); updateAll.setOnClickListener(v -> {
                     for (int i = 0; i < pending.length(); i++) startDownload(pending.optJSONObject(i));
                 }); body.addView(updateAll);
-                renderList(pending, false);
+                for (int i = 0; i < pending.length(); i++) {
+                    JSONObject app = pending.optJSONObject(i);
+                    if (app != null) renderUpdateRow(app);
+                }
             }
         } else {
             body.removeAllViews();
@@ -462,6 +465,25 @@ public class MainActivity extends Activity {
             sectionTitle("Random picks", () -> showListing("All apps", false));
             shelf(sortedCatalog("random"), 12);
         }
+    }
+    private void renderUpdateRow(JSONObject app) {
+        String slug = app.optString("slug");
+        LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
+        row.addView(icon(app, 56), new LinearLayout.LayoutParams(dp(56), dp(56)));
+        LinearLayout info = vertical(); info.setPadding(dp(12), 0, dp(8), 0);
+        info.addView(text(app.optString("title"), 15, ink(), true));
+        JSONObject release = app.optJSONObject("release");
+        String size = release == null ? "" : String.format(java.util.Locale.ROOT, "%.1f MB", release.optLong("byte_size") / 1048576.0);
+        String oldVersion = "Installed " + installedVersion(app.optString("package_id"));
+        String newVersion = release == null ? "" : release.optString("version_name");
+        info.addView(text(size + "  ·  " + oldVersion + " → " + newVersion, 12, muted(), false));
+        row.addView(info, weight());
+        TextView button = text(downloads.containsKey(slug) ? downloadProgress.getOrDefault(slug, 0) + "%" : "Update", 13, bg(), true);
+        button.setGravity(Gravity.CENTER); button.setMinWidth(dp(70)); button.setMinHeight(dp(48));
+        button.setBackground(shape(green(), 12));
+        button.setOnClickListener(v -> { if (downloads.containsKey(slug)) showDetail(app); else startDownload(app); });
+        row.addView(button); row.setOnClickListener(v -> showDetail(app));
+        body.addView(row); space(body, 12);
     }
     private JSONArray filtered(String value) {
         JSONArray found = new JSONArray();
@@ -646,12 +668,12 @@ public class MainActivity extends Activity {
             TextView category = text(app.optString("short_description", app.optString("category")), 10, muted(), false);
             category.setSingleLine(true); tile.addView(category);
             JSONObject release = app.optJSONObject("release");
-            String meta = app.optInt("stars") > 0 ? "★ " + app.optInt("stars") :
-                    release == null ? "" : release.optString("version_name");
+            String meta = "★ " + app.optInt("stars") + (release == null ? "" : " · " + release.optString("version_name") +
+                    " · " + String.format(java.util.Locale.ROOT, "%.1f MB", release.optLong("byte_size") / 1048576.0));
             TextView stats = text(meta, 10, green(), false);
             stats.setSingleLine(true); tile.addView(stats);
             tile.setOnClickListener(v -> showDetail(app));
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(106), -2);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(160), -2);
             params.setMargins(0, 0, dp(8), 0); row.addView(tile, params);
         }
         scroller.addView(row); body.addView(scroller);
@@ -998,7 +1020,8 @@ public class MainActivity extends Activity {
                 if (!trustedImage(url)) continue;
                 ImageView preview = remoteImage(url);
                 preview.setContentDescription("Screenshot " + (i + 1) + " of " + app.optString("title"));
-                preview.setOnClickListener(v -> showScreenshot(url));
+                int index = i;
+                preview.setOnClickListener(v -> showScreenshot(screenshots, index));
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(140), dp(240));
                 lp.setMargins(0, dp(12), dp(12), dp(18)); tiles.addView(preview, lp);
             }
@@ -1035,6 +1058,7 @@ public class MainActivity extends Activity {
     private void expandable(LinearLayout page, String title, String content) {
         TextView header = text(title + "  ▾", 19, ink(), true); header.setMinHeight(dp(48));
         TextView detail = text(content.isEmpty() ? "No information supplied" : content, 15, muted(), false);
+        if ("Changelog".equals(title) && !content.isEmpty()) io.noties.markwon.Markwon.create(this).setMarkdown(detail, content);
         detail.setVisibility(View.GONE); detail.setPadding(0, dp(8), 0, dp(20));
         header.setOnClickListener(v -> detail.setVisibility(detail.getVisibility() == View.GONE ? View.VISIBLE : View.GONE));
         page.addView(header); page.addView(detail);
@@ -1059,7 +1083,9 @@ public class MainActivity extends Activity {
         });
         return image;
     }
-    private void showScreenshot(String url) {
+    private void showScreenshot(JSONArray screenshots, int index) {
+        String url = screenshots.optString(index);
+        if (!trustedImage(url)) return;
         Dialog viewer = new Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
         ImageView image = remoteImage(url);
         ScaleGestureDetector detector = new ScaleGestureDetector(this, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
@@ -1074,6 +1100,16 @@ public class MainActivity extends Activity {
         TextView close = action("×", "Close screenshot");
         close.setOnClickListener(v -> viewer.dismiss());
         frame.addView(close, new FrameLayout.LayoutParams(dp(56), dp(56), Gravity.TOP | Gravity.END));
+        if (index > 0) {
+            TextView previous = action("‹", "Previous screenshot");
+            previous.setOnClickListener(v -> { viewer.dismiss(); showScreenshot(screenshots, index - 1); });
+            frame.addView(previous, new FrameLayout.LayoutParams(dp(56), dp(80), Gravity.CENTER_VERTICAL | Gravity.START));
+        }
+        if (index + 1 < screenshots.length()) {
+            TextView next = action("›", "Next screenshot");
+            next.setOnClickListener(v -> { viewer.dismiss(); showScreenshot(screenshots, index + 1); });
+            frame.addView(next, new FrameLayout.LayoutParams(dp(56), dp(80), Gravity.CENTER_VERTICAL | Gravity.END));
+        }
         viewer.setContentView(frame); viewer.show();
     }
     private void refreshDetail() {

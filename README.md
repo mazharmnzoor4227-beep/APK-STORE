@@ -20,6 +20,8 @@ Create a Supabase project, apply `supabase/migrations/` in filename order, and d
 
 `apps`, `releases`, `media`, `categories`, and review tables use RLS. Anonymous catalog access is SELECT only; apps must have `visibility='published'` and point to a published current release. `app-icons` is public read; `apk-files` is private and served through short-lived signed URLs. The download Edge Function accepts a validated slug, looks up its approved release, and redirects only to the configured trusted host or a scoped storage URL. Never expose the service-role key in the Android app.
 
+The `20260930_refresh_stars.sql` migration enables `http` and `pg_cron`, adds a restricted database function and schedules GitHub star snapshots daily at 03:15 UTC. Keep repository owner/name fields reviewed; the function accepts only validated GitHub path segments.
+
 The release's `apk_sha256` and `byte_size` are the canonical hash and size fields. Android verifies both, as well as the APK package and signing certificate, before creating a `PackageInstaller` session.
 
 ## Publish an app or release
