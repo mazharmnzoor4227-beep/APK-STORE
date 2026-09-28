@@ -50,6 +50,10 @@ import java.util.LinkedHashSet;
 import java.util.HashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import androidx.work.WorkManager;
+import androidx.work.PeriodicWorkRequest;
+import androidx.work.ExistingPeriodicWorkPolicy;
+import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends Activity {
     private static final int APPS = 0, SEARCH = 1, UPDATES = 2, FAVORITES = 3;
@@ -63,6 +67,7 @@ public class MainActivity extends Activity {
     private String query = "", activeCategory = "";
     private JSONArray catalog = new JSONArray();
     private CatalogRepository repository;
+    private DownloadStore history;
     private final HashMap<String, Long> releaseVersions = new HashMap<>();
     private LinearLayout body;
     private EditText searchBox;
@@ -105,8 +110,24 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        light = getPreferences(0).getBoolean("light", false);
+        String theme = getPreferences(0).getString("theme", "system");
+        light = "light".equals(theme) || ("system".equals(theme) &&
+                (getResources().getConfiguration().uiMode & 0x30) == 0x10);
         repository = new CatalogRepository(this);
+        history = new DownloadStore(this);
+        JSONArray attempts = history.attempts();
+        java.util.HashSet<String> recovered = new java.util.HashSet<>();
+        for (int i = 0; i < attempts.length(); i++) {
+            JSONObject attempt = attempts.optJSONObject(i);
+            if (attempt == null || !recovered.add(attempt.optString("slug"))) continue;
+            String slug = attempt.optString("slug"), status = attempt.optString("status");
+            long id = attempt.optLong("id", -1);
+            if (id <= 0) continue;
+            if ("Downloading".equals(status)) downloads.put(slug, id);
+            else if ("Downloaded".equals(status)) completedDownloads.put(slug, id);
+            else continue;
+            downloadPaths.put(slug, attempt.optString("path"));
+        }
         catalog = repository.cached();
         for (int i = 0; i < catalog.length(); i++) {
             JSONObject app = catalog.optJSONObject(i);
@@ -114,7 +135,14 @@ public class MainActivity extends Activity {
                 releaseVersions.put(app.optString("package_id"), app.optJSONObject("release").optLong("version_code"));
         }
         showTab(APPS);
+        for (String slug : new java.util.ArrayList<>(downloads.keySet())) pollDownload(slug);
         if (catalog.length() > 0) load();
+        scheduleUpdates();
+    }
+    private void scheduleUpdates() {
+        int hours = getPreferences(0).getInt("update_hours", 12);
+        PeriodicWorkRequest request = new PeriodicWorkRequest.Builder(UpdateCheckWorker.class, hours, TimeUnit.HOURS).build();
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork("catalog-update-check", ExistingPeriodicWorkPolicy.UPDATE, request);
     }
     @Override protected void onResume() {
         super.onResume();
@@ -136,8 +164,17 @@ public class MainActivity extends Activity {
         if ("Installed".equals(result)) {
             downloadErrors.remove(slug);
             Long id = completedDownloads.remove(slug);
-            if (id != null) ((DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE)).remove(id);
-        } else downloadErrors.put(slug, result);
+            if (id != null) {
+                history.record(slug, slug, "Installed", "", id, "", 100);
+                ((DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE)).remove(id);
+                downloadPaths.remove(slug);
+            }
+        } else {
+            downloadErrors.put(slug, result);
+            Long id = completedDownloads.get(slug);
+            history.record(slug, slug, result.equals("Cancelled") ? "Cancelled" : "Failed", result,
+                    id == null ? -1 : id, downloadPaths.getOrDefault(slug, ""), 100);
+        }
     }
     private TextView text(String value, int size, int color, boolean bold) {
         TextView t = new TextView(this);
@@ -327,7 +364,7 @@ public class MainActivity extends Activity {
         }
         HashMap<String, Long> versions = new HashMap<>();
         if (ids.length() == 0) return versions;
-        String endpoint = BuildConfig.SUPABASE_URL + "/rest/v1/releases?select=id,version_code,version_name,apk_sha256,byte_size,certificate_sha256,release_notes,published_at&status=eq.published&id=in.(" + ids + ")";
+        String endpoint = BuildConfig.SUPABASE_URL + "/rest/v1/releases?select=id,version_code,version_name,apk_sha256,byte_size,certificate_sha256,release_notes,changelog,permissions,published_at&status=eq.published&id=in.(" + ids + ")";
         HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
         connection.setConnectTimeout(12000); connection.setReadTimeout(12000);
         connection.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
@@ -422,13 +459,16 @@ public class MainActivity extends Activity {
         JSONArray found = new JSONArray();
         for (int i = 0; i < catalog.length(); i++) {
             JSONObject app = catalog.optJSONObject(i);
-            if (app != null && (value.trim().isEmpty() || app.optString("title").toLowerCase().contains(value.trim().toLowerCase())
+            if (app != null && !blacklisted(app) && (value.trim().isEmpty() || app.optString("title").toLowerCase().contains(value.trim().toLowerCase())
                     || app.optString("category").toLowerCase().contains(value.trim().toLowerCase()))) found.put(app);
         }
         return found;
     }
     private boolean isFavorite(JSONObject app) {
         return getPreferences(0).getStringSet("favorites", java.util.Collections.emptySet()).contains(app.optString("slug"));
+    }
+    private boolean blacklisted(JSONObject app) {
+        return getPreferences(0).getStringSet("blacklist", java.util.Collections.emptySet()).contains(app.optString("slug"));
     }
     private void toggleFavorite(JSONObject app) {
         java.util.Set<String> saved = new java.util.HashSet<>(getPreferences(0).getStringSet("favorites", java.util.Collections.emptySet()));
@@ -441,13 +481,13 @@ public class MainActivity extends Activity {
         JSONArray result = new JSONArray();
         for (int i = 0; i < catalog.length(); i++) {
             JSONObject app = catalog.optJSONObject(i);
-            if (app != null && isFavorite(app)) result.put(app);
+            if (app != null && isFavorite(app) && !blacklisted(app)) result.put(app);
         }
         return result;
     }
     private JSONArray sortedUpdates() {
         java.util.ArrayList<JSONObject> apps = new java.util.ArrayList<>();
-        for (int i = 0; i < catalog.length(); i++) if (catalog.optJSONObject(i) != null) apps.add(catalog.optJSONObject(i));
+        for (int i = 0; i < catalog.length(); i++) if (catalog.optJSONObject(i) != null && !blacklisted(catalog.optJSONObject(i))) apps.add(catalog.optJSONObject(i));
         apps.sort((a, b) -> b.optString("updated_at").compareTo(a.optString("updated_at")));
         JSONArray result = new JSONArray();
         for (JSONObject app : apps) result.put(app);
@@ -455,7 +495,7 @@ public class MainActivity extends Activity {
     }
     private JSONArray sortedCatalog(String mode) {
         java.util.ArrayList<JSONObject> apps = new java.util.ArrayList<>();
-        for (int i = 0; i < catalog.length(); i++) if (catalog.optJSONObject(i) != null) apps.add(catalog.optJSONObject(i));
+        for (int i = 0; i < catalog.length(); i++) if (catalog.optJSONObject(i) != null && !blacklisted(catalog.optJSONObject(i))) apps.add(catalog.optJSONObject(i));
         if ("recommended".equals(mode)) apps.sort((a, b) -> Boolean.compare(b.optBoolean("is_recommended"), a.optBoolean("is_recommended")));
         if ("stars".equals(mode)) apps.sort((a, b) -> Integer.compare(b.optInt("stars"), a.optInt("stars")));
         if ("random".equals(mode)) java.util.Collections.shuffle(apps);
@@ -486,14 +526,32 @@ public class MainActivity extends Activity {
     }
     private void showDownloads() {
         LinearLayout page = informationPage("Downloads", () -> showTab(tab));
-        if (downloads.isEmpty() && completedDownloads.isEmpty() && downloadErrors.isEmpty()) {
+        JSONArray attempts = history.attempts();
+        if (attempts.length() == 0) {
             page.addView(text("No downloads yet", 16, muted(), false)); return;
         }
-        for (String slug : downloads.keySet()) {
-            page.addView(text(slug + " · Downloading " + downloadProgress.getOrDefault(slug, 0) + "%", 15, ink(), true));
+        TextView clear = text("⋮  Clear history", 14, green(), true);
+        clear.setMinHeight(dp(48)); clear.setOnClickListener(v -> { history.clear(); showDownloads(); });
+        page.addView(clear);
+        for (int i = 0; i < attempts.length(); i++) {
+            JSONObject attempt = attempts.optJSONObject(i);
+            if (attempt == null) continue;
+            String slug = attempt.optString("slug");
+            LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
+            for (int j = 0; j < catalog.length(); j++) {
+                JSONObject app = catalog.optJSONObject(j);
+                if (app != null && slug.equals(app.optString("slug"))) {
+                    row.addView(icon(app, 48), new LinearLayout.LayoutParams(dp(48), dp(48))); break;
+                }
+            }
+            LinearLayout labels = vertical(); labels.setPadding(dp(12), 0, 0, 0);
+            labels.addView(text(attempt.optString("title"), 16, ink(), true));
+            String status = attempt.optString("status");
+            if ("Downloading".equals(status)) status += " " + downloadProgress.getOrDefault(slug, attempt.optInt("progress")) + "%";
+            labels.addView(text(status + " · " + android.text.format.DateFormat.format("dd MMM yyyy", attempt.optLong("time")), 12, muted(), false));
+            if (!attempt.optString("error").isEmpty()) labels.addView(text(attempt.optString("error"), 12, muted(), false));
+            row.addView(labels); row.setMinHeight(dp(72)); page.addView(row);
         }
-        for (String slug : completedDownloads.keySet()) page.addView(text(slug + " · Downloaded", 15, ink(), true));
-        for (String slug : downloadErrors.keySet()) page.addView(text(slug + " · " + downloadErrors.get(slug), 15, muted(), false));
     }
     private void sectionTitle(String title, Runnable more) {
         LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
@@ -514,7 +572,7 @@ public class MainActivity extends Activity {
         String url = app.optString("icon_url", "");
         boolean hostedIcon = url.startsWith("https://apk-store-mazhar.mazharmanzoor4117.chatgpt.site/") && url.endsWith(".png");
         boolean storageIcon = url.startsWith(BuildConfig.SUPABASE_URL + "/storage/v1/object/public/app-icons/");
-        if (!hostedIcon && !storageIcon) return fallback;
+        if (!hostedIcon && !storageIcon) return iconProgress(app, fallback);
         android.widget.FrameLayout frame = new android.widget.FrameLayout(this);
         frame.addView(fallback, new android.widget.FrameLayout.LayoutParams(-1, -1));
         ImageView image = new ImageView(this);
@@ -538,7 +596,21 @@ public class MainActivity extends Activity {
                 } catch (Exception ignored) { }
             });
         }
-        return frame;
+        return iconProgress(app, frame);
+    }
+    private View iconProgress(JSONObject app, View icon) {
+        String slug = app.optString("slug");
+        if (!downloads.containsKey(slug)) return icon;
+        FrameLayout wrapper = new FrameLayout(this);
+        wrapper.addView(icon, new FrameLayout.LayoutParams(-1, -1));
+        ProgressRing ring = new ProgressRing();
+        ring.setProgress(downloadProgress.getOrDefault(slug, 0));
+        wrapper.addView(ring, new FrameLayout.LayoutParams(-1, -1));
+        TextView percent = text(downloadProgress.getOrDefault(slug, 0) + "%", 12, Color.WHITE, true);
+        percent.setGravity(Gravity.CENTER); percent.setBackgroundColor(0x88000000);
+        wrapper.addView(percent, new FrameLayout.LayoutParams(-1, -1));
+        wrapper.setContentDescription(app.optString("title") + " downloading " + downloadProgress.getOrDefault(slug, 0) + " percent");
+        return wrapper;
     }
     private void shelf(JSONArray apps, int limit) {
         HorizontalScrollView scroller = new HorizontalScrollView(this);
@@ -546,7 +618,7 @@ public class MainActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         for (int i = 0; i < Math.min(apps.length(), limit); i++) {
             JSONObject app = apps.optJSONObject(i);
-            if (app == null) continue;
+            if (app == null || blacklisted(app)) continue;
             LinearLayout tile = vertical(); tile.setGravity(Gravity.CENTER_HORIZONTAL);
             tile.addView(icon(app, 80), new LinearLayout.LayoutParams(dp(80), dp(80)));
             space(tile, 7);
@@ -592,7 +664,7 @@ public class MainActivity extends Activity {
         int limit = compact ? Math.min(6, apps.length()) : apps.length();
         for (int i = 0; i < limit; i++) {
             JSONObject app = apps.optJSONObject(i);
-            if (app == null || (!activeCategory.isEmpty() && !activeCategory.equals(app.optString("category")))) continue;
+            if (app == null || blacklisted(app) || (!activeCategory.isEmpty() && !activeCategory.equals(app.optString("category")))) continue;
             LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
             row.addView(icon(app, 62), new LinearLayout.LayoutParams(dp(62), dp(62)));
             LinearLayout copy = vertical(); copy.setPadding(dp(11), 0, 0, 0);
@@ -633,12 +705,12 @@ public class MainActivity extends Activity {
         sheetRow(panel, "▦", "Apps", () -> showTab(APPS), sheet);
         sheetRow(panel, "⌕", "Search", () -> showTab(SEARCH), sheet);
         sheetRow(panel, "◷", "Updates", () -> showTab(UPDATES), sheet);
-        sheetRow(panel, "♡", "Favorites", () -> showTab(FAVORITES), sheet);
-        sheetRow(panel, light ? "☾" : "☀", light ? "Dark mode" : "Light mode", () -> {
-            light = !light;
-            getPreferences(0).edit().putBoolean("light", light).apply();
-            showTab(tab);
-        }, sheet);
+        sheetRow(panel, "▣", "My apps", this::showMyApps, sheet);
+        sheetRow(panel, "♡", "Favourites", () -> showTab(FAVORITES), sheet);
+        sheetRow(panel, "⊘", "Blacklist", () -> showSavedApps("Blacklist", "blacklist"), sheet);
+        sheetRow(panel, "◷", "Ignored updates", () -> showSavedApps("Ignored updates", "ignored"), sheet);
+        sheetRow(panel, "⚙", "Settings", this::showSettings, sheet);
+        sheetRow(panel, "♥", "Donate", () -> openLink("https://github.com/mazharmnzoor4227-beep/APK-STORE"), sheet);
         sheetRow(panel, "ⓘ", "About", this::showAbout, sheet);
         sheet.setContentView(panel);
         Window window = sheet.getWindow();
@@ -680,6 +752,48 @@ public class MainActivity extends Activity {
                 }
                 return false;
             }
+        });
+    }
+    private void showMyApps() {
+        LinearLayout page = informationPage("My apps", () -> showTab(tab));
+        int count = 0;
+        for (int i = 0; i < catalog.length(); i++) {
+            JSONObject app = catalog.optJSONObject(i);
+            if (app != null && installedVersion(app.optString("package_id")) >= 0) {
+                TextView item = text(app.optString("title"), 16, ink(), true);
+                item.setMinHeight(dp(56)); item.setOnClickListener(v -> showDetail(app));
+                page.addView(item); count++;
+            }
+        }
+        if (count == 0) page.addView(text("No catalog apps installed", 15, muted(), false));
+    }
+    private void showSavedApps(String title, String key) {
+        LinearLayout page = informationPage(title, () -> showTab(tab));
+        java.util.Set<String> saved = getPreferences(0).getStringSet(key, java.util.Collections.emptySet());
+        if (saved.isEmpty()) page.addView(text("No apps here", 15, muted(), false));
+        for (String slug : saved) {
+            TextView row = text(slug + "   Remove", 16, ink(), false);
+            row.setMinHeight(dp(56)); row.setOnClickListener(v -> {
+                java.util.Set<String> updated = new java.util.HashSet<>(saved);
+                updated.remove(slug); getPreferences(0).edit().putStringSet(key, updated).apply();
+                showSavedApps(title, key);
+            }); page.addView(row);
+        }
+    }
+    private void showSettings() {
+        LinearLayout page = informationPage("Settings", () -> showTab(tab));
+        informationLink(page, "Theme", light ? "Light" : "Dark", () -> new AlertDialog.Builder(this)
+                .setItems(new String[]{"System", "Dark", "Light"}, (dialog, which) -> {
+                    getPreferences(0).edit().putString("theme", new String[]{"system", "dark", "light"}[which]).apply();
+                    light = which == 2 || (which == 0 && (getResources().getConfiguration().uiMode & 0x30) == 0x10);
+                    showSettings();
+                }).show());
+        informationLink(page, "Update check interval", "Every 6 or 12 hours", () -> new AlertDialog.Builder(this)
+                .setItems(new String[]{"6 hours", "12 hours"}, (dialog, which) -> {
+                    getPreferences(0).edit().putInt("update_hours", which == 0 ? 6 : 12).apply(); scheduleUpdates(); showSettings();
+                }).show());
+        informationLink(page, "Clear catalog cache", "Reload listings from the network", () -> {
+            new File(getFilesDir(), "catalog.json").delete(); load(); showSettings();
         });
     }
     private void sheetRow(LinearLayout panel, String glyph, String title, Runnable onClick, Dialog sheet) {
@@ -777,6 +891,7 @@ public class MainActivity extends Activity {
                 + "Questions about APK STORE can be raised through github.com/mazharmnzoor4227-beep/APK-STORE.";
     }
     private void showDetail(JSONObject app) {
+        consumeInstallResult(app.optString("slug"));
         detailApp = app;
         LinearLayout root = vertical(); root.setBackgroundColor(bg());
         applySafeArea(root); setContentView(root); root.requestApplyInsets();
@@ -788,6 +903,26 @@ public class MainActivity extends Activity {
         heart.setTextColor(isFavorite(app) ? green() : ink());
         heart.setOnClickListener(v -> toggleFavorite(app));
         top.addView(heart, new LinearLayout.LayoutParams(dp(56), dp(52)));
+        TextView share = action("↗", "Share app");
+        share.setOnClickListener(v -> {
+            Intent intent = new Intent(Intent.ACTION_SEND).setType("text/plain")
+                    .putExtra(Intent.EXTRA_TEXT, "https://apk-store-mazhar.mazharmanzoor4117.chatgpt.site/  ·  " + app.optString("title"));
+            startActivity(Intent.createChooser(intent, "Share app"));
+        });
+        top.addView(share, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        TextView more = action("⋮", "More app options");
+        more.setOnClickListener(v -> new AlertDialog.Builder(this).setItems(new String[]{"Blacklist", "Ignore updates", "Open on GitHub"}, (dialog, which) -> {
+            if (which == 2) {
+                String url = app.optString("source_url");
+                if (url.startsWith("https://github.com/")) openLink(url);
+            } else {
+                String key = which == 0 ? "blacklist" : "ignored";
+                java.util.Set<String> values = new java.util.HashSet<>(getPreferences(0).getStringSet(key, java.util.Collections.emptySet()));
+                values.add(app.optString("slug")); getPreferences(0).edit().putStringSet(key, values).apply();
+                if (which == 0) showTab(tab); else refreshDetail();
+            }
+        }).show());
+        top.addView(more, new LinearLayout.LayoutParams(dp(52), dp(52)));
         root.addView(top);
         ScrollView scroll = new ScrollView(this); root.addView(scroll);
         LinearLayout page = vertical(); page.setPadding(dp(20), dp(22), dp(20), dp(30)); scroll.addView(page);
@@ -798,7 +933,7 @@ public class MainActivity extends Activity {
         page.addView(iconFrame, new LinearLayout.LayoutParams(dp(114), dp(114)));
         space(page, 17);
         page.addView(text(app.optString("title"), 30, ink(), true)); space(page, 6);
-        page.addView(text(app.optString("category") + "  ·  " + app.optString("package_id"), 12, muted(), false));
+        page.addView(text(app.optString("github_owner", "Developer") + "  ·  " + app.optString("package_id"), 12, muted(), false));
         space(page, 20);
         detailPercent = text("", 13, green(), true); page.addView(detailPercent);
         detailStatus = text("", 12, muted(), false); page.addView(detailStatus); space(page, 9);
@@ -818,16 +953,25 @@ public class MainActivity extends Activity {
         detailSecondary.setGravity(Gravity.CENTER); detailSecondary.setPadding(dp(12), dp(15), dp(12), dp(15));
         actions.addView(detailSecondary, new LinearLayout.LayoutParams(0, -2, 1));
         page.addView(actions); space(page, 24);
-        page.addView(text("About this app", 19, ink(), true)); space(page, 10);
-        page.addView(text(app.optString("description"), 15, muted(), false)); space(page, 25);
+        JSONObject release = app.optJSONObject("release");
+        String size = release == null ? "" : String.format(java.util.Locale.ROOT, "%.1f MB", release.optLong("byte_size") / 1048576.0);
+        page.addView(text("★ " + app.optInt("stars") + "  ·  " + app.optString("category") + "  ·  " + size +
+                "  ·  Android " + app.optInt("min_sdk") + "+  ·  " + app.optString("license"), 13, green(), false));
+        space(page, 20);
+        expandable(page, "More about this app", app.optString("description"));
+        if (release != null) expandable(page, "Changelog", release.optString("changelog", release.optString("release_notes")));
+        if (!app.optString("source_url").isEmpty())
+            informationLink(page, "Source code", app.optString("source_url"), () -> openLink(app.optString("source_url")));
+        if (release != null) expandable(page, "Permissions", release.optJSONArray("permissions") == null ? "Not supplied" : release.optJSONArray("permissions").toString());
         page.addView(text("Android asks you to confirm installation. An update also needs the same signing certificate as the installed app.", 12, muted(), false));
         JSONArray suggested = new JSONArray();
         for (int i = 0; i < catalog.length() && suggested.length() < 8; i++) {
             JSONObject candidate = catalog.optJSONObject(i);
-            if (candidate != null && !candidate.optString("slug").equals(app.optString("slug"))) suggested.put(candidate);
+            if (candidate != null && !candidate.optString("slug").equals(app.optString("slug")) &&
+                    candidate.optString("category").equals(app.optString("category"))) suggested.put(candidate);
         }
         if (suggested.length() > 0) {
-            space(page, 26); page.addView(text("More apps for you", 19, ink(), true));
+            space(page, 26); page.addView(text("More from this category", 19, ink(), true));
             HorizontalScrollView suggestions = new HorizontalScrollView(this);
             LinearLayout row = new LinearLayout(this);
             for (int i = 0; i < suggested.length(); i++) {
@@ -843,6 +987,13 @@ public class MainActivity extends Activity {
         }
         refreshDetail();
         if (downloads.containsKey(app.optString("slug"))) pollDownload(app.optString("slug"));
+    }
+    private void expandable(LinearLayout page, String title, String content) {
+        TextView header = text(title + "  ▾", 19, ink(), true); header.setMinHeight(dp(48));
+        TextView detail = text(content.isEmpty() ? "No information supplied" : content, 15, muted(), false);
+        detail.setVisibility(View.GONE); detail.setPadding(0, dp(8), 0, dp(20));
+        header.setOnClickListener(v -> detail.setVisibility(detail.getVisibility() == View.GONE ? View.VISIBLE : View.GONE));
+        page.addView(header); page.addView(detail);
     }
     private void refreshDetail() {
         if (detailApp == null || detailPrimary == null) return;
@@ -891,6 +1042,7 @@ public class MainActivity extends Activity {
             request.setDestinationInExternalFilesDir(this, android.os.Environment.DIRECTORY_DOWNLOADS, filename);
             long id = manager.enqueue(request);
             downloadPaths.put(slug, new File(directory, filename).getAbsolutePath());
+            history.record(slug, app.optString("title"), "Downloading", "", id, downloadPaths.get(slug), 0);
             downloadErrors.remove(slug); downloadProgress.put(slug, 0);
             downloads.put(slug, id);
             pollDownload(slug); refreshDetail();
@@ -938,6 +1090,7 @@ public class MainActivity extends Activity {
         if (poll != null) handler.removeCallbacks(poll);
         if (id != null) ((DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE)).remove(id);
         downloadPaths.remove(slug);
+        history.record(slug, slug, "Cancelled", "", id == null ? -1 : id, "", 0);
         downloadProgress.remove(slug); refreshDetail();
     }
     private void pollDownload(String slug) {
@@ -954,6 +1107,7 @@ public class MainActivity extends Activity {
                     if (status == DownloadManager.STATUS_SUCCESSFUL) {
                         downloads.remove(slug); downloadPolls.remove(slug);
                         completedDownloads.put(slug, id);
+                        history.record(slug, slug, "Downloaded", "", id, downloadPaths.getOrDefault(slug, ""), 100);
                         downloadProgress.put(slug, 100);
                         refreshDetail();
                         openDownloaded(slug);
@@ -961,12 +1115,16 @@ public class MainActivity extends Activity {
                     }
                     if (status == DownloadManager.STATUS_FAILED) {
                         int reason = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON));
-                        cancelDownload(slug); downloadErrors.put(slug, "Download failed (" + reason + "). Tap Install to retry."); refreshDetail(); return;
+                        cancelDownload(slug); downloadErrors.put(slug, "Download failed (" + reason + "). Tap Install to retry.");
+                        history.record(slug, slug, "Failed", downloadErrors.get(slug), id, "", 0);
+                        refreshDetail(); return;
                     }
                     long done = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
                     long total = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
                     downloadProgress.put(slug, total > 0 ? (int)Math.min(99, done * 100 / total) : 0);
-                    refreshDetail(); handler.postDelayed(this, 500);
+                    refreshDetail();
+                    if (detailApp == null && body != null) render();
+                    handler.postDelayed(this, 500);
                 } catch (Exception e) { cancelDownload(slug); downloadErrors.put(slug, "Download failed. Tap Install to retry."); refreshDetail(); }
             }
         };

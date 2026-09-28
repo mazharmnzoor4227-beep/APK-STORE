@@ -18,4 +18,7 @@ android {
     buildTypes { release { minifyEnabled true; proguardFiles getDefaultProguardFile('proguard-android-optimize.txt') } }
 }
 
-dependencies { testImplementation 'junit:junit:4.13.2' }
+dependencies {
+    implementation 'androidx.work:work-runtime:2.12.0'
+    testImplementation 'junit:junit:4.13.2'
+}
