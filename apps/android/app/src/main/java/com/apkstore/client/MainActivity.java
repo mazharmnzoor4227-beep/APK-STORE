@@ -66,6 +66,8 @@ public class MainActivity extends Activity {
     private int tab = APPS;
     private int generation;
     private String query = "", activeCategory = "";
+    private String listCategory = "", listPrice = "All", listSearch = "";
+    private int listCount = 30;
     private JSONArray catalog = new JSONArray();
     private CatalogRepository repository;
     private DownloadStore history;
@@ -450,21 +452,11 @@ public class MainActivity extends Activity {
         } else {
             body.removeAllViews();
             if (catalog.length() == 0) { empty("The store is getting ready", "Approved apps will appear here."); return; }
-            sectionTitle("Recommended", () -> showListing("Recommended", false));
-            shelf(sortedCatalog("recommended"), 8);
-            space(body, 22);
-            sectionTitle("Recently added", () -> showListing("Recently added", false));
-            shelf(catalog, 12);
-            space(body, 22);
-            sectionTitle("Recently updated", () -> showListing("Recently updated", true));
-            JSONArray updated = sortedUpdates();
-            shelf(updated, 12);
-            space(body, 22);
-            sectionTitle("Most starred on GitHub", () -> showListing("Most starred", false));
-            shelf(sortedCatalog("stars"), 12);
-            space(body, 22);
-            sectionTitle("Random picks", () -> showListing("All apps", false));
-            shelf(sortedCatalog("random"), 12);
+            homeSection("Recommended", "Recommended", listingApps("Recommended"), 8);
+            homeSection("Recently added", "Recently added", catalog, 12);
+            homeSection("Recently updated", "Recently updated", sortedUpdates(), 12);
+            homeSection("Most starred on GitHub", "Most starred", sortedCatalog("stars"), 12);
+            homeSection("Random picks", "Random picks", sortedCatalog("random"), 12);
         }
     }
     private void renderUpdateRow(JSONObject app) {
@@ -606,6 +598,11 @@ public class MainActivity extends Activity {
         }
         body.addView(row); space(body, 10);
     }
+    private void homeSection(String title, String listing, JSONArray apps, int limit) {
+        if (apps.length() < 3) return;
+        sectionTitle(title, () -> showListing(listing, false));
+        shelf(apps, limit); space(body, 22);
+    }
     private View icon(JSONObject app, int size) {
         String title = app.optString("title", "?");
         TextView fallback = text(title.isEmpty() ? "?" : title.substring(0, 1).toUpperCase(), size / 2, green(), true);
@@ -734,9 +731,96 @@ public class MainActivity extends Activity {
         card.addView(text(detail, 13, muted(), false)); body.addView(card);
     }
     private void showListing(String heading, boolean updates) {
-        tab = updates ? UPDATES : SEARCH;
-        showTab(tab);
-        if (!updates && searchBox != null) searchBox.setHint(heading + " · Search apps");
+        listCategory = ""; listPrice = "All"; listSearch = ""; listCount = 30;
+        renderListing(heading);
+    }
+    private JSONArray listingApps(String heading) {
+        if ("Recommended".equals(heading)) {
+            JSONArray result = new JSONArray();
+            for (int i = 0; i < catalog.length(); i++) {
+                JSONObject app = catalog.optJSONObject(i);
+                if (app != null && app.optBoolean("is_recommended") && !blacklisted(app)) result.put(app);
+            }
+            return result;
+        }
+        if ("Recently updated".equals(heading)) return sortedUpdates();
+        if ("Most starred".equals(heading)) return sortedCatalog("stars");
+        if ("Random picks".equals(heading)) return sortedCatalog("random");
+        return catalog;
+    }
+    private void renderListing(String heading) {
+        LinearLayout root = vertical(); root.setBackgroundColor(bg()); applySafeArea(root);
+        setContentView(root); root.requestApplyInsets();
+        LinearLayout top = new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL); top.setPadding(dp(12), 0, dp(12), 0);
+        TextView back = action("‹", "Back"); back.setOnClickListener(v -> showTab(APPS));
+        top.addView(back, new LinearLayout.LayoutParams(dp(48), dp(56)));
+        top.addView(text(heading, 22, ink(), true), weight());
+        TextView search = action("⌕", "Search this list");
+        search.setOnClickListener(v -> {
+            EditText field = new EditText(this); field.setSingleLine(true); field.setText(listSearch);
+            new AlertDialog.Builder(this).setTitle("Search " + heading).setView(field)
+                    .setPositiveButton("Search", (d, w) -> { listSearch = field.getText().toString().trim(); listCount = 30; renderListing(heading); })
+                    .setNegativeButton("Cancel", null).show();
+        });
+        top.addView(search, new LinearLayout.LayoutParams(dp(48), dp(56))); root.addView(top);
+        HorizontalScrollView filters = new HorizontalScrollView(this); filters.setHorizontalScrollBarEnabled(false);
+        LinearLayout chips = new LinearLayout(this); chips.setPadding(dp(16), dp(6), dp(16), dp(10));
+        listingChip(chips, listCategory.isEmpty() ? "All" : listCategory, !listCategory.isEmpty(), () -> {
+            java.util.LinkedHashSet<String> categories = new java.util.LinkedHashSet<>(); categories.add("All");
+            for (int i = 0; i < catalog.length(); i++) {
+                JSONObject app = catalog.optJSONObject(i);
+                if (app != null && !app.optString("category").isEmpty()) categories.add(app.optString("category"));
+            }
+            String[] choices = categories.toArray(new String[0]);
+            new AlertDialog.Builder(this).setTitle("Filter by category").setSingleChoiceItems(choices,
+                    java.util.Arrays.asList(choices).indexOf(listCategory.isEmpty() ? "All" : listCategory),
+                    (dialog, index) -> { listCategory = index == 0 ? "" : choices[index]; listCount = 30; dialog.dismiss(); renderListing(heading); }).show();
+        });
+        listingChip(chips, "Recently added", "Recently added".equals(heading), () -> showListing("Recently added", false));
+        listingChip(chips, "Recommended", "Recommended".equals(heading), () -> showListing("Recommended", false));
+        listingChip(chips, "Price" + ("All".equals(listPrice) ? "" : " · " + listPrice), !"All".equals(listPrice), () -> {
+            String[] prices = {"All", "Free", "In-app purchases", "In-app purchases or Paid"};
+            new AlertDialog.Builder(this).setTitle("Filter by price").setSingleChoiceItems(prices,
+                    java.util.Arrays.asList(prices).indexOf(listPrice), (dialog, index) -> {
+                        listPrice = prices[index]; listCount = 30; dialog.dismiss(); renderListing(heading);
+                    }).show();
+        });
+        filters.addView(chips); root.addView(filters);
+        ScrollView scroll = new ScrollView(this); root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        LinearLayout rows = vertical(); rows.setPadding(dp(16), dp(10), dp(16), dp(24)); scroll.addView(rows);
+        JSONArray source = listingApps(heading); int matched = 0;
+        for (int i = 0; i < source.length(); i++) {
+            JSONObject app = source.optJSONObject(i);
+            if (app == null || blacklisted(app) || (!listCategory.isEmpty() && !listCategory.equals(app.optString("category"))) ||
+                    (!"All".equals(listPrice) && !listPrice.equals(app.optString("price_type", "Free")))) continue;
+            String needle = listSearch.toLowerCase(java.util.Locale.ROOT);
+            if (!needle.isEmpty() && !(app.optString("title") + " " + app.optString("description") + " " + app.optString("package_id"))
+                    .toLowerCase(java.util.Locale.ROOT).contains(needle)) continue;
+            matched++;
+            if (matched > listCount) continue;
+            LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setMinHeight(dp(80));
+            row.addView(icon(app, 48), new LinearLayout.LayoutParams(dp(48), dp(48)));
+            LinearLayout info = vertical(); info.setPadding(dp(12), 0, 0, 0);
+            TextView name = text(app.optString("title"), 15, ink(), true); name.setSingleLine(true); info.addView(name);
+            TextView description = text(app.optString("short_description", app.optString("description")), 12, muted(), false);
+            description.setSingleLine(true); description.setEllipsize(android.text.TextUtils.TruncateAt.END); info.addView(description);
+            JSONObject release = app.optJSONObject("release");
+            String meta = release == null ? "" : release.optString("version_name") + " · " +
+                    String.format(java.util.Locale.ROOT, "%.1f MB", release.optLong("byte_size") / 1048576.0);
+            info.addView(text(meta, 12, muted(), false)); row.addView(info, weight());
+            row.setOnClickListener(v -> showDetail(app)); rows.addView(row);
+        }
+        if (matched == 0) rows.addView(text("No matching apps. Try another filter or search term.", 15, muted(), false));
+        if (matched > listCount) {
+            TextView more = text("Load more", 15, green(), true); more.setGravity(Gravity.CENTER); more.setMinHeight(dp(56));
+            more.setOnClickListener(v -> { listCount += 30; renderListing(heading); }); rows.addView(more);
+        }
+    }
+    private void listingChip(LinearLayout row, String label, boolean selected, Runnable click) {
+        TextView chip = text(label, 13, selected ? bg() : ink(), selected);
+        chip.setGravity(Gravity.CENTER); chip.setPadding(dp(15), dp(8), dp(15), dp(8)); chip.setMinHeight(dp(48));
+        chip.setBackground(shape(selected ? green() : raised(), 24)); chip.setOnClickListener(v -> click.run());
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2); lp.setMargins(0, 0, dp(8), 0); row.addView(chip, lp);
     }
     private void settings() {
         Dialog sheet = new Dialog(this);
