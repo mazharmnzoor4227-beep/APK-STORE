@@ -179,7 +179,7 @@ Deno.serve(async (request) => {
       const input = await request.json();
       const id = String(input.id || '');
       if (!/^[0-9a-f-]{36}$/.test(id)) return json({ error: 'Invalid app' }, 400);
-      const { data: app } = await db.from('apps').select('id,current_release_id,deleted_at').eq('id', id).maybeSingle();
+      const { data: app } = await db.from('apps').select('id,current_release_id,deleted_at,screenshots').eq('id', id).maybeSingle();
       if (!app) return json({ error: 'App not found' }, 404);
       if (app.deleted_at) return json({ error: 'Restore this app before editing or republishing it' }, 409);
       const changes: Record<string, unknown> = {};
@@ -206,6 +206,7 @@ Deno.serve(async (request) => {
         const prefix = db.storage.from('app-screenshots').getPublicUrl('admin/').data.publicUrl;
         const urls = input.screenshots.map(String);
         for (const url of urls) {
+          if (app.screenshots?.includes(url)) continue;
           const name = url.startsWith(prefix) ? url.slice(prefix.length) : '';
           if (!/^[0-9a-f-]{36}\.webp$/.test(name)) return json({ error: 'Upload each screenshot in this panel first' }, 400);
           const { data: object } = await db.storage.from('app-screenshots').info('admin/' + name);
