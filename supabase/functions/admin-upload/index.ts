@@ -1,5 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.58.0';
-import { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand } from 'npm:@aws-sdk/client-s3@3.901.0';
+import { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand, DeleteObjectCommand } from 'npm:@aws-sdk/client-s3@3.901.0';
 import { getSignedUrl } from 'npm:@aws-sdk/s3-request-presigner@3.901.0';
 import { parseApkFile, parseApkUrl } from 'npm:simple-apk-parser@0.1.2';
 import { createHash } from 'node:crypto';
@@ -115,12 +115,27 @@ Deno.serve(async (request) => {
     if (request.method === 'POST' && route === 'discard') {
       const { id } = await request.json();
       if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) return json({ error: 'Invalid upload' }, 400);
+      const { data: candidate } = await db.from('upload_candidates').select('object_key,status,filename').eq('id', id).eq('owner_id', user.id).maybeSingle();
+      if (!candidate || !['uploaded','inspected'].includes(candidate.status)) return json({ error: 'Upload cannot be discarded now' }, 409);
+      await removeApk(candidate.object_key);
       const { error } = await db.rpc('reject_candidate', { p_candidate_id: id, p_actor_id: user.id, p_reason: 'Discarded by owner' });
       if (error) throw error;
+      await db.from('admin_audit').insert({ actor_id: user.id, action: 'discard', subject_id: id, subject_name: candidate.filename });
       return json({ status: 'rejected' });
+    }
+    if (request.method === 'POST' && route === 'cancel') {
+      const { id } = await request.json();
+      if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) return json({ error: 'Invalid upload' }, 400);
+      const { data: candidate } = await db.from('upload_candidates').select('object_key').eq('id', id).eq('owner_id', user.id).eq('status', 'uploading').maybeSingle();
+      if (!candidate) return json({ error: 'Upload is no longer active' }, 409);
+      await removeApk(candidate.object_key);
+      const { error } = await db.from('upload_candidates').update({ status: 'rejected', error: 'Cancelled by owner' }).eq('id', id).eq('owner_id', user.id).eq('status', 'uploading');
+      if (error) throw error;
+      return json({ status: 'cancelled' });
     }
     if (request.method === 'POST' && route === 'publish') {
       const input = await request.json();
+      if (input.rightsConfirmed !== true) return json({ error: 'Confirm you have the right to distribute this app' }, 400);
       if (typeof input.id !== 'string' || !/^[0-9a-f-]{36}$/.test(input.id)) return json({ error: 'Invalid upload' }, 400);
       const { data: candidate } = await db.from('upload_candidates').select('inspection,status').eq('id', input.id).eq('owner_id', user.id).maybeSingle();
       if (candidate?.status !== 'inspected') return json({ error: 'Inspect the APK first' }, 409);
@@ -143,6 +158,8 @@ Deno.serve(async (request) => {
       if (fdroidUrl !== undefined) extras.fdroid_url = fdroidUrl;
       const { error: updateError } = await db.from('apps').update(extras).eq('id', appId);
       if (updateError) throw updateError;
+      const { error: auditError } = await db.from('admin_audit').insert({ actor_id: user.id, action: 'publish', subject_id: appId, subject_name: title, details: { rightsConfirmed: true, packageId: candidate.inspection.packageId } });
+      if (auditError) throw new Error('App published, but audit record failed: '+auditError.message);
       return json({ appId, slug });
     }
     if (request.method === 'GET' && route === 'apps') {
@@ -158,7 +175,7 @@ Deno.serve(async (request) => {
     }
     if (request.method === 'POST' && route === 'icon-start') {
       const input = await request.json();
-      const ext = String(input.filename || '').toLowerCase().match(/\\.(png|jpg|webp)$/)?.[1];
+      const ext = String(input.filename || '').toLowerCase().match(/\.(png|jpg|webp)$/)?.[1];
       const byteSize = Number(input.byteSize);
       if (!ext || !Number.isSafeInteger(byteSize) || byteSize < 1 || byteSize > 300000)
         return json({ error: 'Use a PNG, JPG or WebP icon below 300 KB' }, 400);
@@ -218,7 +235,7 @@ Deno.serve(async (request) => {
         const prefix = db.storage.from('app-icons').getPublicUrl('admin/').data.publicUrl;
         const iconUrl = String(input.iconUrl);
         const name = iconUrl.startsWith(prefix) ? iconUrl.slice(prefix.length) : '';
-        if (!/^[0-9a-f-]{36}\\.(png|jpg|webp)$/.test(name)) return json({ error: 'Upload icon in this panel first' }, 400);
+        if (!/^[0-9a-f-]{36}\.(png|jpg|webp)$/.test(name)) return json({ error: 'Upload icon in this panel first' }, 400);
         const { data: icon, error } = await db.storage.from('app-icons').info('admin/' + name);
         if (error || !icon || Number(icon.size) > 300000) return json({ error: 'Icon missing or too large' }, 400);
         changes.icon_url = iconUrl;
@@ -231,19 +248,34 @@ Deno.serve(async (request) => {
     if (request.method === 'POST' && route === 'delete-app') {
       const { id, title } = await request.json();
       if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) return json({ error: 'Invalid app' }, 400);
-      const { data: app } = await db.from('apps').select('title,deleted_at').eq('id', id).maybeSingle();
-      if (!app) return json({ error: 'App not found' }, 404);
-      if (app.title !== title) return json({ error: 'Type the exact app name to confirm deletion' }, 400);
-      const { error } = await db.from('apps').update({ visibility: 'unlisted', deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', id);
+      const { error } = await db.rpc('owner_delete_app', { p_app_id: id, p_actor_id: user.id, p_expected_title: title });
       if (error) throw error;
       return json({ status: 'deleted' });
     }
     if (request.method === 'POST' && route === 'restore-app') {
       const { id } = await request.json();
       if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) return json({ error: 'Invalid app' }, 400);
-      const { error } = await db.from('apps').update({ deleted_at: null, visibility: 'unlisted', updated_at: new Date().toISOString() }).eq('id', id).not('deleted_at', 'is', null);
+      const { error } = await db.rpc('owner_restore_app', { p_app_id: id, p_actor_id: user.id });
       if (error) throw error;
       return json({ status: 'restored_hidden' });
+    }
+    if (request.method === 'POST' && route === 'purge-app') {
+      const { id, title } = await request.json();
+      if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) return json({ error: 'Invalid app' }, 400);
+      const { data: app } = await db.from('apps').select('title,deleted_at,icon_url,screenshots').eq('id', id).maybeSingle();
+      if (!app?.deleted_at) return json({ error: 'App is not in Trash' }, 409);
+      if (app.title !== title) return json({ error: 'Type the exact app name to delete forever' }, 400);
+      const { data: releases, error: releaseError } = await db.from('releases').select('storage_key').eq('app_id', id);
+      if (releaseError) throw releaseError;
+      const { data: pending, error: pendingError } = await db.from('upload_candidates').select('object_key').eq('target_app_id', id);
+      if (pendingError) throw pendingError;
+      const keys = new Set([...(releases || []).map(row => row.storage_key),...(pending || []).map(row => row.object_key)]);
+      for (const objectKey of keys) await removeApk(objectKey);
+      await removeMedia('app-icons',[app.icon_url]);
+      await removeMedia('app-screenshots',app.screenshots || []);
+      const { error } = await db.rpc('purge_deleted_app', { p_app_id: id, p_actor_id: user.id, p_expected_title: title });
+      if (error) throw error;
+      return json({ status: 'purged', removedApks: keys.size });
     }
     return json({ error: 'Not found' }, 404);
   } catch (error) {
@@ -259,4 +291,21 @@ function validUrl(value: unknown): string {
   try { const parsed = new URL(text); if (parsed.protocol !== 'https:' || text.length > 500) throw new Error(); }
   catch { throw new Error('Links must use HTTPS and be under 500 characters'); }
   return text;
+}
+async function removeApk(objectKey: string): Promise<void> {
+  if (!objectKey || !/^(?:r2\/)?pending\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.apk$/.test(objectKey)) return;
+  if (objectKey.startsWith('r2/')) {
+    if (!r2) throw new Error('R2 storage unavailable. Retry deletion later.');
+    await r2.send(new DeleteObjectCommand({ Bucket: r2Bucket!, Key: objectKey }));
+  } else {
+    const { error } = await db.storage.from('apk-files').remove([objectKey]);
+    if (error) throw new Error('APK storage deletion failed: '+error.message);
+  }
+}
+async function removeMedia(bucket: 'app-icons' | 'app-screenshots', urls: string[]): Promise<void> {
+  const prefix = db.storage.from(bucket).getPublicUrl('').data.publicUrl;
+  const paths = urls.filter(Boolean).filter(url => url.startsWith(prefix)).map(url => url.slice(prefix.length)).filter(path => /^(?:admin\/[0-9a-f-]{36}|[0-9a-f-]{36})\.(?:png|jpg|webp)$/.test(path));
+  if (!paths.length) return;
+  const { error } = await db.storage.from(bucket).remove(paths);
+  if (error) throw new Error(bucket+' deletion failed: '+error.message);
 }
