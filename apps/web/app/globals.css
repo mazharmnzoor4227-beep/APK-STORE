@@ -13,3 +13,19 @@
 
 .brand-image{width:36px;height:36px;object-fit:cover;border-radius:9px;flex:none}
 .admin-card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:26px;margin:24px 0;max-width:660px}.admin-card h2{margin:0 0 15px}.admin-card form{display:grid;gap:13px}.admin-card input{width:100%;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:13px}.admin-card progress{width:100%;accent-color:var(--accent)}.upload-item{border-top:1px solid var(--line);padding:16px 0}.upload-item p{margin:4px 0;color:var(--muted)}#admin-message{min-height:28px;color:var(--accent)}
+.app-icon img{width:100%;height:100%;object-fit:cover;border-radius:inherit}.app-icon{overflow:hidden}.app-card .app-icon{width:74px;height:74px}
+@keyframes gentle-rise{from{opacity:0;transform:translateY(13px)}to{opacity:1;transform:translateY(0)}}
+.site-header{transition:background-color .26s ease,border-color .26s ease,box-shadow .26s ease;backdrop-filter:saturate(1.2)}
+.brand-image,.app-icon{transition:transform .32s cubic-bezier(.2,.8,.2,1),box-shadow .32s ease}
+.brand:hover .brand-image,.app-card:hover .app-icon{transform:scale(1.055)}
+.hero,.inner-page,.admin-page,.catalog{animation:gentle-rise .48s cubic-bezier(.2,.8,.2,1) both}
+.app-card,.release-panel,.admin-card,.upload-item{transition:transform .3s cubic-bezier(.2,.8,.2,1),box-shadow .3s ease,border-color .3s ease}
+.app-card:hover,.admin-card:focus-within{box-shadow:0 12px 28px rgba(0,0,0,.11)}
+.app-card:nth-child(2){animation-delay:.05s}.app-card:nth-child(3){animation-delay:.1s}.app-card:nth-child(4){animation-delay:.15s}
+.app-card{animation:gentle-rise .38s cubic-bezier(.2,.8,.2,1) both}
+.action-button,.theme-trigger,.header-search button,.store-tabs a,.site-header button,.admin-page button{transition:transform .2s cubic-bezier(.2,.8,.2,1),background-color .2s ease,color .2s ease,border-color .2s ease,filter .2s ease}
+.action-button:active,.theme-trigger:active,.header-search button:active,.site-header button:active,.admin-page button:active{transform:scale(.97)}
+.store-tabs a{position:relative}.store-tabs a:active{transform:translateY(2px)}
+.header-search,.search-form,.admin-page input{transition:border-color .24s ease,box-shadow .24s ease}
+.header-search:focus-within,.search-form:focus-within,.admin-page input:focus{box-shadow:0 0 0 3px rgba(118,238,145,.12)}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
