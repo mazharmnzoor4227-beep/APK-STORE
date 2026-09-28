@@ -1238,6 +1238,10 @@ public class MainActivity extends Activity {
                         history.record(slug, slug, "Failed", downloadErrors.get(slug), id, "", 0);
                         refreshDetail(); return;
                     }
+                    if (status == DownloadManager.STATUS_PAUSED)
+                        downloadErrors.put(slug, "Paused · waiting for network or retry");
+                    else if (status == DownloadManager.STATUS_RUNNING)
+                        downloadErrors.remove(slug);
                     long done = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
                     long total = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
                     downloadProgress.put(slug, total > 0 ? (int)Math.min(99, done * 100 / total) : 0);
