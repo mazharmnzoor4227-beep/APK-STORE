@@ -1,6 +1,8 @@
 -- Published metadata remains service-role managed; anon has only existing read policies.
-alter table public.apps add column if not exists price_type text not null default 'Free'
+alter table public.apps add column if not exists price_type text
   check (price_type in ('Free','In-app purchases','In-app purchases or Paid'));
+alter table public.apps alter column price_type drop default;
+alter table public.apps alter column price_type drop not null;
 alter table public.apps add column if not exists fdroid_url text;
 alter table public.apps add column if not exists vendor text;
 alter table public.categories add column if not exists "group" text not null default 'normal'
