@@ -11,7 +11,7 @@ where visibility = 'published'
   );
 
 update public.apps
-set icon_url = 'https://qfbfxencwsgryoczkdyj.supabase.co/functions/v1/app-icon?slug=' || slug
+set icon_url = 'https://qfbfxencwsgryoczkdyj.supabase.co/functions/v1/app-icon?client=apkstore-android&slug=' || slug
 where visibility = 'published'
   and icon_source_url is not null
   and (
