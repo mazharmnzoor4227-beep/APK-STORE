@@ -18,7 +18,9 @@ import android.database.Cursor;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.animation.ValueAnimator;
 import android.util.LruCache;
+import android.view.MotionEvent;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
@@ -27,7 +29,6 @@ import android.widget.ImageView;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.animation.DecelerateInterpolator;
-import android.view.animation.TranslateAnimation;
 import android.widget.EditText;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
@@ -60,6 +61,7 @@ public class MainActivity extends Activity {
     private EditText searchBox;
     private Runnable pendingSearch;
     private boolean legalPage;
+    private boolean firstScreen = true;
     private final HashMap<String, Long> downloads = new HashMap<>();
     private final HashMap<String, Long> completedDownloads = new HashMap<>();
     private final HashMap<String, Runnable> downloadPolls = new HashMap<>();
@@ -102,6 +104,13 @@ public class MainActivity extends Activity {
         t.setGravity(Gravity.CENTER); t.setContentDescription(description);
         return t;
     }
+    private void tap(View view, Runnable next) {
+        if (!ValueAnimator.areAnimatorsEnabled()) { next.run(); return; }
+        view.animate().scaleX(.9f).scaleY(.9f).setDuration(85).withEndAction(() -> {
+            view.animate().scaleX(1f).scaleY(1f).setDuration(160).start();
+            next.run();
+        }).start();
+    }
     private void applySafeArea(LinearLayout root) {
         root.setOnApplyWindowInsetsListener((view, insets) -> {
             int top, bottom;
@@ -133,20 +142,20 @@ public class MainActivity extends Activity {
         TextView title = text(selected == APPS ? "Apps" : selected == SEARCH ? "Search" : selected == FAVORITES ? "Favorites" : "Updates", 20, ink(), false);
         header.addView(title, weight());
         TextView favorites = action("♡", "Favorites");
-        favorites.setOnClickListener(v -> showTab(FAVORITES));
+        favorites.setOnClickListener(v -> tap(v, () -> showTab(FAVORITES)));
         header.addView(favorites, new LinearLayout.LayoutParams(dp(46), dp(48)));
         TextView find = action("⌕", "Search apps");
-        find.setOnClickListener(v -> showTab(SEARCH));
+        find.setOnClickListener(v -> tap(v, () -> showTab(SEARCH)));
         header.addView(find, new LinearLayout.LayoutParams(dp(46), dp(48)));
         ImageView download = new ImageView(this);
         download.setImageResource(com.apkstore.client.R.drawable.ic_download);
         download.setColorFilter(ink());
         download.setPadding(dp(12), dp(12), dp(12), dp(12));
         download.setContentDescription("Latest releases");
-        download.setOnClickListener(v -> showTab(UPDATES));
+        download.setOnClickListener(v -> tap(v, () -> showTab(UPDATES)));
         header.addView(download, new LinearLayout.LayoutParams(dp(46), dp(48)));
         TextView settings = action("⚙", "Settings");
-        settings.setOnClickListener(v -> settings());
+        settings.setOnClickListener(v -> tap(v, this::settings));
         header.addView(settings, new LinearLayout.LayoutParams(dp(46), dp(48)));
         root.addView(header, new LinearLayout.LayoutParams(-1, dp(58)));
 
@@ -171,6 +180,14 @@ public class MainActivity extends Activity {
         }
         render();
         if (catalog.length() == 0) load();
+        if (!firstScreen && ValueAnimator.areAnimatorsEnabled()) {
+            header.setAlpha(0.65f); header.setTranslationY(-dp(8));
+            header.animate().alpha(1f).translationY(0).setDuration(220).setInterpolator(new DecelerateInterpolator()).start();
+            scroll.setAlpha(0f); scroll.setTranslationY(dp(12));
+            scroll.animate().alpha(1f).translationY(0).setDuration(280).setInterpolator(new DecelerateInterpolator()).start();
+            nav.setAlpha(0.85f); nav.animate().alpha(1f).setDuration(230).start();
+        }
+        firstScreen = false;
     }
     private void addNav(LinearLayout nav, String glyph, String title, int target) {
         LinearLayout item = vertical(); item.setGravity(Gravity.CENTER);
@@ -184,7 +201,7 @@ public class MainActivity extends Activity {
         space(item, 3);
         TextView caption = text(title, 13, target == tab ? green() : muted(), target == tab);
         caption.setGravity(Gravity.CENTER); item.addView(caption);
-        item.setOnClickListener(v -> { if (target != tab) showTab(target); });
+        item.setOnClickListener(v -> { if (target != tab) { item.animate().scaleX(.93f).scaleY(.93f).setDuration(90).withEndAction(() -> showTab(target)).start(); } });
         nav.addView(item, new LinearLayout.LayoutParams(0, -1, 1));
     }
     private void makeSearch() {
@@ -410,7 +427,7 @@ public class MainActivity extends Activity {
             JSONObject app = apps.optJSONObject(i);
             if (app == null) continue;
             LinearLayout tile = vertical(); tile.setGravity(Gravity.CENTER_HORIZONTAL);
-            tile.addView(icon(app, 58), new LinearLayout.LayoutParams(dp(58), dp(58)));
+            tile.addView(icon(app, 80), new LinearLayout.LayoutParams(dp(80), dp(80)));
             space(tile, 7);
             TextView title = text(app.optString("title"), 12, ink(), false);
             title.setSingleLine(true); title.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -451,7 +468,7 @@ public class MainActivity extends Activity {
             JSONObject app = apps.optJSONObject(i);
             if (app == null || (!activeCategory.isEmpty() && !activeCategory.equals(app.optString("category")))) continue;
             LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
-            row.addView(icon(app, 48), new LinearLayout.LayoutParams(dp(48), dp(48)));
+            row.addView(icon(app, 62), new LinearLayout.LayoutParams(dp(62), dp(62)));
             LinearLayout copy = vertical(); copy.setPadding(dp(11), 0, 0, 0);
             TextView title = text(app.optString("title"), 14, ink(), true); title.setSingleLine(true);
             copy.addView(title);
@@ -481,6 +498,8 @@ public class MainActivity extends Activity {
         panel.setBackground(shape(surface(), 24));
         TextView handle = text("━━━━", 19, muted(), false);
         handle.setGravity(Gravity.CENTER);
+        handle.setContentDescription("Drag settings up or down; drag down to close");
+        handle.setMinHeight(dp(46));
         panel.addView(handle);
         space(panel, 12);
         panel.addView(text("APK STORE", 19, ink(), true));
@@ -508,10 +527,34 @@ public class MainActivity extends Activity {
         }
         sheet.show();
         if (window != null) window.setLayout(-1, -2);
-        TranslateAnimation slide = new TranslateAnimation(0, 0, dp(360), 0);
-        slide.setDuration(280);
-        slide.setInterpolator(new DecelerateInterpolator());
-        panel.startAnimation(slide);
+        if (ValueAnimator.areAnimatorsEnabled()) {
+            panel.post(() -> {
+                panel.setTranslationY(panel.getHeight());
+                panel.animate().translationY(0).setDuration(330).setInterpolator(new DecelerateInterpolator()).start();
+            });
+        }
+        handle.setOnTouchListener(new View.OnTouchListener() {
+            float startY;
+            @Override public boolean onTouch(View view, MotionEvent event) {
+                if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                    startY = event.getRawY(); panel.animate().cancel(); return true;
+                }
+                if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
+                    float delta = event.getRawY() - startY;
+                    panel.setTranslationY(Math.max(-dp(56), Math.min(panel.getHeight(), delta)));
+                    return true;
+                }
+                if (event.getActionMasked() == MotionEvent.ACTION_UP || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
+                    if (panel.getTranslationY() > dp(90)) {
+                        panel.animate().translationY(panel.getHeight()).setDuration(200).setInterpolator(new DecelerateInterpolator()).withEndAction(sheet::dismiss).start();
+                    } else {
+                        panel.animate().translationY(0).setDuration(260).setInterpolator(new DecelerateInterpolator()).start();
+                    }
+                    return true;
+                }
+                return false;
+            }
+        });
     }
     private void sheetRow(LinearLayout panel, String glyph, String title, Runnable onClick, Dialog sheet) {
         LinearLayout row = new LinearLayout(this);
@@ -621,7 +664,7 @@ public class MainActivity extends Activity {
         root.addView(top);
         ScrollView scroll = new ScrollView(this); root.addView(scroll);
         LinearLayout page = vertical(); page.setPadding(dp(20), dp(22), dp(20), dp(30)); scroll.addView(page);
-        page.addView(icon(app, 84), new LinearLayout.LayoutParams(dp(84), dp(84)));
+        page.addView(icon(app, 104), new LinearLayout.LayoutParams(dp(104), dp(104)));
         space(page, 17);
         page.addView(text(app.optString("title"), 30, ink(), true)); space(page, 6);
         page.addView(text(app.optString("category") + "  ·  " + app.optString("package_id"), 12, muted(), false));
