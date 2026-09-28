@@ -42,6 +42,7 @@ import android.widget.TextView;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.InputStream;
+import java.io.File;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -61,6 +62,7 @@ public class MainActivity extends Activity {
     private int generation;
     private String query = "", activeCategory = "";
     private JSONArray catalog = new JSONArray();
+    private CatalogRepository repository;
     private final HashMap<String, Long> releaseVersions = new HashMap<>();
     private LinearLayout body;
     private EditText searchBox;
@@ -69,12 +71,12 @@ public class MainActivity extends Activity {
     private boolean firstScreen = true;
     private final HashMap<String, Long> downloads = new HashMap<>();
     private final HashMap<String, Long> completedDownloads = new HashMap<>();
+    private final HashMap<String, String> downloadPaths = new HashMap<>();
     private final HashMap<String, Runnable> downloadPolls = new HashMap<>();
     private JSONObject detailApp;
     private TextView detailPrimary, detailSecondary, detailPercent, detailStatus;
     private ProgressRing detailRing;
     private String pendingInstallSlug;
-    private String awaitingInstallerSlug;
     private final HashMap<String, Integer> downloadProgress = new HashMap<>();
     private final HashMap<String, String> downloadErrors = new HashMap<>();
 
@@ -104,20 +106,20 @@ public class MainActivity extends Activity {
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         light = getPreferences(0).getBoolean("light", false);
+        repository = new CatalogRepository(this);
+        catalog = repository.cached();
+        for (int i = 0; i < catalog.length(); i++) {
+            JSONObject app = catalog.optJSONObject(i);
+            if (app != null && app.optJSONObject("release") != null)
+                releaseVersions.put(app.optString("package_id"), app.optJSONObject("release").optLong("version_code"));
+        }
         showTab(APPS);
+        if (catalog.length() > 0) load();
     }
     @Override protected void onResume() {
         super.onResume();
         handler.post(() -> {
-            if (awaitingInstallerSlug != null) {
-                String slug = awaitingInstallerSlug;
-                awaitingInstallerSlug = null;
-                if (detailApp != null && slug.equals(detailApp.optString("slug"))) {
-                    boolean installed = installedVersion(detailApp.optString("package_id")) >= 0;
-                    if (installed) downloadErrors.remove(slug);
-                    else downloadErrors.put(slug, "Install was not completed. Tap Install to try again.");
-                }
-            }
+            if (detailApp != null) consumeInstallResult(detailApp.optString("slug"));
             if (detailApp != null) refreshDetail();
             if (pendingInstallSlug != null && getPackageManager().canRequestPackageInstalls()) {
                 String slug = pendingInstallSlug;
@@ -125,6 +127,17 @@ public class MainActivity extends Activity {
                 openDownloaded(slug);
             }
         });
+    }
+    private void consumeInstallResult(String slug) {
+        android.content.SharedPreferences prefs = getSharedPreferences(InstallResultReceiver.PREFS, MODE_PRIVATE);
+        String result = prefs.getString(slug, null);
+        if (result == null) return;
+        prefs.edit().remove(slug).apply();
+        if ("Installed".equals(result)) {
+            downloadErrors.remove(slug);
+            Long id = completedDownloads.remove(slug);
+            if (id != null) ((DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE)).remove(id);
+        } else downloadErrors.put(slug, result);
     }
     private TextView text(String value, int size, int color, boolean bold) {
         TextView t = new TextView(this);
@@ -189,22 +202,19 @@ public class MainActivity extends Activity {
         header.setPadding(dp(16), dp(5), dp(10), dp(5));
         TextView title = text(selected == APPS ? "Apps" : selected == SEARCH ? "Search" : selected == FAVORITES ? "Favorites" : "Updates", 20, ink(), false);
         header.addView(title, weight());
-        TextView favorites = action("♡", "Favorites");
-        favorites.setOnClickListener(v -> tap(v, () -> showTab(FAVORITES)));
-        header.addView(favorites, new LinearLayout.LayoutParams(dp(46), dp(48)));
         TextView find = action("⌕", "Search apps");
         find.setOnClickListener(v -> tap(v, () -> showTab(SEARCH)));
-        header.addView(find, new LinearLayout.LayoutParams(dp(46), dp(48)));
+        header.addView(find, new LinearLayout.LayoutParams(dp(48), dp(48)));
         ImageView download = new ImageView(this);
         download.setImageResource(com.apkstore.client.R.drawable.ic_download);
         download.setColorFilter(ink());
         download.setPadding(dp(12), dp(12), dp(12), dp(12));
-        download.setContentDescription("Latest releases");
-        download.setOnClickListener(v -> tap(v, () -> showTab(UPDATES)));
-        header.addView(download, new LinearLayout.LayoutParams(dp(46), dp(48)));
+        download.setContentDescription("Downloads");
+        download.setOnClickListener(v -> tap(v, this::showDownloads));
+        header.addView(download, new LinearLayout.LayoutParams(dp(48), dp(48)));
         TextView settings = action("⚙", "Settings");
         settings.setOnClickListener(v -> tap(v, this::settings));
-        header.addView(settings, new LinearLayout.LayoutParams(dp(46), dp(48)));
+        header.addView(settings, new LinearLayout.LayoutParams(dp(48), dp(48)));
         root.addView(header, new LinearLayout.LayoutParams(-1, dp(58)));
 
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true);
@@ -215,15 +225,20 @@ public class MainActivity extends Activity {
         addNav(nav, "▦", "Apps", APPS);
         addNav(nav, "⌕", "Search", SEARCH);
         addNav(nav, "◷", "Updates", UPDATES);
-        addNav(nav, "♡", "Favorites", FAVORITES);
         root.addView(nav, new LinearLayout.LayoutParams(-1, dp(76)));
 
         if (selected == SEARCH) {
             makeSearch();
         } else if (selected == UPDATES) {
             space(body, 16);
-            sectionTitle("Latest releases", null);
-            body.addView(text("New and updated apps approved for APK STORE.", 14, muted(), false));
+            JSONArray pending = pendingUpdates();
+            body.addView(text(pending.length() + " update(s) available", 19, ink(), true));
+            if (pending.length() > 0) {
+                TextView all = text("Update all", 15, green(), true);
+                all.setGravity(Gravity.CENTER); all.setMinHeight(dp(48));
+                all.setOnClickListener(v -> { for (int i = 0; i < pending.length(); i++) startDownload(pending.optJSONObject(i)); });
+                body.addView(all);
+            }
             space(body, 18);
         }
         render();
@@ -263,10 +278,10 @@ public class MainActivity extends Activity {
         searchBox.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             public void onTextChanged(CharSequence s, int start, int before, int count) {
-                query = s.toString(); activeCategory = "";
+                query = s.toString();
                 if (pendingSearch != null) handler.removeCallbacks(pendingSearch);
-                pendingSearch = () -> render();
-                handler.postDelayed(pendingSearch, 180);
+                pendingSearch = () -> { render(); if (!query.trim().isEmpty()) saveRecentSearch(query.trim()); };
+                handler.postDelayed(pendingSearch, 250);
             }
             public void afterTextChanged(Editable e) {}
         });
@@ -276,26 +291,24 @@ public class MainActivity extends Activity {
         worker.execute(() -> {
             try {
                 if (BuildConfig.SUPABASE_KEY.isEmpty()) throw new Exception("Catalog connection is not configured.");
-                String endpoint = BuildConfig.SUPABASE_URL + "/rest/v1/apps?select=id,slug,title,package_id,category,description,icon_url,current_release_id,created_at,updated_at&visibility=eq.published&current_release_id=not.is.null&order=created_at.desc&limit=100";
-                HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
-                connection.setConnectTimeout(12000); connection.setReadTimeout(12000);
-                connection.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
-                connection.setRequestProperty("Authorization", "Bearer " + BuildConfig.SUPABASE_KEY);
-                if (connection.getResponseCode() != 200) throw new Exception("Catalog temporarily unavailable.");
-                try (InputStream stream = connection.getInputStream()) {
-                    JSONArray apps = new JSONArray(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
+                JSONArray apps = repository.fetch();
                     HashMap<String, Long> versions = loadReleaseVersions(apps);
+                    repository.save(apps);
                     runOnUiThread(() -> { if (request == generation) {
                         catalog = apps;
                         releaseVersions.clear();
                         releaseVersions.putAll(versions);
                         render();
                     } });
-                } finally { connection.disconnect(); }
             } catch (Exception error) {
                 runOnUiThread(() -> { if (request == generation && body != null) {
-                    body.removeAllViews();
-                    body.addView(text(error.getMessage(), 15, muted(), false));
+                    if (catalog.length() == 0) {
+                        body.removeAllViews();
+                        empty("Catalog unavailable", error.getMessage());
+                        TextView retry = text("Retry", 16, green(), true);
+                        retry.setMinHeight(dp(48)); retry.setOnClickListener(v -> load());
+                        body.addView(retry);
+                    }
                 } });
             }
         });
@@ -314,7 +327,7 @@ public class MainActivity extends Activity {
         }
         HashMap<String, Long> versions = new HashMap<>();
         if (ids.length() == 0) return versions;
-        String endpoint = BuildConfig.SUPABASE_URL + "/rest/v1/releases?select=id,version_code&status=eq.published&id=in.(" + ids + ")&limit=100";
+        String endpoint = BuildConfig.SUPABASE_URL + "/rest/v1/releases?select=id,version_code,version_name,apk_sha256,byte_size,certificate_sha256,release_notes,published_at&status=eq.published&id=in.(" + ids + ")";
         HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
         connection.setConnectTimeout(12000); connection.setReadTimeout(12000);
         connection.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
@@ -325,8 +338,15 @@ public class MainActivity extends Activity {
                 JSONArray releases = new JSONArray(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
                 for (int i = 0; i < releases.length(); i++) {
                     JSONObject release = releases.optJSONObject(i);
-                    if (release != null && packages.containsKey(release.optString("id")))
+                    if (release != null && packages.containsKey(release.optString("id"))) {
                         versions.put(packages.get(release.optString("id")), release.optLong("version_code"));
+                        for (int j = 0; j < apps.length(); j++) {
+                            JSONObject app = apps.optJSONObject(j);
+                            if (app != null && release.optString("id").equals(app.optString("current_release_id"))) {
+                                app.put("release", release); break;
+                            }
+                        }
+                    }
                 }
             }
             return versions;
@@ -345,7 +365,9 @@ public class MainActivity extends Activity {
         String packageId = app.optString("package_id");
         long installed = installedVersion(packageId);
         Long latest = releaseVersions.get(packageId);
-        return installed >= 0 && latest != null && latest > installed;
+        return latest != null && UpdateLogic.available(installed, latest,
+                getPreferences(0).getStringSet("ignored", java.util.Collections.emptySet()).contains(app.optString("slug")),
+                getPreferences(0).getStringSet("blacklist", java.util.Collections.emptySet()).contains(app.optString("slug")));
     }
     private JSONArray pendingUpdates() {
         JSONArray apps = new JSONArray();
@@ -359,24 +381,28 @@ public class MainActivity extends Activity {
         if (body == null) return;
         if (tab == SEARCH) {
             while (body.getChildCount() > 2) body.removeViewAt(2);
+            if (query.trim().isEmpty()) renderRecentSearches();
             renderList(filtered(query), false);
         } else if (tab == FAVORITES) {
             body.removeAllViews();
             renderList(favoriteApps(), false);
         } else if (tab == UPDATES) {
-            while (body.getChildCount() > 5) body.removeViewAt(5);
+            while (body.getChildCount() > 0) body.removeViewAt(0);
             JSONArray pending = pendingUpdates();
-            if (pending.length() > 0) {
-                sectionTitle("Updates for your apps", null);
+            body.addView(text(pending.length() + " update(s) available", 20, ink(), true));
+            if (pending.length() == 0) empty("You're up to date", "Installed catalog apps have no new releases.");
+            else {
+                TextView updateAll = text("Update all", 15, green(), true);
+                updateAll.setMinHeight(dp(48)); updateAll.setOnClickListener(v -> {
+                    for (int i = 0; i < pending.length(); i++) startDownload(pending.optJSONObject(i));
+                }); body.addView(updateAll);
                 renderList(pending, false);
-                space(body, 20);
             }
-            renderList(sortedUpdates(), false);
         } else {
             body.removeAllViews();
             if (catalog.length() == 0) { empty("The store is getting ready", "Approved apps will appear here."); return; }
-            sectionTitle("Recommended", null);
-            shelf(catalog, 8);
+            sectionTitle("Recommended", () -> showListing("Recommended", false));
+            shelf(sortedCatalog("recommended"), 8);
             space(body, 22);
             sectionTitle("Recently added", () -> showListing("Recently added", false));
             shelf(catalog, 12);
@@ -385,8 +411,11 @@ public class MainActivity extends Activity {
             JSONArray updated = sortedUpdates();
             shelf(updated, 12);
             space(body, 22);
-            sectionTitle("Explore all apps", () -> showListing("All apps", false));
-            renderList(catalog, true);
+            sectionTitle("Most starred on GitHub", () -> showListing("Most starred", false));
+            shelf(sortedCatalog("stars"), 12);
+            space(body, 22);
+            sectionTitle("Random picks", () -> showListing("All apps", false));
+            shelf(sortedCatalog("random"), 12);
         }
     }
     private JSONArray filtered(String value) {
@@ -423,6 +452,48 @@ public class MainActivity extends Activity {
         JSONArray result = new JSONArray();
         for (JSONObject app : apps) result.put(app);
         return result;
+    }
+    private JSONArray sortedCatalog(String mode) {
+        java.util.ArrayList<JSONObject> apps = new java.util.ArrayList<>();
+        for (int i = 0; i < catalog.length(); i++) if (catalog.optJSONObject(i) != null) apps.add(catalog.optJSONObject(i));
+        if ("recommended".equals(mode)) apps.sort((a, b) -> Boolean.compare(b.optBoolean("is_recommended"), a.optBoolean("is_recommended")));
+        if ("stars".equals(mode)) apps.sort((a, b) -> Integer.compare(b.optInt("stars"), a.optInt("stars")));
+        if ("random".equals(mode)) java.util.Collections.shuffle(apps);
+        JSONArray result = new JSONArray();
+        for (JSONObject app : apps) result.put(app);
+        return result;
+    }
+    private void saveRecentSearch(String term) {
+        android.content.SharedPreferences prefs = getPreferences(0);
+        LinkedHashSet<String> terms = new LinkedHashSet<>(); terms.add(term);
+        String prior = prefs.getString("recent_searches", "");
+        for (String entry : prior.split("\\n")) if (!entry.isEmpty() && terms.size() < 8) terms.add(entry);
+        prefs.edit().putString("recent_searches", String.join("\n", terms)).apply();
+    }
+    private void renderRecentSearches() {
+        String saved = getPreferences(0).getString("recent_searches", "");
+        if (saved.isEmpty()) return;
+        LinearLayout row = new LinearLayout(this);
+        row.addView(text("Recent searches", 16, ink(), true), weight());
+        TextView clear = text("Clear", 14, green(), true); clear.setMinHeight(dp(48));
+        clear.setOnClickListener(v -> { getPreferences(0).edit().remove("recent_searches").apply(); render(); });
+        row.addView(clear); body.addView(row);
+        for (String term : saved.split("\n")) {
+            TextView item = text("◷  " + term, 15, muted(), false);
+            item.setMinHeight(dp(48)); item.setOnClickListener(v -> searchBox.setText(term));
+            body.addView(item);
+        }
+    }
+    private void showDownloads() {
+        LinearLayout page = informationPage("Downloads", () -> showTab(tab));
+        if (downloads.isEmpty() && completedDownloads.isEmpty() && downloadErrors.isEmpty()) {
+            page.addView(text("No downloads yet", 16, muted(), false)); return;
+        }
+        for (String slug : downloads.keySet()) {
+            page.addView(text(slug + " · Downloading " + downloadProgress.getOrDefault(slug, 0) + "%", 15, ink(), true));
+        }
+        for (String slug : completedDownloads.keySet()) page.addView(text(slug + " · Downloaded", 15, ink(), true));
+        for (String slug : downloadErrors.keySet()) page.addView(text(slug + " · " + downloadErrors.get(slug), 15, muted(), false));
     }
     private void sectionTitle(String title, Runnable more) {
         LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
@@ -482,10 +553,15 @@ public class MainActivity extends Activity {
             TextView title = text(app.optString("title"), 12, ink(), false);
             title.setSingleLine(true); title.setEllipsize(android.text.TextUtils.TruncateAt.END);
             tile.addView(title);
-            TextView category = text(updateAvailable(app) ? "UPDATE AVAILABLE" : app.optString("category"), 10, updateAvailable(app) ? green() : muted(), false);
+            TextView category = text(app.optString("short_description", app.optString("category")), 10, muted(), false);
             category.setSingleLine(true); tile.addView(category);
+            JSONObject release = app.optJSONObject("release");
+            String meta = app.optInt("stars") > 0 ? "★ " + app.optInt("stars") :
+                    release == null ? "" : release.optString("version_name");
+            TextView stats = text(meta, 10, green(), false);
+            stats.setSingleLine(true); tile.addView(stats);
             tile.setOnClickListener(v -> showDetail(app));
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(84), -2);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(106), -2);
             params.setMargins(0, 0, dp(8), 0); row.addView(tile, params);
         }
         scroller.addView(row); body.addView(scroller);
@@ -809,8 +885,12 @@ public class MainActivity extends Activity {
             request.setDescription("Downloading APK in APK STORE");
             request.setMimeType("application/vnd.android.package-archive");
             request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-            request.setDestinationInExternalFilesDir(this, android.os.Environment.DIRECTORY_DOWNLOADS, slug + "-" + System.currentTimeMillis() + ".apk");
+            String filename = slug + "-" + System.currentTimeMillis() + ".apk";
+            File directory = getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS);
+            if (directory == null) throw new Exception("App storage is unavailable.");
+            request.setDestinationInExternalFilesDir(this, android.os.Environment.DIRECTORY_DOWNLOADS, filename);
             long id = manager.enqueue(request);
+            downloadPaths.put(slug, new File(directory, filename).getAbsolutePath());
             downloadErrors.remove(slug); downloadProgress.put(slug, 0);
             downloads.put(slug, id);
             pollDownload(slug); refreshDetail();
@@ -824,20 +904,40 @@ public class MainActivity extends Activity {
             startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getPackageName())));
             return;
         }
-        DownloadManager manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
-        Uri file = manager.getUriForDownloadedFile(id);
-        if (file == null) { completedDownloads.remove(slug); downloadErrors.put(slug, "APK file is missing. Download again."); refreshDetail(); return; }
-        Intent install = new Intent(Intent.ACTION_INSTALL_PACKAGE);
-        install.setData(file);
-        install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        try { awaitingInstallerSlug = slug; startActivity(install); }
-        catch (Exception e) { downloadErrors.put(slug, "Installer could not open: " + e.getMessage()); refreshDetail(); }
+        JSONObject app = null;
+        for (int i = 0; i < catalog.length(); i++) {
+            JSONObject candidate = catalog.optJSONObject(i);
+            if (candidate != null && slug.equals(candidate.optString("slug"))) { app = candidate; break; }
+        }
+        if (app == null) { downloadErrors.put(slug, "Listing unavailable. Refresh the catalog."); refreshDetail(); return; }
+        JSONObject release = app.optJSONObject("release");
+        if (release == null) { downloadErrors.put(slug, "Release metadata unavailable. Refresh the catalog."); refreshDetail(); return; }
+        String path = downloadPaths.get(slug);
+        if (path == null) { downloadErrors.put(slug, "APK file is missing. Download again."); refreshDetail(); return; }
+        final JSONObject target = app;
+        worker.execute(() -> {
+            try {
+                File apk = new File(path);
+                ApkIntegrity.verifyFile(apk, release.optString("apk_sha256"), release.optLong("byte_size"));
+                ApkIntegrity.verifyPackage(this, apk, target.optString("package_id"), release.optString("certificate_sha256"));
+                InstallCoordinator.install(this, apk, slug, target.optString("package_id"));
+                runOnUiThread(() -> { downloadErrors.put(slug, "Waiting for Android installation confirmation"); refreshDetail(); });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    downloadErrors.put(slug, error.getMessage() == null ? "APK verification failed." : error.getMessage());
+                    completedDownloads.remove(slug);
+                    ((DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE)).remove(id);
+                    refreshDetail();
+                });
+            }
+        });
     }
     private void cancelDownload(String slug) {
         Long id = downloads.remove(slug);
         Runnable poll = downloadPolls.remove(slug);
         if (poll != null) handler.removeCallbacks(poll);
         if (id != null) ((DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE)).remove(id);
+        downloadPaths.remove(slug);
         downloadProgress.remove(slug); refreshDetail();
     }
     private void pollDownload(String slug) {
