@@ -101,7 +101,8 @@ Deno.serve(async (request) => {
       const hash = createHash('sha256'); let bytes = 0;
       for await (const chunk of download.body) { bytes += chunk.byteLength; if (bytes > maxApkSize) throw new Error('APK exceeds size limit'); hash.update(chunk); }
       if (bytes !== Number(candidate.byte_size)) return json({ error: 'APK size changed after upload' }, 409);
-      const inspection = { packageId: parsed.packageName, versionCode: parsed.versionCode, versionName: parsed.versionName || String(parsed.versionCode), certificateSha256: certificates[0], apkSha256: hash.digest('hex'), appName: String(parsed.appName || parsed.packageName).slice(0, 100) };
+      const metadata = parsed as typeof parsed & { minSdkVersion?: number; targetSdkVersion?: number; minSdk?: number; targetSdk?: number; permissions?: string[]; abis?: string[] };
+      const inspection = { packageId: parsed.packageName, versionCode: parsed.versionCode, versionName: parsed.versionName || String(parsed.versionCode), certificateSha256: certificates[0], apkSha256: hash.digest('hex'), appName: String(parsed.appName || parsed.packageName).slice(0, 100), minSdk: metadata.minSdkVersion || metadata.minSdk || null, targetSdk: metadata.targetSdkVersion || metadata.targetSdk || null, permissions: Array.isArray(metadata.permissions) ? metadata.permissions.slice(0, 300) : [], abis: Array.isArray(metadata.abis) ? metadata.abis.slice(0, 20) : [] };
       if (parsed.iconBlob && parsed.iconBlob.size <= 1048576 && ['image/png','image/jpeg','image/webp'].includes(parsed.iconBlob.type)) {
         const iconKey = `${id}.${parsed.iconBlob.type.split('/')[1] === 'jpeg' ? 'jpg' : parsed.iconBlob.type.split('/')[1]}`;
         const { error } = await db.storage.from('app-icons').upload(iconKey, parsed.iconBlob, { contentType: parsed.iconBlob.type, upsert: true });
@@ -110,6 +111,13 @@ Deno.serve(async (request) => {
       const { error } = await db.from('upload_candidates').update({ status: 'inspected', inspection, error: null }).eq('id', id).eq('owner_id', user.id).eq('status', 'uploaded');
       if (error) throw error;
       return json({ inspection });
+    }
+    if (request.method === 'POST' && route === 'discard') {
+      const { id } = await request.json();
+      if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) return json({ error: 'Invalid upload' }, 400);
+      const { error } = await db.rpc('reject_candidate', { p_candidate_id: id, p_actor_id: user.id, p_reason: 'Discarded by owner' });
+      if (error) throw error;
+      return json({ status: 'rejected' });
     }
     if (request.method === 'POST' && route === 'publish') {
       const input = await request.json();
@@ -122,17 +130,27 @@ Deno.serve(async (request) => {
       const releaseNotes = String(input.releaseNotes || '').trim().slice(0, 1000);
       const slug = String(input.slug || candidate.inspection.packageId.replaceAll('.', '-')).toLowerCase();
       if (!title || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return json({ error: 'Enter a valid app name' }, 400);
+      const sourceUrl = input.sourceUrl !== undefined ? validUrl(input.sourceUrl) : undefined;
+      const fdroidUrl = input.fdroidUrl !== undefined ? validUrl(input.fdroidUrl) : undefined;
       const { data: appId, error } = await db.rpc('publish_candidate', { p_candidate_id: input.id, p_actor_id: user.id, p_slug: slug, p_title: title, p_category: category, p_description: description, p_release_notes: releaseNotes });
       if (error) throw error;
-      if (candidate.inspection.iconUrl) await db.from('apps').update({ icon_url: candidate.inspection.iconUrl }).eq('id', appId);
+      const extras: Record<string, unknown> = { short_description: String(input.shortDescription || '').trim().slice(0, 80), is_recommended: input.recommended === true };
+      if (candidate.inspection.iconUrl) extras.icon_url = candidate.inspection.iconUrl;
+      if (Number.isInteger(candidate.inspection.minSdk) && candidate.inspection.minSdk > 0) extras.min_sdk = candidate.inspection.minSdk;
+      if (input.license !== undefined) extras.license = String(input.license).trim().slice(0, 80);
+      if (input.priceType !== undefined && ['Free','In-app purchases','In-app purchases or Paid'].includes(input.priceType)) extras.price_type = input.priceType;
+      if (sourceUrl !== undefined) extras.source_url = sourceUrl;
+      if (fdroidUrl !== undefined) extras.fdroid_url = fdroidUrl;
+      const { error: updateError } = await db.from('apps').update(extras).eq('id', appId);
+      if (updateError) throw updateError;
       return json({ appId, slug });
     }
     if (request.method === 'GET' && route === 'apps') {
-      const { data, error } = await db.from('apps').select('id,slug,title,package_id,category,description,icon_url,visibility,current_release_id').order('created_at', { ascending: false }).limit(200);
+      const { data, error } = await db.from('apps').select('id,slug,title,package_id,category,description,short_description,icon_url,visibility,current_release_id,updated_at,screenshots,license,source_url,fdroid_url,price_type,is_recommended,min_sdk').order('updated_at', { ascending: false }).limit(200);
       if (error) throw error;
       const ids = (data || []).map(app => app.current_release_id).filter(Boolean);
       const { data: releases, error: releaseError } = ids.length
-        ? await db.from('releases').select('id,version_code,version_name,status').in('id', ids)
+        ? await db.from('releases').select('id,version_code,version_name,status,byte_size,certificate_sha256,apk_sha256,release_notes').in('id', ids)
         : { data: [], error: null };
       if (releaseError) throw releaseError;
       const byId = new Map((releases || []).map(release => [release.id, release]));
@@ -149,24 +167,50 @@ Deno.serve(async (request) => {
       if (error || !data) throw error || new Error('Icon upload unavailable');
       return json({ signedUrl: data.signedUrl, iconUrl: db.storage.from('app-icons').getPublicUrl(objectKey).data.publicUrl });
     }
+    if (request.method === 'POST' && route === 'screenshot-start') {
+      const { byteSize } = await request.json();
+      if (!Number.isSafeInteger(byteSize) || byteSize < 1 || byteSize > 307200) return json({ error: 'Screenshot must be a WebP under 300 KB' }, 400);
+      const objectKey = 'admin/' + crypto.randomUUID() + '.webp';
+      const { data, error } = await db.storage.from('app-screenshots').createSignedUploadUrl(objectKey);
+      if (error || !data) throw error || new Error('Screenshot upload unavailable');
+      return json({ signedUrl: data.signedUrl, screenshotUrl: db.storage.from('app-screenshots').getPublicUrl(objectKey).data.publicUrl });
+    }
     if (request.method === 'POST' && route === 'manage-app') {
       const input = await request.json();
       const id = String(input.id || '');
       if (!/^[0-9a-f-]{36}$/.test(id)) return json({ error: 'Invalid app' }, 400);
       const { data: app } = await db.from('apps').select('id,current_release_id').eq('id', id).maybeSingle();
       if (!app) return json({ error: 'App not found' }, 404);
-      const changes: Record<string, string> = {};
+      const changes: Record<string, unknown> = {};
       if (input.visibility !== undefined) {
         if (!['published','unlisted'].includes(input.visibility) || (input.visibility === 'published' && !app.current_release_id))
           return json({ error: 'Only approved releases can be published' }, 400);
         changes.visibility = input.visibility;
       }
-      for (const [field, maximum] of [['title',120],['category',80],['description',5000]] as const) {
+      for (const [field, maximum] of [['title',120],['category',80],['description',5000],['short_description',80],['license',80]] as const) {
         if (input[field] !== undefined) {
           const value = String(input[field]).trim();
-          if (value.length > maximum || (field !== 'description' && !value)) return json({ error: 'Invalid ' + field }, 400);
+          if (value.length > maximum || (['title','category'].includes(field) && !value)) return json({ error: 'Invalid ' + field }, 400);
           changes[field] = value;
         }
+      }
+      for (const field of ['source_url','fdroid_url'] as const) if (input[field] !== undefined) changes[field] = validUrl(input[field]);
+      if (input.is_recommended !== undefined) changes.is_recommended = input.is_recommended === true;
+      if (input.price_type !== undefined) {
+        if (!['Free','In-app purchases','In-app purchases or Paid'].includes(input.price_type)) return json({ error: 'Invalid price type' }, 400);
+        changes.price_type = input.price_type;
+      }
+      if (input.screenshots !== undefined) {
+        if (!Array.isArray(input.screenshots) || input.screenshots.length > 8) return json({ error: 'Use up to 8 screenshots' }, 400);
+        const prefix = db.storage.from('app-screenshots').getPublicUrl('admin/').data.publicUrl;
+        const urls = input.screenshots.map(String);
+        for (const url of urls) {
+          const name = url.startsWith(prefix) ? url.slice(prefix.length) : '';
+          if (!/^[0-9a-f-]{36}\.webp$/.test(name)) return json({ error: 'Upload each screenshot in this panel first' }, 400);
+          const { data: object } = await db.storage.from('app-screenshots').info('admin/' + name);
+          if (!object || Number(object.size) > 307200) return json({ error: 'Screenshot missing or too large' }, 400);
+        }
+        changes.screenshots = urls;
       }
       if (input.iconUrl !== undefined) {
         const prefix = db.storage.from('app-icons').getPublicUrl('admin/').data.publicUrl;
@@ -190,3 +234,10 @@ Deno.serve(async (request) => {
   }
 });
 
+function validUrl(value: unknown): string {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  try { const parsed = new URL(text); if (parsed.protocol !== 'https:' || text.length > 500) throw new Error(); }
+  catch { throw new Error('Links must use HTTPS and be under 500 characters'); }
+  return text;
+}
