@@ -68,28 +68,30 @@ $('login-form').addEventListener('submit', async event => {
   event.preventDefault(); message('Signing in…');
   const email = $('owner-email').value.trim();
   const password = $('owner-password').value;
-  if (!password) { message('Enter your password, or use the email sign-in link below.'); return; }
+  if (!password) { message('Enter your password. If you have not set one, use the setup link below once.'); return; }
   try {
     const response = await fetch(base + '/auth/v1/token?grant_type=password', { method: 'POST', headers: { apikey: key, 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.msg || data.error_description || data.message || 'Could not sign in.');
     saveSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: Date.now() + data.expires_in * 1000 });
+    localStorage.setItem('apk-store-owner-email', email);
     $('owner-password').value = '';
     message('Signed in.'); await refresh();
   } catch (error) { message(error.message); }
 });
-$('send-link').addEventListener('click', async () => {
-  message('Sending sign-in link…');
+$('setup-password').addEventListener('click', async () => {
+  message('Sending the one-time password setup link…');
   const email = $('owner-email').value.trim();
   if (!email) { message('Enter your email first.'); return; }
   try {
-    const response = await fetch(base + '/auth/v1/otp?redirect_to=' + encodeURIComponent(location.origin + '/admin'), { method: 'POST', headers: { apikey: key, 'Content-Type': 'application/json' }, body: JSON.stringify({ email, create_user: true }) });
+    const response = await fetch(base + '/auth/v1/recover?redirect_to=' + encodeURIComponent(location.origin + '/'), { method: 'POST', headers: { apikey: key, 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
     if (!response.ok) {
       const failure = await response.json().catch(() => ({}));
       if (response.status === 429) throw new Error('Email limit reached. Please wait about an hour before requesting another link.');
-      throw new Error(failure.msg || failure.message || 'Could not send sign-in link.');
+      throw new Error(failure.msg || failure.message || 'Could not send password setup link.');
     }
-    message('Check your email for the sign-in link.');
+    localStorage.setItem('apk-store-owner-email', email);
+    message('Open the link in your email once, then enter your new password at the top of this page. Future sign-ins need no email code.');
   } catch (error) { message(error.message); }
 });
 $('password-form').addEventListener('submit', async event => {
@@ -101,7 +103,14 @@ $('password-form').addEventListener('submit', async event => {
     const response = await fetch(base + '/auth/v1/user', { method: 'PUT', headers: { apikey: key, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.msg || data.error_description || data.message || 'Password could not be saved.');
-    $('password-form').reset(); message('Password saved. Next time, sign in with your email and password.');
+    const email = data.email || localStorage.getItem('apk-store-owner-email');
+    if (!email) throw new Error('Password saved. Sign out and use your email with the new password.');
+    const check = await fetch(base + '/auth/v1/token?grant_type=password', { method: 'POST', headers: { apikey: key, 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+    const login = await check.json().catch(() => ({}));
+    if (!check.ok) throw new Error('Password was saved, but direct sign-in could not be confirmed: ' + (login.msg || login.error_description || login.message || 'try again'));
+    saveSession({ access_token: login.access_token, refresh_token: login.refresh_token, expires_at: Date.now() + login.expires_in * 1000 });
+    localStorage.setItem('apk-store-owner-email', email);
+    $('password-form').reset(); message('Password saved and direct sign-in tested. Next time, use email and password without an email code.');
   } catch (error) { message(error.message); }
 });
 $('upload-form').addEventListener('submit', async event => {
@@ -130,9 +139,11 @@ $('upload-form').addEventListener('submit', async event => {
 $('refresh').addEventListener('click', () => refresh().catch(error => message(error.message)));
 $('sign-out').addEventListener('click', () => { saveSession(null); message('Signed out.'); });
 const fragment = new URLSearchParams(location.hash.slice(1));
+if (localStorage.getItem('apk-store-owner-email')) $('owner-email').value = localStorage.getItem('apk-store-owner-email');
 if (fragment.get('access_token') && fragment.get('refresh_token')) {
   saveSession({ access_token: fragment.get('access_token'), refresh_token: fragment.get('refresh_token'), expires_at: Date.now() + Number(fragment.get('expires_in') || 3600) * 1000 });
   history.replaceState(null, '', location.pathname);
+  if (fragment.get('type') === 'recovery') { message('Email verified. Set your password in the first card below.'); $('new-password').focus(); }
 } else {
   try { const old = JSON.parse(sessionStorage.getItem('apk-store-owner-session')); if (old?.refresh_token) saveSession(old); } catch {}
 }
