@@ -338,17 +338,18 @@ public class MainActivity extends Activity {
                 if (BuildConfig.SUPABASE_KEY.isEmpty()) throw new Exception("Catalog connection is not configured.");
                 JSONArray apps = repository.fetch();
                     HashMap<String, Long> versions = loadReleaseVersions(apps);
-                    repository.save(apps);
+                    try { repository.save(apps); } catch (Exception ignored) { }
                     runOnUiThread(() -> { if (request == generation) {
+                        boolean initial = catalog.length() == 0;
                         catalog = apps;
                         releaseVersions.clear();
                         releaseVersions.putAll(versions);
-                        render();
+                        if (initial && apps.length() > 0) showTab(tab); else render();
                     } });
             } catch (Exception error) {
                 runOnUiThread(() -> { if (request == generation && body != null) {
                     if (catalog.length() == 0) {
-                        body.removeAllViews();
+                        render();
                         empty("Catalog unavailable", error.getMessage());
                         TextView retry = text("Retry", 16, green(), true);
                         retry.setMinHeight(dp(48)); retry.setOnClickListener(v -> load());
@@ -698,6 +699,7 @@ public class MainActivity extends Activity {
                 boolean selected = name.equals(activeCategory.isEmpty() ? "All" : activeCategory);
                 TextView chip = text("◈  " + name, 12, selected ? bg() : ink(), true);
                 chip.setPadding(dp(13), dp(8), dp(13), dp(8));
+                chip.setMinHeight(dp(48)); chip.setGravity(Gravity.CENTER_VERTICAL);
                 chip.setBackground(shape(selected ? green() : raised(), 16));
                 int approximate = Math.min(250, 42 + name.length() * 8);
                 int screen = Math.round(getResources().getDisplayMetrics().widthPixels / getResources().getDisplayMetrics().density) - 32;
