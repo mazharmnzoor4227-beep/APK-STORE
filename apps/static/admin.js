@@ -68,11 +68,16 @@ $('login-form').addEventListener('submit', async event => {
   event.preventDefault(); message('Signing in…');
   const email = $('owner-email').value.trim();
   const password = $('owner-password').value;
+  if (!email) { message('Enter your owner email above first.'); $('owner-email').focus(); return; }
   if (!password) { message('Enter your password. If you have not set one, use the setup link below once.'); return; }
   try {
     const response = await fetch(base + '/auth/v1/token?grant_type=password', { method: 'POST', headers: { apikey: key, 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.msg || data.error_description || data.message || 'Could not sign in.');
+    if (!response.ok) {
+      if (response.status === 400 && /invalid login credentials/i.test(data.msg || data.error_description || data.message || ''))
+        throw new Error('This password is not set or does not match. If this is your first time, tap “Set my password for the first time” above.');
+      throw new Error(data.msg || data.error_description || data.message || 'Could not sign in.');
+    }
     saveSession({ access_token: data.access_token, refresh_token: data.refresh_token, expires_at: Date.now() + data.expires_in * 1000 });
     localStorage.setItem('apk-store-owner-email', email);
     $('owner-password').value = '';
