@@ -46,7 +46,7 @@ Deno.serve(async (request) => {
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!url || !serviceKey) return reply(503, { error: 'Crash service unavailable' });
 
-  const response = await fetch(`${url}/rest/v1/rpc/record_crash_report`, {
+  const response = await fetch(`${url}/rest/v1/rpc/record_crash_report_v2`, {
     method: 'POST',
     headers: {
       apikey: serviceKey,
