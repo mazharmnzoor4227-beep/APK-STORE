@@ -8,7 +8,7 @@ export async function POST(request: Request) {
     const ext = filename?.toLowerCase().match(/\.(png|webp|jpg)$/)?.[1];
     if (!ext || !Number.isSafeInteger(byteSize) || byteSize! < 1 || byteSize! > 300000)
       return Response.json({ error: 'Choose a PNG, WebP, or JPG icon below 300 KB' }, { status: 400 });
-    const path = `admin-icons/${randomUUID()}.${ext}`;
+    const path = `admin/${randomUUID()}.${ext}`;
     const db = adminDatabase();
     const { data, error } = await db.storage.from('app-icons').createSignedUploadUrl(path);
     if (error || !data) throw error ?? new Error('Could not prepare icon upload');
