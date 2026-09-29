@@ -1,5 +1,13 @@
 plugins { id 'com.android.application' }
 
+def releaseStorePath = System.getenv('APKSTORE_KEYSTORE_PATH')
+def releaseStorePassword = System.getenv('APKSTORE_KEYSTORE_PASSWORD')
+def releaseKeyAlias = System.getenv('APKSTORE_KEY_ALIAS')
+def releaseKeyPassword = System.getenv('APKSTORE_KEY_PASSWORD')
+def hasReleaseSigning = [releaseStorePath, releaseStorePassword, releaseKeyAlias, releaseKeyPassword].every {
+    it != null && !it.trim().isEmpty()
+}
+
 android {
     namespace 'com.apkstore.client'
     compileSdk 35
@@ -7,15 +15,33 @@ android {
         applicationId 'com.apkstore.client'
         minSdk 26
         targetSdk 35
-        versionCode 13
-        versionName '1.1.5'
+        versionCode 14
+        versionName '1.1.6'
         buildConfigField 'String', 'SUPABASE_URL', '"https://qfbfxencwsgryoczkdyj.supabase.co"'
         // Publishable keys are public client credentials; RLS controls catalog access.
         buildConfigField 'String', 'SUPABASE_KEY', '"' + (project.findProperty('supabasePublishableKey') ?: 'sb_publishable_RiOpxFwFfj3dRt45AVn3LA_T4C0kAoJ') + '"'
     }
     buildFeatures { buildConfig true }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
-    buildTypes { release { minifyEnabled true; proguardFiles getDefaultProguardFile('proguard-android-optimize.txt') } }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(releaseStorePath)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (hasReleaseSigning) signingConfig signingConfigs.release
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
+        }
+    }
 }
 
 dependencies {
