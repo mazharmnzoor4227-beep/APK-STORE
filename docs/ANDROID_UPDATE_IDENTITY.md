@@ -13,6 +13,16 @@ This file is the source of truth for every future APK STORE Android build.
 - targetSdk: `35`
 - compileSdk: `35`
 
+## Permanent production signing certificate
+
+A new permanent APK STORE release keystore was created for the post-reset production line. The private keystore is intentionally NOT committed to this public repository.
+
+- Key alias: `apkstore-release`
+- Certificate SHA-256: `11:A0:A7:D5:01:74:0A:96:ED:C1:40:89:7C:2F:45:C2:72:EC:08:25:D4:E9:A3:F8:66:D5:EF:32:96:25:78:80`
+- Certificate SHA-1: `C5:54:BE:7E:1E:EC:FF:8D:2E:4F:6C:58:EC:5E:C2:A9:43:96:4D:8B`
+
+Every official APK STORE production APK installed after the old app is removed must be signed by the private key whose certificate matches the SHA-256 fingerprint above. If a future APK reports a different signing certificate, do not install/distribute it as an update.
+
 ## Never change these update-identity rules
 
 1. Never change `applicationId 'com.apkstore.client'`.
@@ -41,7 +51,7 @@ GitHub Actions uses these repository secrets:
 - `APKSTORE_KEY_ALIAS`
 - `APKSTORE_KEY_PASSWORD`
 
-The keystore must be generated ONCE, backed up safely, and reused forever for APK STORE production updates.
+The keystore must be backed up safely and reused forever for APK STORE production updates.
 
 ## GitHub Actions release build
 
@@ -65,6 +75,7 @@ Before changing APK STORE Android code:
 - Keep package ID and namespace exactly `com.apkstore.client`.
 - Increment `versionCode` for every production APK.
 - Reuse the permanent signing keystore; never create a replacement key unless the owner explicitly accepts breaking update compatibility.
+- Verify the signer SHA-256 matches `11:A0:A7:D5:01:74:0A:96:ED:C1:40:89:7C:2F:45:C2:72:EC:08:25:D4:E9:A3:F8:66:D5:EF:32:96:25:78:80`.
 - Build/test before claiming completion.
 - Verify the final APK with `aapt dump badging` and `apksigner verify --print-certs`.
 
