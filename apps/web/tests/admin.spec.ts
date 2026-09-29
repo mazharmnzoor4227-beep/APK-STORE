@@ -20,7 +20,7 @@ test('owner management destinations are real pages', async ({ page }) => {
   for (const [path, heading] of [['/admin/trash', 'Trash'], ['/admin/queue', 'Queue'], ['/admin/settings', 'Settings']] as const) {
     const response = await page.goto(path);
     expect(response?.status()).toBe(200);
-    await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+    await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
   }
 });
 
