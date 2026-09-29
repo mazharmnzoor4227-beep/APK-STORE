@@ -26,6 +26,12 @@ test('normalizes and redacts a valid APK STORE crash', () => {
   assert.equal(event.message, 'token=[redacted] [email] [url]');
 });
 
+test('accepts a queued crash up to 90 days old', () => {
+  const occurredAt = new Date(NOW - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const event = normalizeCrashPayload({ ...valid, occurred_at: occurredAt }, NOW);
+  assert.equal(event.occurred_at, occurredAt);
+});
+
 test('rejects unknown fields so accidental personal data is not accepted', () => {
   assert.throws(() => normalizeCrashPayload({ ...valid, screen: 'detail' }, NOW), /Unknown crash field/);
 });
