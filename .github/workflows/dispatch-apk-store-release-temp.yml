@@ -19,7 +19,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Retry after SITE_URL build fix and permanent signing secret setup.
+          # Retry after updating the stale launcher icon test for minSdk 26 adaptive icons.
           gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/actions/workflows/build-android.yml/dispatches" \
             -f ref='fix/crash-workmanager-coroutines'
