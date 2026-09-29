@@ -15,13 +15,17 @@ This file is the source of truth for every future APK STORE Android build.
 
 ## Permanent production signing certificate
 
-A new permanent APK STORE release keystore was created for the post-reset production line. The private keystore is intentionally NOT committed to this public repository.
+The permanent APK STORE release keystore (`apkstore-release`) is the sole signing identity for all production releases. The private keystore is intentionally NOT committed to this public repository.
 
 - Key alias: `apkstore-release`
-- Certificate SHA-256: `11:A0:A7:D5:01:74:0A:96:ED:C1:40:89:7C:2F:45:C2:72:EC:08:25:D4:E9:A3:F8:66:D5:EF:32:96:25:78:80`
-- Certificate SHA-1: `C5:54:BE:7E:1E:EC:FF:8D:2E:4F:6C:58:EC:5E:C2:A9:43:96:4D:8B`
+- Certificate SHA-256: `CD:5F:FF:73:67:5C:8C:78:3D:B5:1A:33:00:CC:06:84:57:63:21:5D:2C:7B:03:A6:4A:E7:F9:B5:89:36:05:85`
+- Certificate SHA-1: `A8:B0:96:B0:F6:C5:85:91:B9:CE:2A:8F:01:10:A7:DE:D7:E8:F8:38`
 
-Every official APK STORE production APK installed after the old app is removed must be signed by the private key whose certificate matches the SHA-256 fingerprint above. If a future APK reports a different signing certificate, do not install/distribute it as an update.
+This certificate signed the verified 1.1.6 (versionCode 14) production release (APK SHA-256 `545cff23fa9e0519c85c7c24d956a4b9b63ac97b60b2743141bef01cfcd9ff0e`).
+
+OBSOLETE — do NOT use: `11:A0:A7:D5:01:74:0A:96:ED:C1:40:89:7C:2F:45:C2:72:EC:08:25:D4:E9:A3:F8:66:D5:EF:32:96:25:78:80`. This fingerprint was recorded here earlier by mistake and never signed a production release.
+
+Every official APK STORE production APK must be signed by the private key whose certificate matches the SHA-256 fingerprint above. If a future APK reports a different signing certificate, do not install/distribute it as an update.
 
 ## Never change these update-identity rules
 
@@ -67,6 +71,15 @@ To create an official signed APK STORE release, run the `Build APK STORE Android
 6. outputs the APK SHA-256,
 7. uploads `APK-STORE-signed.apk` as an artifact.
 
+## Verified production release (1.1.6)
+
+- Package: `com.apkstore.client`, versionName `1.1.6`, versionCode `14`
+- APK size: 667246 bytes
+- APK SHA-256: `545cff23fa9e0519c85c7c24d956a4b9b63ac97b60b2743141bef01cfcd9ff0e`
+- Signer SHA-256: `cd5fff73675c8c783db51a3300cc06845763215d2c7b03a64ae7f9b589360585` (matches the permanent certificate above)
+- Supabase catalog slug: `apk-store-client`, storage object `apk-store-client/1.1.6.apk` (bucket `apk-files`)
+- Download endpoint: `https://qfbfxencwsgryoczkdyj.supabase.co/functions/v1/download-apk?slug=apk-store-client`
+
 ## Future-model instructions
 
 Before changing APK STORE Android code:
@@ -75,7 +88,7 @@ Before changing APK STORE Android code:
 - Keep package ID and namespace exactly `com.apkstore.client`.
 - Increment `versionCode` for every production APK.
 - Reuse the permanent signing keystore; never create a replacement key unless the owner explicitly accepts breaking update compatibility.
-- Verify the signer SHA-256 matches `11:A0:A7:D5:01:74:0A:96:ED:C1:40:89:7C:2F:45:C2:72:EC:08:25:D4:E9:A3:F8:66:D5:EF:32:96:25:78:80`.
+- Verify the signer SHA-256 matches `CD:5F:FF:73:67:5C:8C:78:3D:B5:1A:33:00:CC:06:84:57:63:21:5D:2C:7B:03:A6:4A:E7:F9:B5:89:36:05:85`.
 - Build/test before claiming completion.
 - Verify the final APK with `aapt dump badging` and `apksigner verify --print-certs`.
 
@@ -84,3 +97,15 @@ Before changing APK STORE Android code:
 The Android client already contains an Updates tab and update-detection logic for installed catalog apps. It compares the installed package versionCode to the published release versionCode, excludes ignored/blacklisted apps, shows the number of available updates, and has an Update all action. A WorkManager background worker periodically checks updates; the default interval is 12 hours unless the user changes the update interval setting.
 
 This catalog update checker is separate from Android package-signing compatibility. Signing compatibility is controlled by the permanent rules above.
+
+## Security notes
+
+- An old Supabase publishable key was committed in git history (`apps/android/gradle.properties`). Key rotation and git-history purge are pending owner approval. Do not treat the history as clean.
+- Never commit the release keystore, signing passwords, GitHub Actions secret values, Supabase service-role keys, or other private credentials to this repository.
+- Only certificate fingerprints and other public metadata may appear in docs and reports.
+
+## Crash reporting status (2026-09-30)
+
+- The `crash-report` Supabase edge function is deployed and responding (`{"error":"POST required"}` on GET).
+- The `crash_reports` table migration (RLS, no public write policy) is not in `supabase/migrations/`; its deployment status in Supabase is unverified.
+- The Android client does not yet send crash reports; client-side reporting is not implemented.
