@@ -12,29 +12,49 @@ type StoreStatus = {
 
 export function StoreUpdateStatus() {
   const [data, setData] = useState<StoreStatus | null>(null);
+  const [token, setToken] = useState('');
   const [message, setMessage] = useState('Loading APK STORE release status…');
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState('');
+
+  async function load(accessToken: string) {
+    const response = await fetch('/api/admin/store-status', { headers: { Authorization: `Bearer ${accessToken}` }, cache: 'no-store' });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Release status unavailable');
+    setData(result); setMessage('');
+  }
 
   useEffect(() => {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
     if (!url || !key) { setMessage('Owner sign-in is not configured.'); return; }
     createClient(url, key).auth.getSession().then(async ({ data: sessionData }) => {
-      const token = sessionData.session?.access_token;
-      if (!token) { setMessage('Sign in as the owner to view APK STORE release status.'); return; }
-      try {
-        const response = await fetch('/api/admin/store-status', { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Release status unavailable');
-        setData(result);
-        setMessage('');
-      } catch (error) {
-        setMessage(error instanceof Error ? error.message : 'Release status unavailable');
-      }
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) { setMessage('Sign in as the owner to view APK STORE release status.'); return; }
+      setToken(accessToken);
+      try { await load(accessToken); }
+      catch (error) { setMessage(error instanceof Error ? error.message : 'Release status unavailable'); }
     });
   }, []);
 
+  async function publish(candidateId: string) {
+    if (!token) return;
+    setBusy(candidateId); setMessage('Publishing verified APK STORE release…');
+    try {
+      const response = await fetch('/api/admin/store-release', {
+        method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidateId, releaseNotes: notes[candidateId] ?? '' }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Publish failed');
+      await load(token);
+      setMessage(`APK STORE versionCode ${result.versionCode} published. Installed copies will see it on their next manual/background check.`);
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Publish failed'); }
+    finally { setBusy(''); }
+  }
+
   return <section className="review-list" aria-label="APK STORE release identity">
-    <div className="review-heading"><div><span className="section-index">OWNER / STORE UPDATE</span><h2>APK STORE release</h2></div></div>
+    <div className="review-heading"><div><span className="section-index">OWNER / STORE UPDATE</span><h2>APK STORE release</h2></div><button type="button" disabled={!token} onClick={() => token && load(token).catch(error => setMessage(error.message))}>Refresh release status</button></div>
     <p role="status">{message}</p>
     {data && <>
       <dl className="inspection-details">
@@ -45,10 +65,10 @@ export function StoreUpdateStatus() {
         <div><dt>Current catalog version</dt><dd>{data.release ? `${data.release.version_name} (${data.release.version_code})` : 'None'}</dd></div>
         <div><dt>Current signer match</dt><dd>{data.release ? (data.release.certificate_sha256 === data.identity.signer_sha256 ? 'Yes' : 'No · old test signer') : '—'}</dd></div>
       </dl>
-      <p>The permanent package ID, slug, and release certificate are locked server-side. Future public APK STORE releases must use this signer and a higher integer version code.</p>
-      {!!data.candidates.length && <div className="review-item">
-        <h3>Pending APK STORE uploads</h3>
-        {data.candidates.map(candidate => <p key={candidate.id}><strong>{candidate.filename}</strong> · {candidate.status} · {candidate.inspection?.versionName ?? 'not inspected'} {candidate.inspection?.versionCode ? `(${candidate.inspection.versionCode})` : ''}</p>)}
+      <p>This is the separate first-party release channel. Only <code>{data.identity.package_id}</code>, the permanent signer, and a strictly higher integer versionCode can be published here.</p>
+      {!data.candidates.length && <div className="empty-state"><h3>No APK STORE upload is waiting</h3><p>Upload the permanently signed APK below. After inspection succeeds it will appear here for publishing.</p></div>}
+      {!!data.candidates.length && <div className="review-item"><h3>APK STORE uploads</h3>
+        {data.candidates.map(candidate => <div key={candidate.id} className="managed-app"><p><strong>{candidate.filename}</strong> · {candidate.status} · {candidate.inspection?.versionName ?? 'not inspected'} {candidate.inspection?.versionCode ? `(${candidate.inspection.versionCode})` : ''}</p>{candidate.error && <p role="alert">{candidate.error}</p>}{candidate.status === 'inspected' && <><label>What&apos;s new<textarea value={notes[candidate.id] ?? ''} maxLength={5000} onChange={event => setNotes(current => ({ ...current, [candidate.id]: event.target.value }))} /></label><button className="action-button" type="button" disabled={busy === candidate.id} onClick={() => publish(candidate.id)}>Publish APK STORE update</button></>}</div>)}
       </div>}
     </>}
   </section>;
