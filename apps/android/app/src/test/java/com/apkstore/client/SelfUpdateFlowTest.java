@@ -35,6 +35,10 @@ public class SelfUpdateFlowTest {
                 java.contains("if (selfUpdateApp != null && slug.equals(selfUpdateApp.optString(\"slug\"))) return selfUpdateApp;"));
         assertTrue("Update button must start the dedicated self-update flow",
                 java.contains("startSelfUpdate(self)"));
+        assertTrue("Self update check must fetch APK hash for integrity verification",
+                java.contains("apk_sha256,byte_size,certificate_sha256"));
+        assertTrue("Download completion must resolve self update metadata through appForDownload",
+                java.contains("JSONObject app = appForDownload(slug);"));
     }
 
     @Test public void selfUpdatePageShowsProgressUntilAndroidInstallerOpens() throws Exception {
@@ -42,5 +46,6 @@ public class SelfUpdateFlowTest {
         assertTrue(java.contains("Downloading update"));
         assertTrue(java.contains("Installing update"));
         assertTrue(java.contains("selfUpdateUiPoll"));
+        assertTrue(java.contains("consumeInstallResult(selfUpdateApp.optString(\"slug\"))"));
     }
 }
