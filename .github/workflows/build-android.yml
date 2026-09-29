@@ -80,6 +80,12 @@ jobs:
           test -f "$APK"
           "$AAPT" dump badging "$APK" | grep "package: name='com.apkstore.client'"
           "$APKSIGNER" verify --verbose --print-certs "$APK" | tee apps/android/app/build/outputs/apk/release/signing-certificate.txt
+          EXPECTED_SIGNER="cd5fff73675c8c783db51a3300cc06845763215d2c7b03a64ae7f9b589360585"
+          ACTUAL_SIGNER=$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr 'A-F' 'a-f' | head -1)
+          if [ "$ACTUAL_SIGNER" != "$EXPECTED_SIGNER" ]; then
+            echo "::error::Release signer mismatch: $ACTUAL_SIGNER"
+            exit 1
+          fi
           sha256sum "$APK" | tee apps/android/app/build/outputs/apk/release/apk-sha256.txt
           cp "$APK" apps/android/app/build/outputs/apk/release/APK-STORE-signed.apk
 
