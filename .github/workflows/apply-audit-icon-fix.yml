@@ -56,15 +56,17 @@ jobs:
 
           main = Path('apps/android/app/src/main/java/com/apkstore/client/MainActivity.java')
           text = main.read_text()
-          old = '''        boolean hostedIcon = url.startsWith("https://apk-store-mazhar.mazharmanzoor4117.chatgpt.site/") && url.endsWith(".png");
-          boolean storageIcon = url.startsWith(BuildConfig.SUPABASE_URL + "/storage/v1/object/public/app-icons/");
-          if (!hostedIcon && !storageIcon) return fallback;
-          '''
-          new = '''        // icon_url is owner-controlled catalog data and may live on Supabase Storage,
-          // the app-icon Edge Function, R2, F-Droid or GitHub. Require TLS, then rely on
-          // the byte limit + Bitmap decode below instead of hard-coding an obsolete host.
-          if (!url.startsWith("https://")) return fallback;
-          '''
+          old = '\n'.join([
+              '        boolean hostedIcon = url.startsWith("https://apk-store-mazhar.mazharmanzoor4117.chatgpt.site/") && url.endsWith(".png");',
+              '        boolean storageIcon = url.startsWith(BuildConfig.SUPABASE_URL + "/storage/v1/object/public/app-icons/");',
+              '        if (!hostedIcon && !storageIcon) return fallback;'
+          ])
+          new = '\n'.join([
+              '        // icon_url is owner-controlled catalog data and may live on Supabase Storage,',
+              '        // the app-icon Edge Function, R2, F-Droid or GitHub. Require TLS, then rely on',
+              '        // the byte limit + Bitmap decode below instead of hard-coding an obsolete host.',
+              '        if (!url.startsWith("https://")) return fallback;'
+          ])
           if old not in text:
               raise SystemExit('Expected old icon host gate was not found; refusing to guess.')
           main.write_text(text.replace(old, new, 1))
@@ -78,8 +80,9 @@ jobs:
 
           adaptive = Path('apps/android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml')
           a = adaptive.read_text()
-          a = a.replace('@drawable/icon_foreground', '@drawable/apk_store_foreground')
-          adaptive.write_text(a)
+          if '@drawable/icon_foreground' not in a:
+              raise SystemExit('Expected adaptive icon foreground reference was not found.')
+          adaptive.write_text(a.replace('@drawable/icon_foreground', '@drawable/apk_store_foreground', 1))
           PY
 
           python3 -m pip install --disable-pip-version-check --quiet pillow
@@ -98,7 +101,6 @@ jobs:
               folder.mkdir(parents=True, exist_ok=True)
               image.resize((size, size), Image.Resampling.LANCZOS).save(folder / 'ic_launcher.png', 'PNG', optimize=True)
 
-          # Adaptive foreground: keep the supplied artwork inside Android's safe zone.
           canvas = Image.new('RGBA', (432, 432), (0, 0, 0, 0))
           art = image.resize((336, 336), Image.Resampling.LANCZOS)
           canvas.alpha_composite(art, (48, 48))
