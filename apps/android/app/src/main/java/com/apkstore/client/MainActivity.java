@@ -219,6 +219,8 @@ public class MainActivity extends Activity {
             Long id = completedDownloads.get(slug);
             history.record(slug, slug, result.equals("Cancelled") ? "Cancelled" : "Failed", result,
                     id == null ? -1 : id, downloadPaths.getOrDefault(slug, ""), 100);
+            if (!"Cancelled".equals(result))
+                CrashReporter.recordHandled(this, "install_failed", result, new IllegalStateException(result));
         }
     }
     private TextView text(String value, int size, int color, boolean bold) {
@@ -1650,7 +1652,11 @@ public class MainActivity extends Activity {
             downloadErrors.remove(slug); downloadProgress.put(slug, 0);
             downloads.put(slug, id);
             pollDownload(slug); refreshDetail();
-        } catch (Exception e) { downloadErrors.put(slug, "Download could not start: " + e.getMessage()); refreshDetail(); }
+        } catch (Exception e) {
+            downloadErrors.put(slug, "Download could not start: " + e.getMessage());
+            CrashReporter.recordHandled(this, "download_start_failed", downloadErrors.get(slug), e);
+            refreshDetail();
+        }
     }
     private void openDownloaded(String slug) {
         Long id = completedDownloads.get(slug);
@@ -1690,6 +1696,8 @@ public class MainActivity extends Activity {
                     refreshDetail(); watchInstallResult(slug);
                 });
             } catch (Exception error) {
+                CrashReporter.recordHandled(this, "install_verification_failed",
+                        error.getMessage() == null ? "APK verification failed." : error.getMessage(), error);
                 runOnUiThread(() -> {
                     downloadErrors.put(slug, error.getMessage() == null ? "APK verification failed." : error.getMessage());
                     completedDownloads.remove(slug);
@@ -1733,6 +1741,8 @@ public class MainActivity extends Activity {
                         int reason = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON));
                         cancelDownload(slug); downloadErrors.put(slug, "Download failed (" + reason + "). Tap Install to retry.");
                         history.record(slug, slug, "Failed", downloadErrors.get(slug), id, "", 0);
+                        CrashReporter.recordHandled(MainActivity.this, "download_failed", downloadErrors.get(slug),
+                                new IllegalStateException("DownloadManager reason=" + reason));
                         refreshDetail(); return;
                     }
                     if (status == DownloadManager.STATUS_PAUSED)
@@ -1756,7 +1766,11 @@ public class MainActivity extends Activity {
                     refreshDetail();
                     if (detailApp == null && body != null) render();
                     handler.postDelayed(this, 500);
-                } catch (Exception e) { cancelDownload(slug); downloadErrors.put(slug, "Download failed. Tap Install to retry."); refreshDetail(); }
+                } catch (Exception e) {
+                    cancelDownload(slug); downloadErrors.put(slug, "Download failed. Tap Install to retry.");
+                    CrashReporter.recordHandled(MainActivity.this, "download_poll_failed", downloadErrors.get(slug), e);
+                    refreshDetail();
+                }
             }
         };
         downloadPolls.put(slug, poll);
