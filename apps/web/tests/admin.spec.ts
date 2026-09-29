@@ -9,7 +9,9 @@ test('owner login uses email and password rather than magic-link OTP', async ({ 
 });
 
 test('owner hub exposes the required management destinations', async ({ page }) => {
-  await page.goto('/admin/apps/new');
+  const response = await page.goto('/admin/apps/new');
+  expect(response?.status()).toBe(200);
+  await expect(page.getByRole('heading', { name: /Manage your store/i })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Crash reports' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Trash' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Queue' })).toBeVisible();
