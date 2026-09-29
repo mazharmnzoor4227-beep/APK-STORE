@@ -47,7 +47,8 @@ Deno.serve(async (request) => {
     event = normalizeCrashPayload(JSON.parse(raw));
     // Never trust a client-controlled issue grouping key. Derive it again server-side.
     event.fingerprint = await serverFingerprint(event);
-  } catch {
+  } catch (error) {
+    console.error('crash-report validation failed:', error instanceof Error ? error.message : 'unknown validation error');
     return reply(400, { error: 'Invalid crash report' });
   }
 
