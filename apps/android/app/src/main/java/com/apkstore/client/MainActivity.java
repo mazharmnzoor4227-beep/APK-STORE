@@ -217,6 +217,11 @@ public class MainActivity extends Activity {
             Long id = completedDownloads.get(slug);
             history.record(slug, slug, result.equals("Cancelled") ? "Cancelled" : "Failed", result,
                     id == null ? -1 : id, downloadPaths.getOrDefault(slug, ""), 100);
+            if (selfUpdateApp != null && slug.equals(selfUpdateApp.optString("slug"))) {
+                completedDownloads.remove(slug);
+                if (id != null) ((DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE)).remove(id);
+                downloadPaths.remove(slug);
+            }
         }
     }
     /** Maps Android API level to human-readable OS version (e.g. 23 -> "6.0"). */
