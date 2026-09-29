@@ -36,10 +36,10 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Browser tests
         env:
-          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
-          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_test
-          SUPABASE_URL: https://example.supabase.co
-          SUPABASE_PUBLISHABLE_KEY: sb_publishable_test
+          NEXT_PUBLIC_SUPABASE_URL: https://qfbfxencwsgryoczkdyj.supabase.co
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_RiOpxFwFfj3dRt45AVn3LA_T4C0kAoJ
+          SUPABASE_URL: https://qfbfxencwsgryoczkdyj.supabase.co
+          SUPABASE_PUBLISHABLE_KEY: sb_publishable_RiOpxFwFfj3dRt45AVn3LA_T4C0kAoJ
           SUPABASE_SERVICE_ROLE_KEY: test-service-role
           ADMIN_EMAIL: owner@example.com
         run: npx playwright test
