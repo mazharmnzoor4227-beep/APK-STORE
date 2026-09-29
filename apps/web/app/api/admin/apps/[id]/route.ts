@@ -1,4 +1,5 @@
 import { adminDatabase, requireOwner } from '../../../../../lib/admin/server';
+import { callAdminUploadEdge } from '../../../../../lib/admin/admin-upload-edge';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -26,16 +27,32 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       const key = `admin-icons/${url.slice(base.length)}`;
       const db = adminDatabase();
       const { data, error } = await db.storage.from('app-icons').info(key);
-      if (error || !data || Number(data.metadata?.size ?? 0) > 300000)
+      if (error || !data || Number(data.metadata?.size ?? data.size ?? 0) > 300000)
         return Response.json({ error: 'Icon upload is missing or too large' }, { status: 400 });
       changes.icon_url = url;
     }
     if (!Object.keys(changes).length) return Response.json({ error: 'No changes' }, { status: 400 });
     const { data, error } = await adminDatabase().from('apps').update({ ...changes, updated_at: new Date().toISOString() })
-      .eq('id', id).select('id,visibility,title,icon_url').single();
+      .eq('id', id).is('deleted_at', null).select('id,visibility,title,icon_url').single();
     if (error || !data) throw error ?? new Error('App not found');
     return Response.json({ app: data });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : 'Update failed' }, { status: 400 });
+  }
+}
+
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    await requireOwner(request);
+    const { id } = await params;
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return Response.json({ error: 'Invalid app' }, { status: 400 });
+    const input = await request.json().catch(() => ({})) as { title?: unknown };
+    const title = String(input.title ?? '').trim();
+    if (!title) return Response.json({ error: 'Type the exact app name to move it to Trash' }, { status: 400 });
+    const result = await callAdminUploadEdge<{ status?: string; error?: string }>(request, 'delete-app', { id, title });
+    return Response.json(result.data, { status: result.status, headers: { 'Cache-Control': 'no-store' } });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Delete failed';
+    return Response.json({ error: message }, { status: /owner|authorization|token|auth/i.test(message) ? 401 : 400 });
   }
 }
