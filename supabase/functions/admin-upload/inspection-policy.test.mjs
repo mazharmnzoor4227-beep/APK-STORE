@@ -13,6 +13,8 @@ test('permanent cleanup accepts current and legacy owner icon paths only', () =>
   assert.equal(managedMediaPath(`admin/${id}.png`), true);
   assert.equal(managedMediaPath(`admin-icons/${id}.webp`), true);
   assert.equal(managedMediaPath(`${id}.jpg`), true);
+  assert.equal(managedMediaPath(`admin/${id}.gif`), false);
+  assert.equal(managedMediaPath(`admin-icons/${id}/extra.png`), false);
   assert.equal(managedMediaPath('../../secret.png'), false);
   assert.equal(managedMediaPath('admin/not-a-uuid.png'), false);
 });
