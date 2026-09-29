@@ -3,6 +3,7 @@ import { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand, Delete
 import { getSignedUrl } from 'npm:@aws-sdk/s3-request-presigner@3.901.0';
 import { parseApkFile, parseApkUrl } from 'npm:simple-apk-parser@0.1.2';
 import { createHash } from 'node:crypto';
+import { hasRequiredIcon, managedMediaPath } from './inspection-policy.mjs';
 
 const origin = 'https://apk-store-mazhar.mazharmanzoor4117.chatgpt.site';
 const headers = { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Headers': 'authorization, apikey, content-type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Vary': 'Origin' };
@@ -107,6 +108,11 @@ Deno.serve(async (request) => {
         const iconKey = `${id}.${parsed.iconBlob.type.split('/')[1] === 'jpeg' ? 'jpg' : parsed.iconBlob.type.split('/')[1]}`;
         const { error } = await db.storage.from('app-icons').upload(iconKey, parsed.iconBlob, { contentType: parsed.iconBlob.type, upsert: true });
         if (!error) Object.assign(inspection, { iconUrl: db.storage.from('app-icons').getPublicUrl(iconKey).data.publicUrl });
+      }
+      if (!hasRequiredIcon(inspection)) {
+        const reason = 'APK launcher icon could not be extracted. Upload a valid APK with a launcher icon or use the owner icon replacement flow before publishing.';
+        await db.from('upload_candidates').update({ error: reason }).eq('id', id).eq('owner_id', user.id).eq('status', 'uploaded');
+        return json({ error: reason }, 422);
       }
       const { error } = await db.from('upload_candidates').update({ status: 'inspected', inspection, error: null }).eq('id', id).eq('owner_id', user.id).eq('status', 'uploaded');
       if (error) throw error;
@@ -304,7 +310,7 @@ async function removeApk(objectKey: string): Promise<void> {
 }
 async function removeMedia(bucket: 'app-icons' | 'app-screenshots', urls: string[]): Promise<void> {
   const prefix = db.storage.from(bucket).getPublicUrl('').data.publicUrl;
-  const paths = urls.filter(Boolean).filter(url => url.startsWith(prefix)).map(url => url.slice(prefix.length)).filter(path => /^(?:admin\/[0-9a-f-]{36}|[0-9a-f-]{36})\.(?:png|jpg|webp)$/.test(path));
+  const paths = urls.filter(Boolean).filter(url => url.startsWith(prefix)).map(url => url.slice(prefix.length)).filter(path => managedMediaPath(path));
   if (!paths.length) return;
   const { error } = await db.storage.from(bucket).remove(paths);
   if (error) throw new Error(bucket+' deletion failed: '+error.message);
