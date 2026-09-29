@@ -1,5 +1,5 @@
-import { requireOwner } from '../../../../../../../lib/admin/server';
-import { callAdminUploadEdge } from '../../../../../../../lib/admin/admin-upload-edge';
+import { requireOwner } from '../../../../../../lib/admin/server';
+import { callAdminUploadEdge } from '../../../../../../lib/admin/admin-upload-edge';
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
