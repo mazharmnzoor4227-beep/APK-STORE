@@ -6,6 +6,7 @@ import androidx.work.Worker;
 import androidx.work.WorkerParameters;
 import java.io.File;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -51,7 +52,9 @@ public final class CrashReportWorker extends Worker {
             connection.setDoOutput(true);
             byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
             connection.setFixedLengthStreamingMode(bytes.length);
-            connection.getOutputStream().write(bytes);
+            try (OutputStream output = connection.getOutputStream()) {
+                output.write(bytes);
+            }
             int status = connection.getResponseCode();
             InputStream stream = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
             if (stream != null) try (InputStream input = stream) {
