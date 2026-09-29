@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d12">
+<title>APK STORE · Admin</title>
+<style>
+:root{
+  --bg:#0b0d12; --bg2:#0e1117; --card:#141824; --card2:#1a2030;
+  --line:#232a3d; --txt:#eef1f6; --mut:#9aa3b8; --dim:#6b7386;
+  --acc:#4f8cff; --acc2:#7c3aed; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444;
+  --r:16px; --nav-h:64px;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--txt);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial,sans-serif;
+  min-height:100dvh;}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;}
+input,textarea,select{font:inherit;color:var(--txt);background:var(--bg2);border:1px solid var(--line);
+  border-radius:12px;padding:12px 14px;width:100%;outline:none;}
+input:focus,textarea:focus{border-color:var(--acc);}
+::placeholder{color:var(--dim);}
+
+/* header */
+.hdr{position:fixed;top:0;left:0;right:0;z-index:50;background:rgba(11,13,18,.92);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--line);
+  padding:calc(env(safe-area-inset-top,0px) + 12px) 16px 12px;
+  display:flex;align-items:center;gap:12px;}
+.hdr .logo{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--acc),var(--acc2));
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;flex:none;}
+.hdr .t{flex:1;min-width:0;}
+.hdr .t b{display:block;font-size:16px;}
+.hdr .t span{font-size:11px;color:var(--mut);}
+.icon-btn{width:38px;height:38px;border-radius:12px;background:var(--card);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;flex:none;}
+.icon-btn:active{transform:scale(.94);}
+.icon-btn svg{width:20px;height:20px;}
+.spin svg{animation:sp 0.9s linear infinite;}
+@keyframes sp{to{transform:rotate(360deg);}}
+
+/* layout */
+.wrap{max-width:560px;margin:0 auto;padding:calc(env(safe-area-inset-top,0px) + 72px) 14px calc(var(--nav-h) + env(safe-area-inset-bottom,0px) + 24px);}
+.screen{display:none;animation:fade .18s ease;}
+.screen.active{display:block;}
+@keyframes fade{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+.page-title{font-size:22px;font-weight:800;margin:4px 0 2px;}
+.page-sub{font-size:13px;color:var(--mut);margin-bottom:14px;}
+
+/* cards & rows */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px;}
+.row-card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px;
+  display:flex;align-items:center;gap:12px;margin-bottom:10px;width:100%;text-align:left;}
+.row-card:active{background:var(--card2);}
+.appicon{width:52px;height:52px;border-radius:14px;flex:none;display:flex;align-items:center;justify-content:center;
+  font-size:24px;font-weight:800;color:#fff;background:#333;overflow:hidden;}
+.appicon img{width:100%;height:100%;object-fit:cover;}
+.appmeta{flex:1;min-width:0;}
+.appmeta .name{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.appmeta .sub{font-size:12px;color:var(--mut);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.meta{font-size:12px;color:var(--mut);}
+.chev{color:var(--dim);font-size:20px;flex:none;}
+
+.section-title{font-size:13px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.6px;margin:18px 2px 8px;}
+
+/* stats */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px;}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 6px;text-align:center;}
+.stat:active{background:var(--card2);}
+.stat .num{font-size:20px;font-weight:800;}
+.stat .lbl{font-size:10px;color:var(--mut);margin-top:2px;}
+
+/* pills & toggles */
+.pill{font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;flex:none;}
+.pill.green{background:rgba(34,197,94,.15);color:#4ade80;}
+.pill.grey{background:rgba(154,163,184,.15);color:var(--mut);}
+.pill.amber{background:rgba(245,158,11,.15);color:#fbbf24;}
+.pill.red{background:rgba(239,68,68,.15);color:#f87171;}
+.pill.blue{background:rgba(79,140,255,.15);color:#7aa8ff;}
+.toggle{width:48px;height:28px;border-radius:99px;background:#2a3145;position:relative;flex:none;transition:background .2s;}
+.toggle::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;
+  background:#fff;transition:left .2s;}
+.toggle.on{background:var(--ok);}
+.toggle.on::after{left:23px;}
+
+/* buttons */
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;}
+.btn{flex:1;min-width:120px;padding:12px;border-radius:14px;font-weight:700;font-size:14px;
+  background:var(--card2);border:1px solid var(--line);text-align:center;}
+.btn:active{transform:scale(.97);}
+.btn.primary{background:linear-gradient(135deg,var(--acc),var(--acc2));border:none;color:#fff;}
+.btn.danger{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);color:#f87171;}
+.btn:disabled{opacity:.5;}
+
+/* stepper */
+.stepper{display:flex;align-items:center;margin:6px 0 16px;}
+.step{flex:1;text-align:center;position:relative;}
+.step .dot{width:28px;height:28px;border-radius:50%;background:var(--card2);border:1px solid var(--line);
+  display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--dim);}
+.step .lb{font-size:10px;color:var(--dim);margin-top:4px;}
+.step.done .dot{background:var(--ok);border-color:var(--ok);color:#fff;}
+.step.now .dot{background:var(--acc);border-color:var(--acc);color:#fff;box-shadow:0 0 0 4px rgba(79,140,255,.2);}
+.step.now .lb{color:var(--txt);font-weight:700;}
+.step:not(:last-child)::after{content:"";position:absolute;top:14px;left:calc(50% + 16px);right:calc(-50% + 16px);
+  height:2px;background:var(--line);}
+.step.done:not(:last-child)::after{background:var(--ok);}
+
+/* dropzone */
+.drop{border:2px dashed var(--line);border-radius:var(--r);padding:28px 16px;text-align:center;
+  background:var(--card);margin-bottom:12px;}
+.drop .big{font-size:36px;margin-bottom:8px;}
+.drop b{display:block;margin-bottom:4px;}
+
+/* progress */
+.prog{height:8px;background:var(--bg2);border-radius:99px;overflow:hidden;margin-top:10px;}
+.prog i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--acc),var(--acc2));transition:width .2s;}
+
+/* stack trace */
+.stack{background:#080a0e;border:1px solid var(--line);border-radius:12px;padding:10px;
+  font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:#c9d4e8;
+  white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto;margin:10px 0;}
+.crash-head{width:100%;text-align:left;}
+.crash-meta{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;align-items:center;}
+.count-badge{background:rgba(239,68,68,.15);color:#f87171;font-weight:800;font-size:12px;
+  padding:4px 10px;border-radius:99px;}
+
+/* settings rows */
+.setrow{display:flex;align-items:center;gap:12px;padding:14px;border-bottom:1px solid var(--line);width:100%;text-align:left;}
+.setrow:last-child{border-bottom:none;}
+.setrow .st{flex:1;}
+.setrow .t{font-weight:600;font-size:15px;}
+.setrow .s{font-size:12px;color:var(--mut);margin-top:2px;}
+.setrow .chev{color:var(--dim);}
+
+/* bottom nav */
+.bnav{position:fixed;bottom:0;left:0;right:0;z-index:50;background:rgba(11,13,18,.95);
+  backdrop-filter:blur(12px);border-top:1px solid var(--line);
+  padding:8px 4px calc(env(safe-area-inset-bottom,0px) + 8px);
+  display:flex;}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px;
+  color:var(--dim);font-size:10px;font-weight:600;border-radius:12px;}
+.nav-item svg{width:22px;height:22px;}
+.nav-item.on{color:var(--acc);}
+.nav-item:active{background:var(--card);}
+
+/* toast */
+.toast{position:fixed;left:50%;bottom:calc(var(--nav-h) + env(safe-area-inset-bottom,0px) + 16px);
+  transform:translateX(-50%) translateY(20px);background:#1c2333;border:1px solid var(--line);
+  padding:12px 18px;border-radius:14px;font-size:14px;font-weight:600;opacity:0;pointer-events:none;
+  transition:all .25s;z-index:99;max-width:90vw;text-align:center;}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+/* search */
+.searchbar{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);
+  border-radius:14px;padding:0 14px;margin-bottom:12px;}
+.searchbar input{border:none;background:none;padding:12px 0;}
+.searchbar input:focus{border:none;}
+
+/* auth */
+.authwrap{max-width:380px;margin:0 auto;padding:calc(env(safe-area-inset-top,0px) + 60px) 20px 40px;}
+.authwrap .logo{width:64px;height:64px;border-radius:18px;background:linear-gradient(135deg,var(--acc),var(--acc2));
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:30px;margin:0 auto 16px;}
+.authwrap h1{text-align:center;font-size:22px;margin:0 0 4px;}
+.authwrap p{text-align:center;color:var(--mut);font-size:13px;margin:0 0 20px;}
+.field{margin-bottom:12px;}
+.field label{display:block;font-size:12px;color:var(--mut);margin-bottom:6px;font-weight:600;}
+.err{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);color:#f87171;
+  padding:10px 14px;border-radius:12px;font-size:13px;margin-bottom:12px;display:none;}
+.empty{text-align:center;color:var(--dim);padding:32px 16px;font-size:14px;}
+.empty .big{font-size:40px;margin-bottom:8px;}
+.hidden{display:none !important;}
+</style>
+</head>
+<body>
+
+<!-- ============ AUTH ============ -->
+<div id="authView" class="hidden">
+  <div class="authwrap">
+    <div class="logo">A</div>
+    <h1>APK STORE Admin</h1>
+    <p>Owner sign-in required</p>
+    <div class="err" id="authErr"></div>
+    <div id="setupBox" class="hidden">
+      <div class="field"><label>Supabase anon key (one-time setup, saved on this device)</label>
+        <input id="setupKey" type="password" placeholder="eyJhbGciOi…" autocomplete="off"></div>
+      <button class="btn primary" style="width:100%" onclick="saveSetup()">Save &amp; continue</button>
+      <div style="height:16px"></div>
+    </div>
+    <div class="field"><label>Email</label><input id="loginEmail" type="email" placeholder="owner email" autocomplete="email"></div>
+    <div class="field"><label>Password</label><input id="loginPass" type="password" placeholder="••••••••" autocomplete="current-password"></div>
+    <button class="btn primary" style="width:100%" id="loginBtn" onclick="doLogin()">Sign in</button>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="appView" class="hidden">
+  <header class="hdr">
+    <div class="logo">A</div>
+    <div class="t"><b>APK STORE Admin</b><span id="hdrSub">Updated just now</span></div>
+    <button class="icon-btn" id="refreshBtn" onclick="refreshAll()" aria-label="Refresh">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 4v5h-5"/></svg>
+    </button>
+    <button class="icon-btn" onclick="switchTab('settings',document.querySelectorAll('.nav-item')[4])" aria-label="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.9 2.9l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.9-2.9l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.9-2.9l.1.1a1.7 1.7 0 0 0 1.9.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5h0a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.9 2.9l-.1.1a1.7 1.7 0 0 0-.3 1.9v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </header>
+
+  <div class="wrap">
+
+    <!-- UPLOAD -->
+    <section class="screen" id="scr-upload">
+      <div class="page-title">Upload</div>
+      <div class="page-sub">APK → Inspect → Review → Publish</div>
+      <div class="stepper" id="stepper">
+        <div class="step now" data-s="0"><div class="dot">1</div><div class="lb">APK</div></div>
+        <div class="step" data-s="1"><div class="dot">2</div><div class="lb">Inspect</div></div>
+        <div class="step" data-s="2"><div class="dot">3</div><div class="lb">Review</div></div>
+        <div class="step" data-s="3"><div class="dot">4</div><div class="lb">Publish</div></div>
+      </div>
+      <div id="upStep0">
+        <div class="drop" onclick="document.getElementById('apkFile').click()">
+          <div class="big">📦</div><b>Tap to choose APK</b>
+          <div class="meta">Up to 300 MB · .apk only</div>
+        </div>
+        <input type="file" id="apkFile" accept=".apk" class="hidden">
+        <div class="card hidden" id="upProgCard"><b id="upFileName">—</b>
+          <div class="prog"><i id="upProg"></i></div>
+          <div class="meta" id="upProgTxt" style="margin-top:6px;">Preparing…</div>
+        </div>
+      </div>
+      <div id="upStep1" class="hidden">
+        <div class="card"><b>Inspecting APK…</b><div class="meta" style="margin-top:4px;">Reading package, version, signature</div></div>
+      </div>
+      <div id="upStep2" class="hidden">
+        <div class="card" id="inspCard"></div>
+        <div class="section-title">Title</div><div class="searchbar"><input id="rvTitle" placeholder="App title"></div>
+        <div class="section-title">Category</div><div class="searchbar"><input id="rvCat" placeholder="Tools"></div>
+        <div class="section-title">Short description</div><div class="searchbar"><input id="rvShort" placeholder="One line"></div>
+        <div class="section-title">Description</div><div class="searchbar"><input id="rvDesc" placeholder="Full description"></div>
+        <div class="section-title">Release notes</div><div class="searchbar"><input id="rvNotes" placeholder="What's new"></div>
+        <div class="card" style="display:flex;gap:10px;align-items:flex-start;">
+          <input type="checkbox" id="rvRights" style="width:20px;height:20px;margin-top:2px;flex:none;">
+          <label for="rvRights" style="font-size:13px;color:var(--mut);">I confirm I have the right to distribute this app.</label>
+        </div>
+        <div class="btnrow"><button class="btn primary" onclick="publishCandidate()">Publish</button>
+        <button class="btn danger" onclick="discardCandidate()">Discard</button></div>
+      </div>
+      <div id="upStep3" class="hidden">
+        <div class="card" style="text-align:center;padding:28px 16px;">
+          <div style="font-size:44px;">🎉</div><b>Published!</b>
+          <div class="meta" style="margin:6px 0 14px;" id="pubDoneTxt">Your app is live.</div>
+          <button class="btn primary" onclick="resetUpload()">Upload another</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- QUEUE -->
+    <section class="screen" id="scr-queue">
+      <div class="page-title">Queue</div>
+      <div class="page-sub">Pending uploads &amp; inspections</div>
+      <div id="queueList"></div>
+    </section>
+
+    <!-- APPS -->
+    <section class="screen" id="scr-apps">
+      <div class="page-title">Apps</div>
+      <div class="page-sub" id="appsSub">— apps in catalog</div>
+      <div class="stats">
+        <div class="stat" onclick="filterApps('published')"><div class="num" id="stPub">–</div><div class="lbl">Published</div></div>
+        <div class="stat" onclick="filterApps('hidden')"><div class="num" id="stHid">–</div><div class="lbl">Hidden</div></div>
+        <div class="stat" onclick="switchTab('queue',document.querySelectorAll('.nav-item')[1])"><div class="num" id="stQ">–</div><div class="lbl">In queue</div></div>
+        <div class="stat" onclick="switchTab('diag',document.querySelectorAll('.nav-item')[3])"><div class="num" id="stC">–</div><div class="lbl">Crashes</div></div>
+      </div>
+      <div class="searchbar"><input id="appSearch" placeholder="Search apps…" oninput="renderApps()"></div>
+      <div id="appList"></div>
+    </section>
+
+    <!-- APP DETAIL -->
+    <section class="screen" id="scr-appdetail">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+        <button class="icon-btn" onclick="goBackApps()" aria-label="Back">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <div class="page-title" style="margin:0;">App details</div>
+      </div>
+      <div class="card" style="display:flex;gap:14px;align-items:center;margin-bottom:14px;">
+        <div class="appicon" id="adIcon" style="width:64px;height:64px;font-size:26px;">A</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:18px;font-weight:700;" id="adName">—</div>
+          <div class="meta" id="adPkg">—</div>
+          <div class="meta" id="adVer">—</div>
+        </div>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden;margin-bottom:14px;">
+        <div class="setrow">
+          <div class="st"><div class="t">Visible in store</div><div class="s" id="adVisSub">—</div></div>
+          <button class="toggle" id="adToggle" onclick="togglePublish()"></button>
+        </div>
+      </div>
+      <div class="btnrow" style="margin-bottom:10px;">
+        <button class="btn primary" onclick="openEdit()">✎ Edit app</button>
+        <button class="btn" onclick="reupload()">⭱ Re-upload version</button>
+      </div>
+      <div class="btnrow"><button class="btn danger" onclick="deleteApp()">Delete app</button></div>
+      <div class="section-title">Details</div>
+      <div class="card meta" id="adDesc" style="line-height:1.7;">—</div>
+    </section>
+
+    <!-- APP EDIT -->
+    <section class="screen" id="scr-appedit">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+        <button class="icon-btn" onclick="goBackDetail()" aria-label="Back">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <div class="page-title" style="margin:0;">Edit app</div>
+      </div>
+      <div class="section-title" style="margin-top:0;">Title</div><div class="searchbar"><input id="edTitle"></div>
+      <div class="section-title">Category</div><div class="searchbar"><input id="edCat"></div>
+      <div class="section-title">Short description</div><div class="searchbar"><input id="edShort"></div>
+      <div class="section-title">Description</div><div class="searchbar"><input id="edDesc"></div>
+      <div class="btnrow" style="margin-top:18px;">
+        <button class="btn primary" onclick="saveEdit()">Save changes</button>
+        <button class="btn" onclick="goBackDetail()">Cancel</button>
+      </div>
+    </section>
+
+    <!-- DIAGNOSTICS -->
+    <section class="screen" id="scr-diag">
+      <div class="page-title">Diagnostics</div>
+      <div class="page-sub">Crash &amp; error reports from devices</div>
+      <div class="stats">
+        <div class="stat"><div class="num" id="dgTotal">–</div><div class="lbl">Reports</div></div>
+        <div class="stat"><div class="num" id="dgToday">–</div><div class="lbl">Today</div></div>
+        <div class="stat"><div class="num" id="dgVers">–</div><div class="lbl">Versions</div></div>
+        <div class="stat"><div class="num" id="dgDev">–</div><div class="lbl">Devices</div></div>
+      </div>
+      <div id="crashList"></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="screen" id="scr-settings">
+      <div class="page-title">Settings</div>
+      <div class="page-sub">Admin preferences</div>
+      <div class="card" style="padding:0;overflow:hidden;margin-bottom:14px;">
+        <div class="setrow"><div class="st"><div class="t">Owner</div><div class="s" id="setOwner">—</div></div></div>
+        <div class="setrow"><div class="st"><div class="t">Backend</div><div class="s">Supabase · admin-upload</div></div><span class="pill green">Live</span></div>
+      </div>
+      <div class="section-title">Session</div>
+      <div class="card" style="padding:0;overflow:hidden;">
+        <button class="setrow" onclick="doLogout()"><div class="st"><div class="t" style="color:#f87171;">Sign out</div></div><span class="chev">›</span></button>
+      </div>
+      <div class="section-title">About</div>
+      <div class="card meta" style="line-height:1.7;">APK STORE Admin v3 · connected to your Supabase project. All actions are owner-only and audited.</div>
+    </section>
+
+  </div>
+
+  <nav class="bnav">
+    <button class="nav-item" onclick="switchTab('upload',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 16V4m0 0l-4 4m4-4l4 4M4 20h16"/></svg>Upload</button>
+    <button class="nav-item" onclick="switchTab('queue',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Queue</button>
+    <button class="nav-item on" onclick="switchTab('apps',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Apps</button>
+    <button class="nav-item" onclick="switchTab('diag',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3l9 16H3l9-16z"/><path d="M12 10v4m0 3v.5"/></svg>Diagnostics</button>
+    <button class="nav-item" onclick="switchTab('settings',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10l2 2M19 5l-2 2M7 17l-2 2"/></svg>Settings</button>
+  </nav>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SB_URL = "https://qfbfxencwsgryoczkdyj.supabase.co";
+const FN = SB_URL + "/functions/v1/admin-upload";
+let anonKey = localStorage.getItem("sb_anon") || "";
+let token = sessionStorage.getItem("sb_token") || "";
+let userEmail = sessionStorage.getItem("sb_email") || "";
+let APPS = [], QUEUE = [], CRASHES = [];
+let currentApp = null, candidateId = null, inspection = null, appFilter = "";
+
+/* ---------- helpers ---------- */
+function toast(m){ const t=document.getElementById("toast"); t.textContent=m; t.classList.add("show");
+  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),2200); }
+function authErr(m){ const e=document.getElementById("authErr"); e.textContent=m; e.style.display="block"; }
+function esc(s){ return String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function timeAgo(ts){ const s=(Date.now()-new Date(ts).getTime())/1000;
+  if(s<60) return "just now"; if(s<3600) return Math.floor(s/60)+"m ago";
+  if(s<86400) return Math.floor(s/3600)+"h ago"; return Math.floor(s/86400)+"d ago"; }
+function fmtSize(b){ if(!b&&b!==0) return "—"; const u=["B","KB","MB","GB"]; let i=0;
+  while(b>=1024&&i<3){b/=1024;i++;} return b.toFixed(i?1:0)+" "+u[i]; }
+function tick(){ document.getElementById("hdrSub").textContent="Updated just now"; }
+function showScreen(id){ document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+  document.getElementById(id).classList.add("active"); window.scrollTo({top:0}); }
+function switchTab(id,btn){ document.querySelectorAll(".nav-item").forEach(x=>x.classList.remove("on"));
+  btn.classList.add("on"); showScreen("scr-"+id); tick();
+  if(id==="queue") loadQueue(); if(id==="diag") loadCrashes(); if(id==="apps"&&!APPS.length) loadApps(); }
+
+/* ---------- api ---------- */
+async function api(action, method, body){
+  const r = await fetch(FN+"?action="+action, { method: method||"GET",
+    headers: { "apikey": anonKey, "Authorization": "Bearer "+token,
+      "Content-Type": "application/json" },
+    body: body?JSON.stringify(body):undefined });
+  const j = await r.json().catch(()=>({error:"Bad response"}));
+  if(!r.ok) throw new Error(j.error||("HTTP "+r.status));
+  return j;
+}
+
+/* ---------- auth ---------- */
+function saveSetup(){ const k=document.getElementById("setupKey").value.trim();
+  if(k.length<20) return authErr("Paste the Supabase anon key.");
+  anonKey=k; localStorage.setItem("sb_anon",k);
+  document.getElementById("setupBox").classList.add("hidden"); }
+async function doLogin(){
+  const email=document.getElementById("loginEmail").value.trim();
+  const pass=document.getElementById("loginPass").value;
+  if(!anonKey) return authErr("Enter the anon key first (one-time setup).");
+  if(!email||!pass) return authErr("Enter email and password.");
+  const btn=document.getElementById("loginBtn"); btn.disabled=true; btn.textContent="Signing in…";
+  try{
+    const r=await fetch(SB_URL+"/auth/v1/token?grant_type=password",{ method:"POST",
+      headers:{ "apikey":anonKey, "Content-Type":"application/json" },
+      body:JSON.stringify({email,password:pass}) });
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.error_description||j.msg||"Login failed");
+    token=j.access_token; userEmail=j.user.email;
+    sessionStorage.setItem("sb_token",token); sessionStorage.setItem("sb_email",userEmail);
+    enterApp();
+  }catch(e){ authErr(e.message); }
+  btn.disabled=false; btn.textContent="Sign in";
+}
+function doLogout(){ sessionStorage.removeItem("sb_token"); sessionStorage.removeItem("sb_email");
+  token=""; location.reload(); }
+function enterApp(){
+  document.getElementById("authView").classList.add("hidden");
+  document.getElementById("appView").classList.remove("hidden");
+  document.getElementById("setOwner").textContent=userEmail;
+  refreshAll();
+}
+
+/* ---------- load all ---------- */
+async function refreshAll(){
+  const b=document.getElementById("refreshBtn"); b.classList.add("spin");
+  try{ await Promise.all([loadApps(),loadQueue(),loadCrashes(true)]); tick(); }
+  catch(e){ toast("Refresh failed: "+e.message); }
+  b.classList.remove("spin");
+}
+async function loadApps(){
+  const j=await api("apps"); APPS=j.apps||[];
+  const pub=APPS.filter(a=>a.visibility==="published"&&!a.deleted_at).length;
+  const hid=APPS.filter(a=>a.visibility!=="published"&&!a.deleted_at).length;
+  document.getElementById("stPub").textContent=pub;
+  document.getElementById("stHid").textContent=hid;
+  document.getElementById("appsSub").textContent=APPS.length+" apps in catalog";
+  renderApps();
+}
+async function loadQueue(){
+  try{ const j=await api("list"); QUEUE=j.candidates||[]; }
+  catch(e){ QUEUE=[]; }
+  document.getElementById("stQ").textContent=QUEUE.filter(c=>["uploading","uploaded"].includes(c.status)).length;
+  renderQueue();
+}
+async function loadCrashes(quiet){
+  try{ const j=await api("crashes"); CRASHES=j.crashes||[]; }
+  catch(e){ if(!quiet) toast("Diagnostics unavailable: "+e.message); CRASHES=[]; }
+  document.getElementById("stC").textContent=CRASHES.length;
+  renderCrashes();
+}
+
+/* ---------- apps ---------- */
+function filterApps(f){ appFilter=f; document.getElementById("appSearch").value=""; renderApps(); }
+function renderApps(){
+  const q=document.getElementById("appSearch").value.toLowerCase();
+  const list=APPS.filter(a=>!a.deleted_at)
+    .filter(a=>!appFilter||(appFilter==="published"?a.visibility==="published":a.visibility!=="published"))
+    .filter(a=>!q||(a.title+" "+a.package_id).toLowerCase().includes(q));
+  document.getElementById("appList").innerHTML=list.length?list.map(a=>{
+    const pub=a.visibility==="published";
+    const ver=a.release?(a.release.version_name||("v"+a.release.version_code)):"—";
+    const icon=a.icon_url?'<img src="'+esc(a.icon_url)+'" alt="" loading="lazy">':esc((a.title||"A")[0].toUpperCase());
+    return '<button class="row-card" onclick="openAppDetail(\''+a.id+'\')">'+
+      '<div class="appicon">'+icon+'</div>'+
+      '<div class="appmeta"><div class="name">'+esc(a.title)+'</div>'+
+      '<div class="sub">'+esc(a.package_id||"")+' · '+esc(ver)+'</div></div>'+
+      '<span class="pill '+(pub?"green":"grey")+'">'+(pub?"Published":"Hidden")+'</span>'+
+      '<span class="chev">›</span></button>';
+  }).join(""):'<div class="empty"><div class="big">📭</div>No apps found.</div>';
+}
+function getApp(id){ return APPS.find(a=>a.id===id); }
+function openAppDetail(id){
+  currentApp=id; const a=getApp(id); if(!a) return;
+  const ic=document.getElementById("adIcon");
+  ic.innerHTML=a.icon_url?'<img src="'+esc(a.icon_url)+'">':esc((a.title||"A")[0].toUpperCase());
+  document.getElementById("adName").textContent=a.title;
+  document.getElementById("adPkg").textContent=a.package_id||"";
+  const r=a.release;
+  document.getElementById("adVer").textContent=(r?(r.version_name+" ("+r.version_code+")"):"no release")+" · "+(a.category||"");
+  document.getElementById("adDesc").textContent=a.description||a.short_description||"No description.";
+  syncPublishUI(); showScreen("scr-appdetail");
+}
+function syncPublishUI(){
+  const a=getApp(currentApp); const on=a&&a.visibility==="published";
+  document.getElementById("adToggle").classList.toggle("on",!!on);
+  document.getElementById("adVisSub").textContent=on?"Published — everyone can see it":"Hidden — not visible in store";
+}
+async function togglePublish(){
+  const a=getApp(currentApp); if(!a) return;
+  const to=a.visibility==="published"?"unlisted":"published";
+  try{ const j=await api("manage-app","POST",{id:a.id,visibility:to});
+    a.visibility=j.app.visibility; syncPublishUI(); renderApps(); loadApps();
+    toast(to==="published"?"Published ✓":"Hidden"); }
+  catch(e){ toast("Failed: "+e.message); }
+}
+function goBackApps(){ showScreen("scr-apps"); syncNav(2); }
+function goBackDetail(){ showScreen("scr-appdetail"); }
+function syncNav(i){ document.querySelectorAll(".nav-item").forEach((x,j)=>x.classList.toggle("on",j===i)); }
+function openEdit(){
+  const a=getApp(currentApp); if(!a) return;
+  document.getElementById("edTitle").value=a.title||"";
+  document.getElementById("edCat").value=a.category||"";
+  document.getElementById("edShort").value=a.short_description||"";
+  document.getElementById("edDesc").value=a.description||"";
+  showScreen("scr-appedit");
+}
+async function saveEdit(){
+  const a=getApp(currentApp); if(!a) return;
+  try{ const j=await api("manage-app","POST",{ id:a.id,
+      title:document.getElementById("edTitle").value.trim(),
+      category:document.getElementById("edCat").value.trim(),
+      short_description:document.getElementById("edShort").value.trim(),
+      description:document.getElementById("edDesc").value.trim() });
+    Object.assign(a,{title:j.app.title,visibility:j.app.visibility});
+    await loadApps(); openAppDetail(currentApp); toast("Saved ✓"); }
+  catch(e){ toast("Save failed: "+e.message); }
+}
+function reupload(){ switchTab("upload",document.querySelectorAll(".nav-item")[0]);
+  toast("Choose the new APK for "+(getApp(currentApp)||{}).title); }
+async function deleteApp(){
+  const a=getApp(currentApp); if(!a) return;
+  if(!confirm("Move "+a.title+" to Trash?")) return;
+  try{ await api("delete-app","POST",{id:a.id,title:a.title});
+    toast("Moved to Trash"); goBackApps(); loadApps(); }
+  catch(e){ toast("Delete failed: "+e.message); }
+}
+
+/* ---------- queue ---------- */
+function renderQueue(){
+  document.getElementById("queueList").innerHTML=QUEUE.length?QUEUE.map(c=>{
+    const pill=c.status==="inspected"?"blue":c.status==="uploaded"?"green":c.status==="failed"?"red":"amber";
+    return '<div class="card"><div style="display:flex;gap:10px;align-items:center;">'+
+      '<div style="flex:1;min-width:0;"><b style="font-size:14px;">'+esc(c.filename)+'</b>'+
+      '<div class="meta">'+fmtSize(c.byte_size)+' · '+timeAgo(c.created_at)+'</div></div>'+
+      '<span class="pill '+pill+'">'+esc(c.status)+'</span></div>'+
+      (c.error?'<div class="meta" style="color:#f87171;margin-top:6px;">'+esc(c.error)+'</div>':"")+
+      (c.status==="uploaded"?'<div class="btnrow" style="margin-top:10px;"><button class="btn primary" onclick="inspectCandidate(\''+c.id+'\')">Inspect</button><button class="btn danger" onclick="discardC(\''+c.id+'\')">Discard</button></div>':"")+
+      '</div>';
+  }).join(""):'<div class="empty"><div class="big">📥</div>Queue is empty.<br>Upload an APK to get started.</div>';
+}
+async function discardC(id){ if(!confirm("Discard this upload?")) return;
+  try{ await api("discard","POST",{id}); toast("Discarded"); loadQueue(); }
+  catch(e){ toast("Failed: "+e.message); } }
+
+/* ---------- upload flow ---------- */
+document.getElementById("apkFile").addEventListener("change",e=>{
+  const f=e.target.files[0]; if(f) startUpload(f);
+});
+function setStep(n){
+  document.querySelectorAll("#stepper .step").forEach(s=>{
+    const i=+s.dataset.s; s.classList.toggle("done",i<n); s.classList.toggle("now",i===n);
+    s.querySelector(".dot").textContent=i<n?"✓":(i+1);
+  });
+  ["upStep0","upStep1","upStep2","upStep3"].forEach((id,i)=>
+    document.getElementById(id).classList.toggle("hidden",i!==n));
+}
+async function startUpload(file){
+  if(!/\.apk$/i.test(file.name)) return toast("Select an .apk file");
+  setStep(0);
+  document.getElementById("upProgCard").classList.remove("hidden");
+  document.getElementById("upFileName").textContent=file.name;
+  const bar=document.getElementById("upProg"), txt=document.getElementById("upProgTxt");
+  try{
+    txt.textContent="Preparing upload…";
+    const s=await api("start","POST",{filename:file.name,byteSize:file.size});
+    candidateId=s.id;
+    txt.textContent="Uploading… 0%";
+    await new Promise((res,rej)=>{
+      const xhr=new XMLHttpRequest();
+      xhr.upload.onprogress=ev=>{ if(ev.lengthComputable){ const p=Math.round(ev.loaded/ev.total*100);
+        bar.style.width=p+"%"; txt.textContent="Uploading… "+p+"%"; } };
+      xhr.onload=()=>xhr.status<300?res():rej(new Error("Upload failed ("+xhr.status+")"));
+      xhr.onerror=()=>rej(new Error("Network error"));
+      xhr.open("PUT",s.signedUrl); xhr.setRequestHeader("Content-Type","application/vnd.android.package-archive");
+      xhr.send(file);
+    });
+    bar.style.width="100%"; txt.textContent="Finalizing…";
+    await api("complete","POST",{id:candidateId});
+    inspectCandidate(candidateId,true);
+  }catch(e){ txt.textContent="Failed: "+e.message; toast("Upload failed: "+e.message); }
+}
+async function inspectCandidate(id,fromUpload){
+  candidateId=id; setStep(1);
+  if(fromUpload) switchTab("upload",document.querySelectorAll(".nav-item")[0]);
+  else { try{ await api("inspect","POST",{id}); }catch(e){} }
+  try{
+    const j=fromUpload?await api("inspect","POST",{id}):null;
+    inspection=j?j.inspection:null;
+    if(!inspection){ const l=await api("list"); const c=l.candidates.find(x=>x.id===id); inspection=c&&c.inspection; }
+    if(!inspection||!inspection.packageId) throw new Error("Inspection failed");
+    const i=inspection;
+    document.getElementById("inspCard").innerHTML=
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;"><span class="pill green">Verified ✓</span></div>'+
+      '<div class="meta" style="line-height:1.9;">Package: <b style="color:var(--txt)">'+esc(i.packageId)+'</b><br>'+
+      'Version: <b style="color:var(--txt)">'+esc(i.versionName)+' ('+i.versionCode+')</b><br>'+
+      'App name: <b style="color:var(--txt)">'+esc(i.appName)+'</b><br>'+
+      (i.minSdk?'Min SDK: <b style="color:var(--txt)">'+i.minSdk+'</b><br>':"")+
+      'Signer: <span style="font-family:monospace;font-size:10px;">'+esc((i.certificateSha256||"").slice(0,24))+'…</span></div>';
+    document.getElementById("rvTitle").value=i.appName||"";
+    document.getElementById("rvCat").value="Tools";
+    setStep(2);
+  }catch(e){ toast("Inspect failed: "+e.message); setStep(0); }
+}
+async function publishCandidate(){
+  if(!document.getElementById("rvRights").checked) return toast("Confirm distribution rights first");
+  const title=document.getElementById("rvTitle").value.trim();
+  if(!title) return toast("Enter a title");
+  try{
+    const j=await api("publish","POST",{ id:candidateId, rightsConfirmed:true, title,
+      category:document.getElementById("rvCat").value.trim()||"Tools",
+      shortDescription:document.getElementById("rvShort").value.trim(),
+      description:document.getElementById("rvDesc").value.trim(),
+      releaseNotes:document.getElementById("rvNotes").value.trim() });
+    document.getElementById("pubDoneTxt").textContent=title+" is live.";
+    setStep(3); loadApps(); loadQueue();
+  }catch(e){ toast("Publish failed: "+e.message); }
+}
+async function discardCandidate(){ if(!candidateId) return resetUpload();
+  if(!confirm("Discard this upload?")) return;
+  try{ await api("discard","POST",{id:candidateId}); }catch(e){}
+  resetUpload(); loadQueue();
+}
+function resetUpload(){ candidateId=null; inspection=null;
+  document.getElementById("apkFile").value="";
+  document.getElementById("upProgCard").classList.add("hidden");
+  document.getElementById("upProg").style.width="0";
+  setStep(0);
+}
+
+/* ---------- diagnostics ---------- */
+function renderCrashes(){
+  const total=CRASHES.length;
+  const today=CRASHES.filter(c=>(Date.now()-new Date(c.created_at).getTime())<864e5).length;
+  document.getElementById("dgTotal").textContent=total;
+  document.getElementById("dgToday").textContent=today;
+  document.getElementById("dgVers").textContent=new Set(CRASHES.map(c=>c.app_version)).size;
+  document.getElementById("dgDev").textContent=new Set(CRASHES.map(c=>c.device_model)).size;
+  // group by message+version
+  const groups={};
+  CRASHES.forEach(c=>{ const k=(c.message||"Unknown error")+"|"+(c.app_version||"?");
+    (groups[k]=groups[k]||[]).push(c); });
+  const keys=Object.keys(groups).sort((a,b)=>groups[b].length-groups[a].length);
+  document.getElementById("crashList").innerHTML=keys.length?keys.map((k,gi)=>{
+    const g=groups[k], c=g[0], id="cg"+gi;
+    const exc=(c.stack||"").split("\n")[0].split(":")[0].split(".").pop()||"Error";
+    const last=timeAgo(Math.max(...g.map(x=>new Date(x.created_at).getTime())));
+    return '<div class="card"><button class="crash-head" onclick="document.getElementById(\''+id+'\').classList.toggle(\'hidden\')">'+
+      '<div style="display:flex;gap:8px;align-items:center;"><span class="count-badge">×'+g.length+'</span>'+
+      '<b style="font-size:14px;flex:1;">'+esc(exc)+'</b><span class="chev">›</span></div>'+
+      '<div class="meta" style="margin-top:6px;">'+esc(c.message||"No message")+'</div>'+
+      '<div class="crash-meta"><span class="pill blue">'+esc(c.app_version||"?")+'</span>'+
+      '<span class="meta">'+esc(c.device_model||"")+' · '+esc(last)+'</span></div></button>'+
+      '<div id="'+id+'" class="hidden"><div class="stack">'+esc(c.stack||"No stack trace")+'</div>'+
+      '<div class="btnrow"><button class="btn primary" onclick="copyCrash(\''+esc(c.id)+'\')">⧉ Copy for AI fix</button>'+
+      '<button class="btn" onclick="resolveCrash(\''+esc(c.id)+'\')">Mark resolved</button></div></div></div>';
+  }).join(""):'<div class="empty"><div class="big">🛡️</div>No crash reports.<br>All quiet.</div>';
+}
+async function copyCrash(id){
+  const c=CRASHES.find(x=>x.id===id); if(!c) return;
+  const t="BUG REPORT — please fix this in my Android app (APK STORE client)\n"+
+    "============================================================\n"+
+    "Message: "+(c.message||"Unknown")+"\n"+
+    "App version: "+(c.app_version||"?")+" ("+(c.version_code||"?")+") | Device: "+(c.device_model||"?")+" · Android "+(c.android_version||"?")+"\n"+
+    "Screen: "+(c.screen||"unknown")+" | When: "+new Date(c.created_at).toLocaleString()+"\n\n"+
+    "Stack trace:\n"+(c.stack||"n/a")+"\n\n"+
+    "Please explain the root cause and give me the exact code fix.";
+  try{ await navigator.clipboard.writeText(t); toast("Copied — paste it into any AI ✓"); }
+  catch(e){ toast("Copy failed"); }
+}
+async function resolveCrash(id){
+  if(!confirm("Mark this crash report resolved?")) return;
+  try{ await api("resolve-crash","POST",{id}); toast("Resolved ✓"); loadCrashes(); }
+  catch(e){ toast("Failed: "+e.message); }
+}
+
+/* ---------- boot ---------- */
+(function(){
+  if(!anonKey) document.getElementById("setupBox").classList.remove("hidden");
+  if(token&&userEmail){ document.getElementById("authView").classList.add("hidden"); enterApp(); }
+  else { document.getElementById("authView").classList.remove("hidden"); }
+})();
+</script>
+</body>
+</html>
