@@ -742,9 +742,10 @@ public class MainActivity extends Activity {
         TextView fallback = text(title.isEmpty() ? "?" : title.substring(0, 1).toUpperCase(), size / 2, green(), true);
         fallback.setGravity(Gravity.CENTER); fallback.setBackground(shape(raised(), 13));
         String url = app.optString("icon_url", "");
-        boolean hostedIcon = url.startsWith("https://apk-store-mazhar.mazharmanzoor4117.chatgpt.site/") && url.endsWith(".png");
-        boolean storageIcon = url.startsWith(BuildConfig.SUPABASE_URL + "/storage/v1/object/public/app-icons/");
-        if (!hostedIcon && !storageIcon) return fallback;
+        // icon_url is owner-controlled catalog data and may live on Supabase Storage,
+        // the app-icon Edge Function, R2, F-Droid or GitHub. Require TLS, then rely on
+        // the byte limit + Bitmap decode below instead of hard-coding an obsolete host.
+        if (!url.startsWith("https://")) return fallback;
         android.widget.FrameLayout frame = new android.widget.FrameLayout(this);
         frame.addView(fallback, new android.widget.FrameLayout.LayoutParams(-1, -1));
         ImageView image = new ImageView(this);
