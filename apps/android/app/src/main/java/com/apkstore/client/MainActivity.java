@@ -95,6 +95,12 @@ public class MainActivity extends Activity {
     private FrameLayout detailIconContainer;
     private String pendingInstallSlug;
     private Runnable installResultPoll;
+    private JSONObject selfUpdateApp;
+    private LinearLayout selfUpdatePage;
+    private TextView selfUpdateStatus, selfUpdateProgress;
+    private ProgressRing selfUpdateRing;
+    private android.widget.Button selfUpdateButton;
+    private Runnable selfUpdateUiPoll;
     private final HashMap<String, Integer> downloadProgress = new HashMap<>();
     private final HashMap<String, String> downloadSizes = new HashMap<>();
     private final HashMap<String, String> downloadErrors = new HashMap<>();
@@ -137,6 +143,10 @@ public class MainActivity extends Activity {
                 (getResources().getConfiguration().uiMode & 0x30) == 0x10);
         repository = new CatalogRepository(this);
         history = new DownloadStore(this);
+        try {
+            String savedSelfUpdate = getSharedPreferences("self_update", MODE_PRIVATE).getString("target", null);
+            if (savedSelfUpdate != null && !savedSelfUpdate.isEmpty()) selfUpdateApp = new JSONObject(savedSelfUpdate);
+        } catch (Exception ignored) { }
         JSONArray attempts = history.attempts();
         java.util.HashSet<String> recovered = new java.util.HashSet<>();
         for (int i = 0; i < attempts.length(); i++) {
@@ -175,6 +185,10 @@ public class MainActivity extends Activity {
         handler.post(() -> {
             if (lastCatalogRefresh > 0 && android.os.SystemClock.elapsedRealtime() - lastCatalogRefresh > 15 * 60 * 1000L) load();
             if (detailApp != null) consumeInstallResult(detailApp.optString("slug"));
+            if (selfUpdateApp != null) {
+                consumeInstallResult(selfUpdateApp.optString("slug"));
+                updateSelfUpdateUi();
+            }
             if (detailApp != null) refreshDetail();
             if (detailApp != null && completedDownloads.containsKey(detailApp.optString("slug")))
                 watchInstallResult(detailApp.optString("slug"));
@@ -1224,7 +1238,7 @@ public class MainActivity extends Activity {
         page.addView(status); space(page, 16);
         worker.execute(() -> {
             try {
-                String endpoint = BuildConfig.SUPABASE_URL + "/rest/v1/apps?select=slug,title,current_release_id&slug=eq.apk-store-client&visibility=eq.published&limit=1";
+                String endpoint = BuildConfig.SUPABASE_URL + "/rest/v1/apps?select=slug,title,package_id,current_release_id&slug=eq.apk-store-client&visibility=eq.published&limit=1";
                 java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(endpoint).openConnection();
                 c.setConnectTimeout(12000); c.setReadTimeout(12000);
                 c.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
@@ -1238,7 +1252,7 @@ public class MainActivity extends Activity {
                 if (rows.length() == 0) throw new Exception("No APK STORE release is published yet.");
                 org.json.JSONObject self = rows.getJSONObject(0);
                 String releaseId = self.optString("current_release_id");
-                String rep = BuildConfig.SUPABASE_URL + "/rest/v1/releases?select=version_code,version_name,release_notes,byte_size&id=eq." + releaseId + "&limit=1";
+                String rep = BuildConfig.SUPABASE_URL + "/rest/v1/releases?select=id,version_code,version_name,release_notes,changelog,apk_sha256,byte_size,certificate_sha256,min_sdk&id=eq." + releaseId + "&status=eq.published&limit=1";
                 java.net.HttpURLConnection rc = (java.net.HttpURLConnection) new java.net.URL(rep).openConnection();
                 rc.setConnectTimeout(12000); rc.setReadTimeout(12000);
                 rc.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
@@ -1251,6 +1265,10 @@ public class MainActivity extends Activity {
                 org.json.JSONArray rrows = new org.json.JSONArray(rbody);
                 if (rrows.length() == 0) throw new Exception("Release details unavailable.");
                 org.json.JSONObject rel = rrows.getJSONObject(0);
+                self.put("package_id", getPackageName());
+                self.put("release", rel);
+                selfUpdateApp = self;
+                getSharedPreferences("self_update", MODE_PRIVATE).edit().putString("target", self.toString()).apply();
                 long latest = rel.optLong("version_code");
                 String latestName = rel.optString("version_name", String.valueOf(latest));
                 runOnUiThread(() -> {
@@ -1267,17 +1285,19 @@ public class MainActivity extends Activity {
                         if (!notes.isEmpty()) { page.addView(text("What's new", 14, ink(), true)); space(page, 4); page.addView(text(notes, 14, muted(), false)); space(page, 8); }
                         long bytes = rel.optLong("byte_size");
                         if (bytes > 0) { page.addView(text(String.format(java.util.Locale.ROOT, "%.1f MB", bytes / 1048576.0), 13, muted(), false)); space(page, 12); }
-                        android.widget.Button update = new android.widget.Button(this);
-                        update.setText("Update now");
-                        update.setOnClickListener(v -> {
-                            // Reuse the catalog download flow: integrity + cert checks included.
-                            for (int i = 0; i < catalog.length(); i++) {
-                                org.json.JSONObject app = catalog.optJSONObject(i);
-                                if (app != null && "apk-store-client".equals(app.optString("slug"))) { startDownload(app); showTab(APPS); return; }
-                            }
-                            android.widget.Toast.makeText(this, "Release found, but catalog needs refresh. Pull to refresh, then retry.", android.widget.Toast.LENGTH_LONG).show();
-                        });
-                        page.addView(update);
+                        selfUpdatePage = page;
+                        selfUpdateRing = new ProgressRing();
+                        selfUpdateRing.setVisibility(View.GONE);
+                        page.addView(selfUpdateRing, new LinearLayout.LayoutParams(dp(64), dp(64)));
+                        selfUpdateStatus = text("Ready to update", 14, muted(), false);
+                        page.addView(selfUpdateStatus);
+                        selfUpdateProgress = text("", 13, green(), true);
+                        page.addView(selfUpdateProgress);
+                        selfUpdateButton = new android.widget.Button(this);
+                        selfUpdateButton.setText("Update now");
+                        selfUpdateButton.setOnClickListener(v -> startSelfUpdate(self));
+                        page.addView(selfUpdateButton);
+                        updateSelfUpdateUi();
                     }
                 });
             } catch (Exception e) {
@@ -1291,6 +1311,81 @@ public class MainActivity extends Activity {
             }
         });
     }
+    private void startSelfUpdate(JSONObject self) {
+        selfUpdateApp = self;
+        getSharedPreferences("self_update", MODE_PRIVATE).edit().putString("target", self.toString()).apply();
+        String slug = self.optString("slug");
+        if (completedDownloads.containsKey(slug)) {
+            if (selfUpdateStatus != null) selfUpdateStatus.setText("Installing update…");
+            openDownloaded(slug);
+        } else if (!downloads.containsKey(slug)) {
+            startDownload(self);
+        }
+        updateSelfUpdateUi();
+        pollSelfUpdateUi();
+    }
+
+    private JSONObject appForDownload(String slug) {
+        if (selfUpdateApp != null && slug.equals(selfUpdateApp.optString("slug"))) return selfUpdateApp;
+        for (int i = 0; i < catalog.length(); i++) {
+            JSONObject app = catalog.optJSONObject(i);
+            if (app != null && slug.equals(app.optString("slug"))) return app;
+        }
+        return null;
+    }
+
+    private void pollSelfUpdateUi() {
+        if (selfUpdateUiPoll != null) handler.removeCallbacks(selfUpdateUiPoll);
+        selfUpdateUiPoll = new Runnable() {
+            @Override public void run() {
+                if (selfUpdateApp == null || selfUpdatePage == null) { selfUpdateUiPoll = null; return; }
+                updateSelfUpdateUi();
+                String slug = selfUpdateApp.optString("slug");
+                if (downloads.containsKey(slug) || completedDownloads.containsKey(slug)) handler.postDelayed(this, 400);
+                else selfUpdateUiPoll = null;
+            }
+        };
+        handler.post(selfUpdateUiPoll);
+    }
+
+    private void updateSelfUpdateUi() {
+        if (selfUpdateApp == null || selfUpdateStatus == null) return;
+        String slug = selfUpdateApp.optString("slug");
+        JSONObject release = selfUpdateApp.optJSONObject("release");
+        long target = release == null ? Long.MAX_VALUE : release.optLong("version_code", Long.MAX_VALUE);
+        long installed = installedVersion(getPackageName());
+        if (installed >= target) {
+            selfUpdateStatus.setText("Update installed");
+            if (selfUpdateProgress != null) selfUpdateProgress.setText("Version " + BuildConfig.VERSION_NAME);
+            if (selfUpdateRing != null) selfUpdateRing.setVisibility(View.GONE);
+            if (selfUpdateButton != null) { selfUpdateButton.setText("Up to date"); selfUpdateButton.setEnabled(false); }
+            getSharedPreferences("self_update", MODE_PRIVATE).edit().remove("target").apply();
+            return;
+        }
+        if (downloads.containsKey(slug)) {
+            int progress = downloadProgress.getOrDefault(slug, 0);
+            selfUpdateStatus.setText("Downloading update…");
+            if (selfUpdateProgress != null) selfUpdateProgress.setText(progress + "%  " + downloadSizes.getOrDefault(slug, ""));
+            if (selfUpdateRing != null) { selfUpdateRing.setVisibility(View.VISIBLE); selfUpdateRing.setProgress(progress); }
+            if (selfUpdateButton != null) { selfUpdateButton.setText("Downloading update"); selfUpdateButton.setEnabled(false); }
+            return;
+        }
+        if (completedDownloads.containsKey(slug)) {
+            selfUpdateStatus.setText("Installing update…");
+            if (selfUpdateProgress != null) selfUpdateProgress.setText("Android will ask you to confirm installation");
+            if (selfUpdateRing != null) { selfUpdateRing.setVisibility(View.VISIBLE); selfUpdateRing.setProgress(100); }
+            if (selfUpdateButton != null) { selfUpdateButton.setText("Installing update"); selfUpdateButton.setEnabled(false); }
+            return;
+        }
+        String error = downloadErrors.get(slug);
+        if (error != null && !error.isEmpty()) {
+            selfUpdateStatus.setText(error);
+            if (selfUpdateRing != null) selfUpdateRing.setVisibility(View.GONE);
+            if (selfUpdateProgress != null) selfUpdateProgress.setText("");
+            if (selfUpdateButton != null) { selfUpdateButton.setText("Retry update"); selfUpdateButton.setEnabled(true); }
+        }
+    }
+
     private void informationLink(LinearLayout page, String title, String subtitle, Runnable open) {
         LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
         row.setBackground(shape(surface(), 13)); row.setPadding(dp(16), dp(14), dp(16), dp(14));
@@ -1691,12 +1786,8 @@ public class MainActivity extends Activity {
             startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getPackageName())));
             return;
         }
-        JSONObject app = null;
-        for (int i = 0; i < catalog.length(); i++) {
-            JSONObject candidate = catalog.optJSONObject(i);
-            if (candidate != null && slug.equals(candidate.optString("slug"))) { app = candidate; break; }
-        }
-        if (app == null) { downloadErrors.put(slug, "Listing unavailable. Refresh the catalog."); refreshDetail(); return; }
+        JSONObject app = appForDownload(slug);
+        if (app == null) { downloadErrors.put(slug, "Release metadata unavailable. Check for updates again."); refreshDetail(); updateSelfUpdateUi(); return; }
         JSONObject release = app.optJSONObject("release");
         if (release == null) { downloadErrors.put(slug, "Release metadata unavailable. Refresh the catalog."); refreshDetail(); return; }
         String path = downloadPaths.get(slug);
@@ -1767,11 +1858,7 @@ public class MainActivity extends Activity {
                         downloadErrors.remove(slug);
                     long done = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
                     long total = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
-                    JSONObject current = null;
-                    for (int i = 0; i < catalog.length(); i++) {
-                        JSONObject candidate = catalog.optJSONObject(i);
-                        if (candidate != null && slug.equals(candidate.optString("slug"))) { current = candidate; break; }
-                    }
+                    JSONObject current = appForDownload(slug);
                     JSONObject release = current == null ? null : current.optJSONObject("release");
                     long expected = release == null ? 0 : release.optLong("byte_size");
                     long progressTotal = total > 0 ? total : expected;
@@ -1793,11 +1880,14 @@ public class MainActivity extends Activity {
         final long deadline = android.os.SystemClock.uptimeMillis() + 120000;
         installResultPoll = new Runnable() {
             @Override public void run() {
-                if (detailApp == null || !slug.equals(detailApp.optString("slug"))) return;
+                boolean detailMatches = detailApp != null && slug.equals(detailApp.optString("slug"));
+                boolean selfMatches = selfUpdateApp != null && slug.equals(selfUpdateApp.optString("slug"));
+                if (!detailMatches && !selfMatches) return;
                 String result = getSharedPreferences(InstallResultReceiver.PREFS, MODE_PRIVATE).getString(slug, null);
                 if (result != null) {
                     consumeInstallResult(slug);
                     refreshDetail();
+                    updateSelfUpdateUi();
                     installResultPoll = null;
                 } else if (android.os.SystemClock.uptimeMillis() < deadline) {
                     handler.postDelayed(this, 700);
@@ -1811,6 +1901,7 @@ public class MainActivity extends Activity {
         if (pendingSearch != null) handler.removeCallbacks(pendingSearch);
         for (Runnable poll : downloadPolls.values()) handler.removeCallbacks(poll);
         if (installResultPoll != null) handler.removeCallbacks(installResultPoll);
+        if (selfUpdateUiPoll != null) handler.removeCallbacks(selfUpdateUiPoll);
         worker.shutdownNow(); super.onDestroy();
     }
 }
