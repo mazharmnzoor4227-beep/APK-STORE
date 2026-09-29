@@ -1,0 +1,33 @@
+name: Publish APK STORE v1.1.7 artifact to Supabase
+on:
+  push:
+    branches: [ops/dispatch-apk-store-1.1.6]
+    paths: ['.github/workflows/publish-apk-store-v117-temp.yml']
+permissions:
+  actions: read
+  contents: read
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      EXPECTED_SHA256: 1f759e3c7128bbea4fc72c4aa3832ed7fab96bb7374b34209288a33dc1a4cbee
+      EXPECTED_SIZE: '669974'
+    steps:
+      - name: Download already-verified signed artifact
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          gh run download 36629925463 --repo "$GITHUB_REPOSITORY" --name APK-STORE-signed-release --dir release
+          test -f release/APK-STORE-signed.apk
+          echo "$EXPECTED_SHA256  release/APK-STORE-signed.apk" | sha256sum -c -
+          test "$(stat -c %s release/APK-STORE-signed.apk)" = "$EXPECTED_SIZE"
+      - name: Upload exact verified APK to locked Supabase release path
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --show-error --silent \
+            -X POST \
+            -H 'content-type: application/vnd.android.package-archive' \
+            --data-binary @release/APK-STORE-signed.apk \
+            'https://qfbfxencwsgryoczkdyj.supabase.co/functions/v1/release-ingest-once'
+          echo
