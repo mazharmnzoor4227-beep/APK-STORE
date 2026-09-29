@@ -11,8 +11,8 @@ final class SettingsStore {
     SettingsStore(Activity activity) { preferences = activity.getPreferences(0); }
     String theme() { return preferences.getString("theme", "system"); }
     void setTheme(String value) { preferences.edit().putString("theme", value).apply(); }
-    int updateHours() { return preferences.getInt("update_hours", 12); }
-    void setUpdateHours(int value) { preferences.edit().putInt("update_hours", value).apply(); }
+    int updateHours() { return WorkPolicy.normalizeUpdateHours(preferences.getInt("update_hours", 12)); }
+    void setUpdateHours(int value) { preferences.edit().putInt("update_hours", WorkPolicy.normalizeUpdateHours(value)).apply(); }
     boolean contains(String key, String slug) { return preferences.getStringSet(key, Collections.emptySet()).contains(slug); }
     Set<String> entries(String key) { return new HashSet<>(preferences.getStringSet(key, Collections.emptySet())); }
     void setEntries(String key, Set<String> slugs) { preferences.edit().putStringSet(key, new HashSet<>(slugs)).apply(); }
