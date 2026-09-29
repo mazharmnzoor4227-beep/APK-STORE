@@ -129,6 +129,8 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        CrashReporter.install(this);
+        worker.execute(() -> CrashReporter.uploadPending(getApplicationContext()));
         settingsStore = new SettingsStore(this);
         String theme = settingsStore.theme();
         light = "light".equals(theme) || ("system".equals(theme) &&
