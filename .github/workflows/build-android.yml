@@ -1,34 +1,93 @@
 name: Build APK STORE Android
+
 on:
   push:
     branches: [feat/web-publishing, publish-icon, main]
-    paths: ['apps/android/**', '.github/workflows/build-android.yml']
+    paths:
+      - 'apps/android/**'
+      - '.github/workflows/build-android.yml'
   workflow_dispatch:
+
 jobs:
   apk:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      APKSTORE_KEYSTORE_BASE64: ${{ secrets.APKSTORE_KEYSTORE_BASE64 }}
+      APKSTORE_KEYSTORE_PASSWORD: ${{ secrets.APKSTORE_KEYSTORE_PASSWORD }}
+      APKSTORE_KEY_ALIAS: ${{ secrets.APKSTORE_KEY_ALIAS }}
+      APKSTORE_KEY_PASSWORD: ${{ secrets.APKSTORE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
       - uses: android-actions/setup-android@v4
         with:
           packages: "platform-tools platforms;android-35 build-tools;35.0.0"
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - name: Build Android APK
+
+      - name: Test and build debug APK
         working-directory: apps/android
-        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+
       - uses: actions/upload-artifact@v4
         with:
           name: APK-STORE-debug
           path: apps/android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Validate permanent release signing secrets
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          missing=0
+          for name in APKSTORE_KEYSTORE_BASE64 APKSTORE_KEYSTORE_PASSWORD APKSTORE_KEY_ALIAS APKSTORE_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing GitHub Actions secret: $name"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Restore permanent release keystore
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          KEYSTORE="$RUNNER_TEMP/apkstore-release.jks"
+          printf '%s' "$APKSTORE_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          chmod 600 "$KEYSTORE"
+          echo "APKSTORE_KEYSTORE_PATH=$KEYSTORE" >> "$GITHUB_ENV"
+
+      - name: Build signed release APK
+        if: github.event_name == 'workflow_dispatch'
+        working-directory: apps/android
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Verify signed release identity
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          APK="apps/android/app/build/outputs/apk/release/app-release.apk"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          test -f "$APK"
+          "$AAPT" dump badging "$APK" | grep "package: name='com.apkstore.client'"
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee apps/android/app/build/outputs/apk/release/signing-certificate.txt
+          sha256sum "$APK" | tee apps/android/app/build/outputs/apk/release/apk-sha256.txt
+          cp "$APK" apps/android/app/build/outputs/apk/release/APK-STORE-signed.apk
+
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
         with:
-          name: APK-STORE-release-unsigned
-          path: apps/android/app/build/outputs/apk/release/app-release-unsigned.apk
+          name: APK-STORE-signed-release
+          path: |
+            apps/android/app/build/outputs/apk/release/APK-STORE-signed.apk
+            apps/android/app/build/outputs/apk/release/signing-certificate.txt
+            apps/android/app/build/outputs/apk/release/apk-sha256.txt
