@@ -11,7 +11,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
 public final class CrashReportWorker extends Worker {
-    CrashReportWorker(@NonNull Context context, @NonNull WorkerParameters parameters) {
+    public CrashReportWorker(@NonNull Context context, @NonNull WorkerParameters parameters) {
         super(context, parameters);
     }
 
