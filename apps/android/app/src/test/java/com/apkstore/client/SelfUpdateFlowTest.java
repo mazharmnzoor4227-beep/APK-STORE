@@ -48,4 +48,11 @@ public class SelfUpdateFlowTest {
         assertTrue(java.contains("selfUpdateUiPoll"));
         assertTrue(java.contains("consumeInstallResult(selfUpdateApp.optString(\"slug\"))"));
     }
+
+    @Test public void cancelledSelfUpdateCanBeRetried() throws Exception {
+        String java = read(projectFile("src/main/java/com/apkstore/client/MainActivity.java"));
+        assertTrue(java.contains("if (selfUpdateApp != null && slug.equals(selfUpdateApp.optString(\"slug\")))"));
+        assertTrue(java.contains("completedDownloads.remove(slug);"));
+        assertTrue(java.contains("Retry update"));
+    }
 }
