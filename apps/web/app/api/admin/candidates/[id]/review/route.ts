@@ -2,6 +2,7 @@ import { adminDatabase, requireOwner } from '../../../../../../lib/admin/server'
 import { classifyIconBytes, managedIconPath } from '../../../../../../lib/admin/icon-upload';
 import { classifyScreenshotBytes, managedScreenshotPath } from '../../../../../../lib/admin/screenshot-upload';
 import { normalizeReviewFields } from '../../../../../../lib/admin/review-fields';
+import { recordAdminError } from '../../../../../../lib/admin/errors';
 
 async function verifyIcon(db: ReturnType<typeof adminDatabase>, url: string, inspectedUrl: string) {
   if (!url) return '';
@@ -90,22 +91,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     });
     if (error) throw error;
     const extras: Record<string, unknown> = {
-      icon_url: iconUrl,
-      screenshots,
-      short_description: fields.shortDescription,
-      license: fields.license,
-      source_url: fields.sourceUrl,
-      fdroid_url: fields.fdroidUrl,
-      price_type: fields.priceType,
-      is_recommended: fields.recommended,
-      updated_at: new Date().toISOString(),
+      icon_url: iconUrl, screenshots, short_description: fields.shortDescription, license: fields.license,
+      source_url: fields.sourceUrl, fdroid_url: fields.fdroidUrl, price_type: fields.priceType,
+      is_recommended: fields.recommended, updated_at: new Date().toISOString(),
     };
     const minSdk = Number(candidate.inspection.minSdk);
     if (Number.isSafeInteger(minSdk) && minSdk > 0) extras.min_sdk = minSdk;
     const { error: updateError } = await db.from('apps').update(extras).eq('id', appId);
-    if (updateError) return Response.json({ status: 'published', appId, warning: `Release published; catalog metadata update failed: ${updateError.message}` });
+    if (updateError) {
+      await recordAdminError('api/admin/candidates/review-metadata', updateError, { candidateId: id, appId });
+      return Response.json({ status: 'published', appId, warning: `Release published; catalog metadata update failed: ${updateError.message}` });
+    }
     return Response.json({ status: 'published', appId });
   } catch (error) {
+    await recordAdminError('api/admin/candidates/review', error);
     const message = error instanceof Error ? error.message : 'Review failed';
     return Response.json({ error: message }, { status: /owner|authorization|token|auth/i.test(message) ? 401 : 400 });
   }
