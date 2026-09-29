@@ -2,8 +2,10 @@ name: Patch APK STORE stability branch (temporary)
 
 on:
   push:
-    branches: [main]
-    paths: ['.github/workflows/patch-stability-branch-temp.yml']
+    branches:
+      - main
+    paths:
+      - '.github/workflows/patch-stability-branch-temp.yml'
 
 permissions:
   contents: write
@@ -28,18 +30,9 @@ jobs:
           end_marker = '    @Override protected void onResume() {'
           if start_marker not in text or end_marker not in text:
               raise SystemExit('Expected crash-report block not found')
+          replacement = '    private void scheduleUpdates() {\n        // WorkManager availability must never crash the foreground app.\n        try {\n            if (!CrashReporter.ensureWorkManager(this)) return;\n            int hours = WorkPolicy.normalizeUpdateHours(settingsStore.updateHours());\n            PeriodicWorkRequest request = new PeriodicWorkRequest.Builder(UpdateCheckWorker.class, hours, TimeUnit.HOURS).build();\n            WorkManager.getInstance(this).enqueueUniquePeriodicWork("catalog-update-check", ExistingPeriodicWorkPolicy.UPDATE, request);\n        } catch (Throwable ignored) { }\n    }\n'
           start = text.index(start_marker)
           end = text.index(end_marker, start)
-          replacement = '''    private void scheduleUpdates() {
-              // WorkManager availability must never crash the foreground app.
-              try {
-                  if (!CrashReporter.ensureWorkManager(this)) return;
-                  int hours = WorkPolicy.normalizeUpdateHours(settingsStore.updateHours());
-                  PeriodicWorkRequest request = new PeriodicWorkRequest.Builder(UpdateCheckWorker.class, hours, TimeUnit.HOURS).build();
-                  WorkManager.getInstance(this).enqueueUniquePeriodicWork("catalog-update-check", ExistingPeriodicWorkPolicy.UPDATE, request);
-              } catch (Throwable ignored) { }
-          }
-'''
           text = text[:start] + replacement + text[end:]
           p.write_text(text)
           PY
