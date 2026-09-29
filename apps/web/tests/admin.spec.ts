@@ -12,6 +12,7 @@ test('owner hub exposes the required management destinations', async ({ page }) 
   const response = await page.goto('/admin/apps/new');
   expect(response?.status()).toBe(200);
   await expect(page.getByRole('heading', { name: /Manage your store/i })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'APK STORE release' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Crash reports' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Trash' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Queue' })).toBeVisible();
@@ -19,7 +20,7 @@ test('owner hub exposes the required management destinations', async ({ page }) 
 });
 
 test('owner management destinations are real pages', async ({ page }) => {
-  for (const [path, heading] of [['/admin/trash', 'Trash'], ['/admin/queue', 'Queue'], ['/admin/settings', 'Settings']] as const) {
+  for (const [path, heading] of [['/admin/trash', 'Trash'], ['/admin/queue', 'Queue'], ['/admin/settings', 'Settings'], ['/admin/store-release', 'APK STORE releases']] as const) {
     const response = await page.goto(path);
     expect(response?.status()).toBe(200);
     await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
@@ -39,6 +40,9 @@ test('owner management pages expose real controls', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Validate live catalog' })).toBeVisible();
   await expect(page.getByLabel('Admin theme')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
+  await page.goto('/admin/store-release');
+  await expect(page.getByRole('button', { name: 'Refresh release status' })).toBeVisible();
+  await expect(page.getByText(/separate first-party release channel/i)).toBeVisible();
 });
 
 test('APK upload advertises 300 MB, drag-drop and cancel support', async ({ page }) => {
