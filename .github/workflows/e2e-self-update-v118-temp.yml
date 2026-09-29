@@ -1,0 +1,28 @@
+name: E2E APK STORE self-update v1.1.7 to v1.1.8
+on:
+  push:
+    branches: [ops/dispatch-apk-store-1.1.6]
+    paths:
+      - '.github/workflows/e2e-self-update-v118-temp.yml'
+      - '.github/scripts/e2e-self-update-v118.sh'
+permissions:
+  actions: read
+  contents: read
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/dispatch-apk-store-1.1.6
+      - name: Run Android emulator self-update test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: bash .github/scripts/e2e-self-update-v118.sh
