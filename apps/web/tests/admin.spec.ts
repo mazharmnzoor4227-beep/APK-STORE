@@ -43,6 +43,9 @@ test('owner management pages expose real controls', async ({ page }) => {
   await page.goto('/admin/store-release');
   await expect(page.getByRole('button', { name: 'Refresh release status' })).toBeVisible();
   await expect(page.getByText(/separate first-party release channel/i)).toBeVisible();
+  await page.goto('/admin/crashes');
+  await expect(page.getByLabel('Search diagnostics')).toBeVisible();
+  await expect(page.getByLabel('Diagnostic status')).toBeVisible();
 });
 
 test('APK upload advertises 300 MB, drag-drop and cancel support', async ({ page }) => {
