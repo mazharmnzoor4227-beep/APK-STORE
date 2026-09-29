@@ -286,7 +286,7 @@ footer{margin-top:56px;border-top:1px solid var(--border)}
 
 <header><div class="wrap hd">
   <a class="logo" href="#" onclick="go('home');return false"><img src="data:image/webp;base64,UklGRlYFAABXRUJQVlA4IEoFAADwJgCdASrAAMAAPpVKoEslpKMhp1TYuLASiWNu3V4ZRdmSJc7Ttnv/X0aj6LZT2k/Z3/h8fM82cQKpO+RL7ucJltFO+W70gwuCrC5GEL2QuvXz0k6WZgkrWgB4GXcN7BlRVA2sKDEUVj9zLtEq5ljofnIwHtnQHrh9Osw5kkX7GsxmnZAKeJHj2OhcLYbUx02Iaj/eAcm89kxFMLApXssHh4Pj3asrNn9jwKDiJdmAK6aKCDirLnm2xVZ66NElOptldwA4J5F0LGXEBQStMcW62DCBOEFpn5f1a6Oujh3H7zfgsm7DRBcLByaZS43cPpnL/sUBIl/kyG5MelGkGG47/7apNnV/maJ7k2TgIU6Ofx3z6ay5L7uWTXYTriNQXAE+W0AulgJ2zDs4Ar+no2rDQa8v6/NVq8nHDblh0Q2cAAD++COVPKZmtY4dpNGAaJDtq0ioA4Plz2xe217WsV3PZfnneqGd6xdQJoWuN2KWnx/WK8e1MxoY4fVT2//bh2EkxsQfPicuKj5LtBYFKV+7tkpJlJk6xLczS/+P74HHEqJch9rj77fXSzAPks2Cu47JVmd5wGrHVQs9RO+UWBDbhLQxU0Sv2lVPl9m9MYs2zB7I9RRF73ZHu9fI1gq/fldZ3n+C/z4YhqX3OTSOJaC13V4wYOxNSiEMLKFniDehGen4EGZLGUSBsSTohtCql0jAhWyExVtKyst8Rx5Ync4lUl3giPDId1LKKsxYcx4mo4lacqVPZi/81F0Q6JAscILT8rvbUOpN9D/SS1Ew5jV+J84Gx2Zg3UEjpIPKU0wtAeJwHkRU893L2/zJJ9r2LcDBiW+7F6Si6lvberVlQZSTJ8OSuGdxWUpT9OeNd0hScesvodLfNlbuYG5kA2OdAB0O4ZY2DH1ZuUKACLNVSSqmf/mH8df8h9G1Xt1cXONv+mDnE7Wu/3CfBR34ULjHUl3BtMUH0iJmOWIE4424Ox2FZCj+DrBjbfXnEYH8jl91t2mb07CmQIYfsd1nTRghJbzEWEy8iIsFI8qrEYPhBZ78cuJ0mzlqL5BxS2ctM87ce9VP8GSkfOKfhDYjHsKvr780Oftmp/jvns7LPBKPP5poaekoNZKXD/kdJhH2X4YCRDvL/RofuKKnUDzWWdaN/ktkEo+l/Gt4FTITwyQPSRE/sVeb9cF0ZkX1aHaDT8v/SjdYRFE/zBm01w0lnTjzMVpNPOLBXoDdB5gn6n5jPGKDuffhhpCN12+8SbvwFdA3VSJol6gB9fuxEeeLMcVSWC1HQdzH53Zq9F4Zya3LrojVW+vVfl2M8D1Z7Ho5z+v/IgcbKGSPzhwjNZDzFji7lnCENQAvWSVrF0AGL/gRluBM/bHsXebEfT/qtl+Gul+9AoXyvgW53e2L8iYrVH8ErRSGzn4az3NQjOzB6R66VQb9vogKFElkNrGQkECTtnukfd9MS7xz88uP/bg+Egu9ULuD7aSmqfm2xRM703CagRWDYQXNxdvCvVBFMVbMR71LsQuD4eue5F9BrvwR8cL0i+Y8GGuspCY2JHhqEXZhOFxUJFps28SX7P5oo3h2Zh5Jqe2+UUV48QvekvwMqgPsJ8qOXhW+p3vVwvqMVeCtB44I/3U9Bu+ENBW5W/N1T6opXMWsNGOP7J7iJPGC7GDWqn2X6y7IwBTN2kyG4oK4aq9L39djFEa1eZZML+9TMepVuAht4Fmp4+IEz+dhn8VDHJD4JhddmOJl3FvaA3PoqMcxapGfver1BtfjplwAAA4ePK/Tlws5SrlPcPcPcSMFLUfQwIifnAy8oAAA" alt=""><span><b>APK STORE</b><small>ANDROID APPS</small></span></a>
-  <div class="srch"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input id="q" placeholder="Search apps, games, packages…" onkeydown="if(event.key==='Enter')doSearch()"></div>
+  <div class="srch"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input id="q" placeholder="Search apps, games, packages…" onkeydown="if(event.key==='Enter')doSearch()" oninput="hdrInput(this)"></div>
   <nav class="nav">
     <a href="#" data-n="home" class="on" onclick="go('home');return false">Home</a>
     <a href="#" data-n="apps" onclick="go('apps');return false">Apps</a>
@@ -305,7 +305,7 @@ footer{margin-top:56px;border-top:1px solid var(--border)}
   <a href="#" onclick="go('cats');closeDrawer();return false">Categories</a>
   <a href="#" onclick="go('updates');closeDrawer();return false">Updates</a>
   <a href="#" onclick="toggleTheme();return false"><span id="themeLbl">Dark mode</span></a>
-  <a href="#" onclick="openInstallModal();closeDrawer();return false" style="color:var(--acc);font-weight:600">Get the App</a>
+  <a href="#" onclick="closeDrawer();startAppDownload();return false" style="color:var(--acc);font-weight:600">Download APK STORE</a>
 </div>
 
 <main class="wrap" id="main"></main>
@@ -330,7 +330,7 @@ footer{margin-top:56px;border-top:1px solid var(--border)}
 
 <div class="mbg" id="installModal"><div class="modal">
   <div id="imMain">
-    <img src="data:image/webp;base64,UklGRlYFAABXRUJQVlA4IEoFAADwJgCdASrAAMAAPpVKoEslpKMhp1TYuLASiWNu3V4ZRdmSJc7Ttnv/X0aj6LZT2k/Z3/h8fM82cQKpO+RL7ucJltFO+W70gwuCrC5GEL2QuvXz0k6WZgkrWgB4GXcN7BlRVA2sKDEUVj9zLtEq5ljofnIwHtnQHrh9Osw5kkX7GsxmnZAKeJHj2OhcLYbUx02Iaj/eAcm89kxFMLApXssHh4Pj3asrNn9jwKDiJdmAK6aKCDirLnm2xVZ66NElOptldwA4J5F0LGXEBQStMcW62DCBOEFpn5f1a6Oujh3H7zfgsm7DRBcLByaZS43cPpnL/sUBIl/kyG5MelGkGG47/7apNnV/maJ7k2TgIU6Ofx3z6ay5L7uWTXYTriNQXAE+W0AulgJ2zDs4Ar+no2rDQa8v6/NVq8nHDblh0Q2cAAD++COVPKZmtY4dpNGAaJDtq0ioA4Plz2xe217WsV3PZfnneqGd6xdQJoWuN2KWnx/WK8e1MxoY4fVT2//bh2EkxsQfPicuKj5LtBYFKV+7tkpJlJk6xLczS/+P74HHEqJch9rj77fXSzAPks2Cu47JVmd5wGrHVQs9RO+UWBDbhLQxU0Sv2lVPl9m9MYs2zB7I9RRF73ZHu9fI1gq/fldZ3n+C/z4YhqX3OTSOJaC13V4wYOxNSiEMLKFniDehGen4EGZLGUSBsSTohtCql0jAhWyExVtKyst8Rx5Ync4lUl3giPDId1LKKsxYcx4mo4lacqVPZi/81F0Q6JAscILT8rvbUOpN9D/SS1Ew5jV+J84Gx2Zg3UEjpIPKU0wtAeJwHkRU893L2/zJJ9r2LcDBiW+7F6Si6lvberVlQZSTJ8OSuGdxWUpT9OeNd0hScesvodLfNlbuYG5kA2OdAB0O4ZY2DH1ZuUKACLNVSSqmf/mH8df8h9G1Xt1cXONv+mDnE7Wu/3CfBR34ULjHUl3BtMUH0iJmOWIE4424Ox2FZCj+DrBjbfXnEYH8jl91t2mb07CmQIYfsd1nTRghJbzEWEy8iIsFI8qrEYPhBZ78cuJ0mzlqL5BxS2ctM87ce9VP8GSkfOKfhDYjHsKvr780Oftmp/jvns7LPBKPP5poaekoNZKXD/kdJhH2X4YCRDvL/RofuKKnUDzWWdaN/ktkEo+l/Gt4FTITwyQPSRE/sVeb9cF0ZkX1aHaDT8v/SjdYRFE/zBm01w0lnTjzMVpNPOLBXoDdB5gn6n5jPGKDuffhhpCN12+8SbvwFdA3VSJol6gB9fuxEeeLMcVSWC1HQdzH53Zq9F4Zya3LrojVW+vVfl2M8D1Z7Ho5z+v/IgcbKGSPzhwjNZDzFji7lnCENQAvWSVrF0AGL/gRluBM/bHsXebEfT/qtl+Gul+9AoXyvgW53e2L8iYrVH8ErRSGzn4az3NQjOzB6R66VQb9vogKFElkNrGQkECTtnukfd9MS7xz88uP/bg+Egu9ULuD7aSmqfm2xRM703CagRWDYQXNxdvCvVBFMVbMR71LsQuD4eue5F9BrvwR8cL0i+Y8GGuspCY2JHhqEXZhOFxUJFps28SX7P5oo3h2Zh5Jqe2+UUV48QvekvwMqgPsJ8qOXhW+p3vVwvqMVeCtB44I/3U9Bu+ENBW5W/N1T6opXMWsNGOP7J7iJPGC7GDWqn2X6y7IwBTN2kyG4oK4aq9L39djFEa1eZZML+9TMepVuAht4Fmp4+IEz+dhn8VDHJD4JhddmOJl3FvaA3PoqMcxapGfver1BtfjplwAAA4ePK/Tlws5SrlPcPcPcSMFLUfQwIifnAy8oAAA" alt="APK STORE">
+    <img src="data:image/webp;base64,UklGRlYFAABXRUJQVlA4IEoFAADwJgCdASrAAMAAPpVKoEslpKMhp1TYuLASiWNu3V4ZRdmSJc7Ttnv/X0aj6LZT2k/Z3/h8fM82cQKpO+RL7ucJltFO+W70gwuCrC5GEL2QuvXz0k6WZgkrWgB4GXcN7BlRVA2sKDEUVj9zLtEq5ljofnIwHtnQHrh9Osw5kkX7GsxmnZAKeJHj2OhcLYbUx02Iaj/eAcm89kxFMLApXssHh4Pj3asrNn9jwKDiJdmAK6aKCDirLnm2xVZ66NElOptldwA4J5F0LGXEBQStMcW62DCBOEFpn5f1a6Oujh3H7zfgsm7DRBcLByaZS43cPpnL/sUBIl/kyG5MelGkGG47/7apNnV/maJ7k2TgIU6Ofx3z6ay5L7uWTXYTriNQXAE+W0AulgJ2zDs4Ar+no2rDQa8v6/NVq8nHDblh0Q2cAAD++COVPKZmtY4dpNGAaJDtq0ioA4Plz2xe217WsV3PZfnneqGd6xdQJoWuN2KWnx/WK8e1MxoY4fVT2//bh2EkxsQfPicuKj5LtBYFKV+7tkpJlJk6xLczS/+P74HHEqJch9rj77fXSzAPks2Cu47JVmd5wGrHVQs9RO+UWBDbhLQxU0Sv2lVPl9m9MYs2zB7I9RRF73ZHu9fI1gq/fldZ3n+C/z4YhqX3OTSOJaC13V4wYOxNSiEMLKFniDehGen4EGZLGUSBsSTohtCql0jAhWyExVtKyst8Rx5Ync4lUl3giPDId1LKKsxYcx4mo4lacqVPZi/81F0Q6JAscILT8rvbUOpN9D/SS1Ew5jV+J84Gx2Zg3UEjpIPKU0wtAeJwHkRU893L2/zJJ9r2LcDBiW+7F6Si6lvberVlQZSTJ8OSuGdxWUpT9OeNd0hScesvodLfNlbuYG5kA2OdAB0O4ZY2DH1ZuUKACLNVSSqmf/mH8df8h9G1Xt1cXONv+mDnE7Wu/3CfBR34ULjHUl3BtMUH0iJmOWIE4424Ox2FZCj+DrBjbfXnEYH8jl91t2mb07CmQIYfsd1nTRghJbzEWEy8iIsFI8qrEYPhBZ78cuJ0mzlqL5BxS2ctM87ce9VP8GSkfOKfhDYjHsKvr780Oftmp/jvns7LPBKPP5poaekoNZKXD/kdJhH2X4YCRDvL/RofuKKnUDzWWdaN/ktkEo+l/Gt4FTITwyQPSRE/sVeb9cF0ZkX1aHaDT8v/SjdYRFE/zBm01w0lnTjzMVpNPOLBXoDdB5gn6n5jPGKDuffhhpCN12+8SbvwFdA3VSJol6gB9fuxEeeLMcVSWC1HQdzH53Zq9F4Zya3LrojVW+vVfl2M8D1Z7Ho5z+v/IgcbKGSPzhwjNZDzFji7lnCENQAvWSVrF0AGL/gRluBM/bHsXebEfT/qtl+Gul+9AoXyvgW53e2L8iYrVH8ErRSGzn4az3NQjOzB6R66VQb9vogKFElkNrGQkECTtnukfd9MS7xz88uP/bg+Egu9ULuD7aSmqfm2xRM703CagRWDYQXNxdvCvVBFMVbMR71LsQuD4eue5F9BrvwR8cL0i+Y8GGuspCY2JHhqEXZhOFxUJFps28SX7P5oo3h2Zh5Jqe2+UUV48QvekvwMqgPsJ8qOXhW+p3vVwvqMVeCtB44I/3U9Bu+ENBW5W/N1T6opXMWsNGOP7J7iJPGC7GDWqn2X6y7IwBTN2kyG4oK4aq9L39djFEa1eZZML+9TMepVuAht4Fmp4+IEz+dhn8VDHJD4JhddmOJl3FvaA3PoqMcxapGfver1BtfjplwAAA4ePK/Tlws5SrlPcPcPcSMFLUfQwIifnAy8oAAA" id="imImg" alt="APK STORE">
     <h2>APK STORE for Android</h2>
     <p>The fastest way to discover, download and update apps.</p>
     <div class="feat">
@@ -338,7 +338,7 @@ footer{margin-top:56px;border-top:1px solid var(--border)}
       <div><i>✓</i> Automatic update notifications</div>
       <div><i>✓</i> Signature-verified safe downloads</div>
     </div>
-    <button class="btn-p" style="width:100%" onclick="startAppDownload()">Download APK · 2.5 MB</button>
+    <button class="btn-p" id="imBtn" style="width:100%" onclick="startAppDownload()">Download APK</button>
     <button class="btn-s" style="width:100%;margin-top:10px" onclick="closeInstallModal()">Continue on web</button>
   </div>
   <div id="imDl" class="hidden">
@@ -400,7 +400,11 @@ applyTheme(localStorage.getItem("as_theme")||"dark");
 /* banner + modal */
 setTimeout(()=>{ if(!localStorage.getItem("as_banner")&&APPS.some(a=>a.slug==="apk-store-client")) $("installBanner").classList.add("show"); },1500);
 function dismissBanner(){ $("installBanner").classList.remove("show"); localStorage.setItem("as_banner","1"); }
-function openInstallModal(){ $("installModal").classList.add("show"); $("imMain").classList.remove("hidden"); $("imDl").classList.add("hidden"); }
+function openInstallModal(){ const c=APPS.find(a=>a.slug==="apk-store-client");
+ const img=$("imImg"),btn=$("imBtn");
+ if(c){ if(img&&c.icon) img.src=c.icon; if(btn) btn.textContent="Download APK \u00b7 v"+c.ver+" \u00b7 "+c.size; }
+ else if(btn){ btn.textContent="Download APK"; }
+ $("installModal").classList.add("show"); $("imMain").classList.remove("hidden"); $("imDl").classList.add("hidden"); }
 function closeInstallModal(){ $("installModal").classList.remove("show"); }
 function startAppDownload(){ location.href=CLIENT_DL; }
 
@@ -421,6 +425,32 @@ function goSearch(q){ searchQuery=q||""; navPush("search");
 function shortDesc(d){ d=String(d||"").split("\n")[0];
  const m=d.search(/\s*(Source|License|Homepage|Website)\s*:/i); if(m>30) d=d.slice(0,m);
  d=d.trim(); if(d.length>170){ d=d.slice(0,170).replace(/\s+\S*$/,"")+"\u2026"; } return d; }
+function hdrInput(el){ const v=el.value;
+ if(route==="search"){ searchQuery=v; const i2=$("q2"); if(i2&&document.activeElement!==i2) i2.value=v;
+  const sr=$("sres"); if(sr) sr.innerHTML=searchResultsHTML(v); return; }
+ if(v.trim().length>=2) goSearch(v); }
+function fixCatScroll(){ try{ document.querySelectorAll("#main .cats").forEach(p=>{ const c=p.querySelector(".cat.on");
+ if(c) p.scrollLeft=Math.max(0,c.offsetLeft-p.clientWidth/2+c.clientWidth/2); }); }catch(e){} }
+function catIcon(c){ const n=String(c||"").toLowerCase();
+ const I=p=>'<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+p+'</svg>';
+ if(/ai|assistant/.test(n)) return I('<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M18.5 15.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/>');
+ if(/app store|updater/.test(n)) return I('<path d="M6 7h12l1 14H5L6 7z"/><path d="M9 10V7a3 3 0 016 0v3"/>');
+ if(/podcast/.test(n)) return I('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21"/>');
+ if(/music/.test(n)) return I('<path d="M9 18V5l10-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>');
+ if(/audio/.test(n)) return I('<path d="M4 14v-2a8 8 0 0116 0v2"/><rect x="2.5" y="13" width="4" height="7" rx="1.5"/><rect x="17.5" y="13" width="4" height="7" rx="1.5"/>');
+ if(/developer|shizuku/.test(n)) return I('<path d="M8 6l-6 6 6 6M16 6l6 6-6 6"/>');
+ if(/automation/.test(n)) return I('<path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/>');
+ if(/email/.test(n)) return I('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 7l8.5 6 8.5-6"/>');
+ if(/video|entertainment/.test(n)) return I('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9.5l5 2.5-5 2.5z"/>');
+ if(/file sharing/.test(n)) return I('<circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.3 10.8l7.4-4.3M8.3 13.2l7.4 4.3"/>');
+ if(/file/.test(n)) return I('<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>');
+ if(/launch/.test(n)) return I('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>');
+ if(/photo|gallery/.test(n)) return I('<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/>');
+ if(/productivity/.test(n)) return I('<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12.5l2.5 2.5 5-5.5"/>');
+ if(/security/.test(n)) return I('<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/><path d="M9.5 12l2 2 3.5-4"/>');
+ if(/system/.test(n)) return I('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9.5l2.5 2.5L7 14.5M12 15h5"/>');
+ if(/tool/.test(n)) return I('<path d="M14.7 6.3a4.6 4.6 0 00-6.1 6.1L3 18l3 3 5.6-5.6a4.6 4.6 0 006.1-6.1L14.5 12.5l-2.5-2.5z"/>');
+ return I('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>'); }
 function escAttr(s){ return String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;"); }
 function getRecents(){ try{ return JSON.parse(localStorage.getItem("as_recent")||"[]"); }catch(e){ return []; } }
 function saveRecent(q){ q=(q||"").trim(); if(!q) return;
@@ -485,7 +515,7 @@ function vApps(){ const list=activeCat==="All"?APPS:APPS.filter(a=>a.cat===activ
 function vCats(){
  let h='<div class="crumb"><a href="#" onclick="go(\'home\');return false">Home</a> / Categories</div><h1 style="font-size:22px;font-weight:700;margin-bottom:16px">Categories</h1><div class="grid">';
  CATS.slice(1).forEach(c=>{ const n=APPS.filter(a=>a.cat===c).length;
-  h+='<div class="gcard" onclick="goCat(\''+c+'\')" style="text-align:center;padding:24px 12px"><span style="width:52px;height:52px;border-radius:13px;margin:0 auto 10px;display:inline-flex;align-items:center;justify-content:center;background:var(--acc-soft);color:var(--acc);font-weight:700;font-size:22px">'+escHtml(c.charAt(0))+'</span><h3>'+c+'</h3><div class="m">'+n+' apps</div></div>'; });
+  h+='<div class="gcard" onclick="goCat(\''+c+'\')" style="text-align:center;padding:24px 12px"><span style="width:52px;height:52px;border-radius:13px;margin:0 auto 10px;display:inline-flex;align-items:center;justify-content:center;background:var(--acc-soft);color:var(--acc);font-weight:700;font-size:22px">'+catIcon(c)+'</span><h3>'+c+'</h3><div class="m">'+n+' apps</div></div>'; });
  return h+'</div>'; }
 function vUpdates(){ const dls=getDls(); const upd=[];
  dls.forEach(d=>{ const a=APPS.find(x=>x.slug===d.slug); if(!a) return;
@@ -520,7 +550,7 @@ function vApp(id){ const a=APPS.find(x=>x.id===id); if(!a)return vHome();
  h+='<div class="panel"><h2>Version history</h2>'+rel.map(r=>'<div class="vrow"><div class="v"><b>v'+r.v+(r.cur?' <span class="tag">LATEST</span>':"")+'</b><span>'+r.s+' · '+r.d+'</span></div><button class="g" onclick="dlApp(\''+a.id+'\')">Get</button></div>').join("")+'</div>';
  h+='</div><div>';
  h+='<div class="panel"><h2>App info</h2><table class="it"><tr><td>Package</td><td><code>'+a.pkg+'</code></td></tr><tr><td>Version</td><td>'+a.ver+' ('+a.code+')</td></tr><tr><td>Size</td><td>'+a.size+'</td></tr><tr><td>Category</td><td>'+a.cat+'</td></tr><tr><td>Updated</td><td>'+a.updated+'</td></tr><tr><td>SHA-256</td><td><code style="font-size:11px;word-break:break-all">'+(a.sha?a.sha.slice(0,32)+"…":"—")+'</code></td></tr><tr><td>Signature</td><td style="color:var(--green)">Verified</td></tr></table></div>';
- h+='<div class="panel"><h2>Get the app</h2><p style="margin-bottom:12px">One-tap installs and automatic updates on your phone.</p><button class="btn-p" style="width:100%" onclick="openInstallModal()">Download APK STORE</button></div>';
+ h+='<div class="panel"><h2>Get the app</h2><p style="margin-bottom:12px">One-tap installs and automatic updates on your phone.</p><button class="btn-p" style="width:100%" onclick="startAppDownload()">Download APK STORE</button></div>';
  h+='</div></div>';
  const more=APPS.filter(x=>x.id!==a.id).slice(0,4);
  h+='<div class="sec"><div class="sec-h"><h2>More apps</h2></div><div class="shelf">'+more.map(cardHTML).join("")+'</div></div>';
@@ -533,7 +563,7 @@ function render(){ const st=stateHTML(); if(st){ $("main").innerHTML=st; return;
  if(route==="home")h=vHome(); else if(route==="apps")h=vApps(); else if(route==="cats")h=vCats();
  else if(route==="updates")h=vUpdates(); else if(route==="search")h=vSearch();
  else if(route.indexOf("app:")===0)h=vApp(route.slice(4));
- $("main").innerHTML=h; }
+ $("main").innerHTML=h; fixCatScroll(); }
 window.addEventListener("popstate",function(e){ const r=(e.state&&e.state.route)||decodeURIComponent((location.hash||"").replace(/^#\/?/,""))||"home";
  route=r; syncNav(); render(); window.scrollTo({top:0}); });
 (function(){ const hr=decodeURIComponent((location.hash||"").replace(/^#\/?/,"")); if(hr) route=hr;
