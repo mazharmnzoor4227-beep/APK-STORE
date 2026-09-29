@@ -7,6 +7,7 @@ import android.content.pm.Signature;
 import android.os.Build;
 
 import java.io.File;
+import java.security.MessageDigest;
 import java.util.Locale;
 
 final class ApkUpdateVerifier {
@@ -67,7 +68,7 @@ final class ApkUpdateVerifier {
             if (signers == null || signers.length != 1)
                 return Result.fail("APK signing certificate is missing or ambiguous.");
 
-            String actualSigner = ApkIntegrity.sha256(signers[0].toByteArray());
+            String actualSigner = sha256(signers[0].toByteArray());
             String actualHash = ApkIntegrity.sha256(apk);
             return validateMetadata(
                     info.packageName, actualSigner, actualHash, apk.length(),
@@ -79,6 +80,13 @@ final class ApkUpdateVerifier {
                     ? "APK STORE update verification failed."
                     : "APK STORE update verification failed: " + message);
         }
+    }
+
+    private static String sha256(byte[] value) throws Exception {
+        byte[] digest = MessageDigest.getInstance("SHA-256").digest(value);
+        StringBuilder result = new StringBuilder(digest.length * 2);
+        for (byte b : digest) result.append(String.format(Locale.ROOT, "%02x", b & 255));
+        return result.toString();
     }
 
     private static String normalizeHex(String value) {
