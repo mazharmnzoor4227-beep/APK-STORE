@@ -6,6 +6,6 @@ public final class ApkStoreApplication extends Application {
     @Override public void onCreate() {
         super.onCreate();
         CrashReporter.install(this);
-        CrashReporter.enqueuePending(this);
+        CrashReporter.schedulePending(this);
     }
 }

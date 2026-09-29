@@ -1,112 +1,90 @@
-const MAX_BODY_BYTES = 48 * 1024;
-const encoder = new TextEncoder();
-const headers = {
+import { bodySizeAllowed, canonicalFingerprintText, normalizeCrashPayload, MAX_BODY_BYTES } from './crash-payload.mjs';
+
+const jsonHeaders = {
   'content-type': 'application/json; charset=utf-8',
-  'cache-control': 'no-store',
-  'x-content-type-options': 'nosniff',
+  'cache-control': 'no-store'
 };
+const encoder = new TextEncoder();
 
 function reply(status: number, body: unknown) {
-  return new Response(JSON.stringify(body), { status, headers });
+  return new Response(JSON.stringify(body), { status, headers: jsonHeaders });
 }
 
-function clean(value: unknown, max: number) {
-  return String(value ?? '')
-    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
-    .replace(/(authorization\s*:\s*bearer\s+)[A-Za-z0-9._~+\-/=]+/gi, '$1[redacted]')
-    .replace(/(apikey|api_key|token|password|secret)=([^\s&]+)/gi, '$1=[redacted]')
-    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[email]')
-    .replace(/https?:\/\/[^\s)\]]+/gi, '[url]')
-    .slice(0, max);
+function hex(bytes: ArrayBuffer) {
+  return Array.from(new Uint8Array(bytes), value => value.toString(16).padStart(2, '0')).join('');
 }
 
-function field(input: Record<string, unknown>, ...names: string[]) {
-  for (const name of names) if (input[name] !== undefined && input[name] !== null) return input[name];
-  return undefined;
+async function serverFingerprint(event: Record<string, unknown>) {
+  return hex(await crypto.subtle.digest('SHA-256', encoder.encode(canonicalFingerprintText(event))));
+}
+
+async function derivedClientKey(request: Request, secret: string) {
+  const rawIp = request.headers.get('cf-connecting-ip')
+    || request.headers.get('x-real-ip')
+    || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || 'unknown';
+  const key = await crypto.subtle.importKey(
+    'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return hex(await crypto.subtle.sign('HMAC', key, encoder.encode(rawIp)));
 }
 
 Deno.serve(async (request) => {
-  if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: { ...headers, 'access-control-allow-origin': '*', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-allow-headers': 'content-type, apikey, authorization' } });
-  }
   if (request.method !== 'POST') return reply(405, { error: 'POST required' });
 
-  const declared = Number(request.headers.get('content-length') || '0');
-  if (declared > MAX_BODY_BYTES) return reply(413, { error: 'Crash report too large' });
+  const declaredLength = Number(request.headers.get('content-length') || '0');
+  if (declaredLength > MAX_BODY_BYTES) return reply(413, { error: 'Crash report too large' });
 
   let raw = '';
-  try { raw = await request.text(); } catch { return reply(400, { error: 'Invalid request body' }); }
-  if (!raw || encoder.encode(raw).byteLength > MAX_BODY_BYTES) return reply(413, { error: 'Crash report too large' });
-
-  let input: Record<string, unknown>;
   try {
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error();
-    input = parsed;
+    raw = await request.text();
   } catch {
-    return reply(400, { error: 'Invalid crash report' });
+    return reply(400, { error: 'Invalid request body' });
   }
+  if (!bodySizeAllowed(raw)) return reply(413, { error: 'Crash report too large' });
 
-  const packageId = clean(field(input, 'package_id', 'packageId'), 100);
-  const fingerprint = clean(field(input, 'fingerprint'), 64).toLowerCase();
-  const versionCode = Number(field(input, 'version_code', 'versionCode'));
-  const versionName = clean(field(input, 'version_name', 'versionName'), 64);
-  const androidSdk = Number(field(input, 'android_sdk', 'androidSdk', 'sdk'));
-  const manufacturer = clean(field(input, 'device_manufacturer', 'deviceManufacturer', 'manufacturer'), 80);
-  const model = clean(field(input, 'device_model', 'deviceModel', 'model'), 120);
-  const exceptionClass = clean(field(input, 'exception_class', 'exceptionClass'), 180);
-  const message = clean(field(input, 'message'), 2048);
-  const stackTrace = clean(field(input, 'stack_trace', 'stackTrace'), 32768);
-  const occurredRaw = String(field(input, 'occurred_at', 'occurredAt', 'timestamp') ?? '');
-  const occurredMs = Date.parse(occurredRaw);
-  const requestedType = clean(field(input, 'report_type', 'reportType'), 16).toLowerCase();
-  const reportType = requestedType === 'handled' ? 'handled' : 'crash';
-
-  if (packageId !== 'com.apkstore.client') return reply(400, { error: 'Invalid package' });
-  if (!/^[0-9a-f]{64}$/.test(fingerprint)) return reply(400, { error: 'Invalid fingerprint' });
-  if (!Number.isSafeInteger(versionCode) || versionCode <= 0) return reply(400, { error: 'Invalid version' });
-  if (!versionName || !exceptionClass || !stackTrace) return reply(400, { error: 'Missing crash fields' });
-  if (Number.isFinite(androidSdk) && (androidSdk < 1 || androidSdk > 100)) return reply(400, { error: 'Invalid Android SDK' });
-  const now = Date.now();
-  if (!Number.isFinite(occurredMs) || occurredMs > now + 5 * 60_000 || occurredMs < now - 90 * 24 * 60 * 60_000) {
-    return reply(400, { error: 'Invalid crash timestamp' });
+  let event;
+  try {
+    event = normalizeCrashPayload(JSON.parse(raw));
+    // Never trust a client-controlled issue grouping key. Derive it again server-side.
+    event.fingerprint = await serverFingerprint(event);
+  } catch (error) {
+    console.error('crash-report validation failed:', error instanceof Error ? error.message : 'unknown validation error');
+    return reply(400, { error: 'Invalid crash report' });
   }
 
   const url = Deno.env.get('SUPABASE_URL');
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!url || !serviceKey) return reply(503, { error: 'Crash service unavailable' });
+  const rateSecret = Deno.env.get('CRASH_RATE_SALT') || serviceKey;
 
-  try {
-    const rpc = await fetch(`${url}/rest/v1/rpc/record_crash_report`, {
-      method: 'POST',
-      headers: {
-        apikey: serviceKey,
-        authorization: `Bearer ${serviceKey}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        p_fingerprint: fingerprint,
-        p_package_id: packageId,
-        p_version_code: versionCode,
-        p_version_name: versionName,
-        p_android_sdk: Number.isFinite(androidSdk) ? Math.trunc(androidSdk) : null,
-        p_device_manufacturer: manufacturer,
-        p_device_model: model,
-        p_exception_class: exceptionClass,
-        p_message: message,
-        p_stack_trace: stackTrace,
-        p_occurred_at: new Date(occurredMs).toISOString(),
-        p_report_type: reportType,
-      }),
-    });
-    if (!rpc.ok) {
-      console.error('crash-report ingest failed', rpc.status, (await rpc.text().catch(() => '')).slice(0, 300));
-      return reply(503, { error: 'Crash service unavailable' });
-    }
-    const id = await rpc.json().catch(() => null);
-    return reply(200, { ok: true, id });
-  } catch (error) {
-    console.error('crash-report error', error instanceof Error ? error.message : 'unknown');
+  const response = await fetch(`${url}/rest/v1/rpc/record_crash_report_v2`, {
+    method: 'POST',
+    headers: {
+      apikey: serviceKey,
+      authorization: `Bearer ${serviceKey}`,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      p_client_key: await derivedClientKey(request, rateSecret),
+      p_fingerprint: event.fingerprint,
+      p_package_id: event.package_id,
+      p_version_code: event.version_code,
+      p_version_name: event.version_name,
+      p_android_sdk: event.android_sdk,
+      p_device_manufacturer: event.device_manufacturer,
+      p_device_model: event.device_model,
+      p_exception_class: event.exception_class,
+      p_message: event.message,
+      p_stack_trace: event.stack_trace,
+      p_occurred_at: event.occurred_at
+    })
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    if (response.status === 429 || /rate limit/i.test(detail))
+      return reply(429, { error: 'Too many crash reports' });
     return reply(503, { error: 'Crash service unavailable' });
   }
+  return reply(202, { accepted: true });
 });

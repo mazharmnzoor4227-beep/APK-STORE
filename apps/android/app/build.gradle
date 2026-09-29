@@ -15,10 +15,11 @@ android {
         applicationId 'com.apkstore.client'
         minSdk 26
         targetSdk 35
-        versionCode 14
-        versionName '1.1.6'
+        versionCode 15
+        versionName '1.1.7'
         buildConfigField 'String', 'SUPABASE_URL', '"https://qfbfxencwsgryoczkdyj.supabase.co"'
-        // Publishable keys are public client credentials; RLS controls catalog access.
+        buildConfigField 'String', 'SITE_URL', '"' + (project.findProperty('siteUrl') ?: 'https://mazharmnzoor4227-beep.github.io/APK-STORE/') + '"'
+        // Supabase publishable keys are intentionally public client credentials; RLS controls access.
         buildConfigField 'String', 'SUPABASE_KEY', '"' + (project.findProperty('supabasePublishableKey') ?: 'sb_publishable_RiOpxFwFfj3dRt45AVn3LA_T4C0kAoJ') + '"'
     }
     buildFeatures { buildConfig true }
