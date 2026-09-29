@@ -1191,51 +1191,55 @@ public class MainActivity extends Activity {
         final LinearLayout page = informationPage("APK STORE update", this::showAbout);
         page.addView(text("Checking for updates…", 16, muted(), false));
         worker.execute(() -> {
-            JSONObject store = null;
-            for (int i = 0; i < catalog.length(); i++) {
-                JSONObject candidate = catalog.optJSONObject(i);
-                if (candidate != null && StoreIdentity.isStoreListing(candidate.optString("package_id"), candidate.optString("slug"))) {
-                    store = candidate; break;
-                }
-            }
-            final JSONObject app = store;
-            runOnUiThread(() -> {
-                page.removeAllViews();
-                if (app == null) {
-                    page.addView(text("APK STORE update information is unavailable. Refresh the catalog and try again.", 15, ink(), false));
-                    return;
-                }
-                JSONObject release = app.optJSONObject("release");
-                if (release == null) {
-                    page.addView(text("APK STORE release metadata is unavailable.", 15, ink(), false));
-                    return;
-                }
-                long remote = release.optLong("version_code", -1);
-                if (!StoreUpdatePolicy.isUpdateAvailable(BuildConfig.VERSION_CODE, remote)) {
-                    page.addView(text("You're up to date", 22, ink(), true));
+            try {
+                SelfUpdateRepository.UpdateInfo info = new SelfUpdateRepository().fetchLatest();
+                runOnUiThread(() -> {
+                    page.removeAllViews();
+                    if (!StoreUpdatePolicy.isUpdateAvailable(BuildConfig.VERSION_CODE, info.versionCode)) {
+                        page.addView(text("You're up to date", 22, ink(), true));
+                        space(page, 8);
+                        page.addView(text("Version " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")", 14, muted(), false));
+                        return;
+                    }
+                    String validation = StoreUpdatePolicy.validateMetadata(
+                            info.packageId, info.slug, BuildConfig.VERSION_CODE, info.versionCode,
+                            info.apkSha256, info.byteSize, info.certificateSha256,
+                            BuildConfig.APK_STORE_SIGNER_SHA256);
+                    if (validation != null) {
+                        page.addView(text("Update blocked", 22, ink(), true));
+                        space(page, 8);
+                        page.addView(text(validation, 14, muted(), false));
+                        return;
+                    }
+                    page.addView(text("Update available", 22, ink(), true));
                     space(page, 8);
-                    page.addView(text("Version " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")", 14, muted(), false));
-                    return;
-                }
-                String validation = StoreUpdatePolicy.validateMetadata(
-                        app.optString("package_id"), app.optString("slug"), BuildConfig.VERSION_CODE, remote,
-                        release.optString("apk_sha256"), release.optLong("byte_size"),
-                        release.optString("certificate_sha256"), BuildConfig.APK_STORE_SIGNER_SHA256);
-                if (validation != null) {
-                    page.addView(text("Update blocked", 22, ink(), true)); space(page, 8);
-                    page.addView(text(validation, 14, muted(), false));
-                    return;
-                }
-                page.addView(text("Update available", 22, ink(), true)); space(page, 8);
-                page.addView(text("Version " + release.optString("version_name") + " (" + remote + ")", 14, muted(), false));
-                String notes = release.optString("release_notes", release.optString("changelog", ""));
-                if (!notes.isBlank()) { space(page, 12); page.addView(text(notes, 14, ink(), false)); }
-                space(page, 18);
-                informationLink(page, "Download update", "Verified before Android asks to install", () -> {
-                    detailApp = app;
-                    startDownload(app);
+                    page.addView(text("Version " + info.versionName + " (" + info.versionCode + ")", 14, muted(), false));
+                    if (!info.releaseNotes.isBlank()) {
+                        space(page, 12);
+                        page.addView(text(info.releaseNotes, 14, ink(), false));
+                    }
+                    space(page, 18);
+                    informationLink(page, "Download update", "Verified before Android asks to install", () -> {
+                        try {
+                            JSONObject fresh = info.asCatalogApp();
+                            detailApp = fresh;
+                            startDownload(fresh);
+                        } catch (Exception error) {
+                            page.addView(text("Update could not start.", 14, muted(), false));
+                        }
+                    });
                 });
-            });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    page.removeAllViews();
+                    String message = error.getMessage();
+                    page.addView(text("Could not check for updates", 22, ink(), true));
+                    space(page, 8);
+                    page.addView(text(message == null || message.isBlank() ? "Try again when you're online." : message, 14, muted(), false));
+                    space(page, 18);
+                    informationLink(page, "Retry", "Check the trusted APK STORE release again", this::checkStoreUpdate);
+                });
+            }
         });
     }
 
@@ -1630,8 +1634,8 @@ public class MainActivity extends Activity {
             startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getPackageName())));
             return;
         }
-        JSONObject app = null;
-        for (int i = 0; i < catalog.length(); i++) {
+        JSONObject app = detailApp != null && slug.equals(detailApp.optString("slug")) ? detailApp : null;
+        if (app == null) for (int i = 0; i < catalog.length(); i++) {
             JSONObject candidate = catalog.optJSONObject(i);
             if (candidate != null && slug.equals(candidate.optString("slug"))) { app = candidate; break; }
         }
@@ -1646,6 +1650,14 @@ public class MainActivity extends Activity {
                 File apk = new File(path);
                 ApkIntegrity.verifyFile(apk, release.optString("apk_sha256"), release.optLong("byte_size"));
                 ApkIntegrity.verifyPackage(this, apk, target.optString("package_id"), release.optString("certificate_sha256"));
+                if (StoreIdentity.isStoreListing(target.optString("package_id"), slug)) {
+                    ApkUpdateVerifier.Result selfCheck = ApkUpdateVerifier.verify(
+                            this, apk, release.optString("apk_sha256"), release.optLong("byte_size"));
+                    if (!selfCheck.ok) {
+                        if (!apk.delete() && apk.exists()) apk.deleteOnExit();
+                        throw new SecurityException(selfCheck.reason);
+                    }
+                }
                 InstallCoordinator.install(this, apk, slug, target.optString("package_id"));
                 runOnUiThread(() -> {
                     downloadErrors.put(slug, "Waiting for Android installation confirmation");
