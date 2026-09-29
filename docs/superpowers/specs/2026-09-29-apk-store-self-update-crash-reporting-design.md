@@ -39,7 +39,7 @@ The permanent application ID is:
 
 It remains checked into `apps/android/app/build.gradle` and is treated as immutable after public release.
 
-A checked-in build constant will identify the store package where update logic needs to distinguish APK STORE from ordinary catalog apps. The catalog entry for APK STORE must also use `package_id = com.apkstore.client` and a stable slug such as `apk-store`.
+A checked-in build constant will identify the store package where update logic needs to distinguish APK STORE from ordinary catalog apps. The catalog entry for APK STORE must also use `package_id = com.apkstore.client` and stable slug `apk-store`.
 
 All version comparisons use integer `versionCode`, never `versionName` string ordering.
 
@@ -55,6 +55,7 @@ Rules:
 - Release builds fail closed if signing secrets are missing; no unsigned APK is treated as a public release.
 - Every future APK STORE update must be signed with this same certificate.
 - The debug key remains test-only and must never become the public release identity.
+- The owner keeps a separate offline backup of the permanent keystore; losing it would prevent compatible future updates to installed public builds.
 
 Because there are no customers yet, changing from the current test/debug signer to the new permanent signer does not require migration. Existing local test installations can be uninstalled/reinstalled once if Android rejects the signer change.
 
@@ -156,13 +157,13 @@ On the next successful app launch:
 3. The function validates schema/lengths/version fields and rejects oversized or malformed payloads.
 4. On successful server acknowledgement, delete the local queued file.
 5. On network/server failure, keep it for a later retry.
-6. Bound queue size/retention so repeated crashes cannot fill local storage.
+6. Keep at most 10 pending crash files and delete local reports older than 30 days.
 
 No persistent device identifier is required. Admin reporting therefore shows report counts and affected device models/Android versions, not a claimed count of unique people.
 
 ## Crash Backend Schema
 
-Add two RLS-protected tables.
+Add three RLS-protected tables.
 
 ### `crash_issues`
 
@@ -202,7 +203,16 @@ One bounded event per report:
 
 Foreign key links to `crash_issues.fingerprint`.
 
-Retention can be capped later; no destructive cleanup runs without an explicit policy.
+### `crash_ingest_limits`
+
+Short-lived rate-limit state:
+
+- `client_key` primary key, containing only an HMAC/SHA-256 token derived server-side from request IP plus a server-only salt, never the raw IP
+- `window_started_at`
+- `request_count`
+- `expires_at`
+
+Rows expire after 24 hours and are inaccessible to anon clients.
 
 ## Crash Ingest Edge Function
 
@@ -213,11 +223,11 @@ Security requirements:
 - HTTPS only.
 - POST only.
 - strict JSON schema and length limits.
-- accepted package ID allowlist (initially `com.apkstore.client`).
+- accepted package ID allowlist initially contains only `com.apkstore.client`.
 - accepted app version fields must be sane positive integers/short strings.
-- stack traces/messages truncated server-side.
-- request/body size cap.
-- basic IP/request rate limiting if supported by current infrastructure; otherwise database/time-window throttling or provider-level rate limiting documented as a remaining infrastructure limitation.
+- stack trace maximum 32 KiB after truncation; exception message maximum 2 KiB; entire request body maximum 48 KiB.
+- server-side rate limit: maximum 20 accepted crash reports per derived client key per rolling hour; excess requests return 429.
+- raw client IP is never persisted; only the server-derived short-lived rate-limit token is stored.
 - service-role key used only server-side.
 - anon clients cannot select crash tables.
 
@@ -277,6 +287,7 @@ Update the policy to disclose first-party diagnostic crash reporting:
 - that no third-party analytics SDK is used
 - that crash reports do not intentionally include user files/messages/contacts/location
 - provider/service logging may still process IP/network metadata at infrastructure level
+- raw IP is not stored in APK STORE crash tables; a short-lived derived token is used only for abuse throttling
 
 ## Error Handling
 
@@ -293,8 +304,9 @@ Crash reporting:
 
 - crash capture failure must never replace the original crash flow
 - upload failure leaves report queued
-- malformed local event is discarded safely and logged locally where practical
+- malformed local event is discarded safely
 - server errors do not block app startup
+- 429 leaves the local report queued for a later retry
 
 ## Testing Strategy
 
@@ -308,7 +320,7 @@ Crash reporting:
 - SHA-256 mismatch rejection
 - crash fingerprint stability
 - crash payload sanitization/size bounds
-- crash queue retention/retry behavior
+- crash queue 10-file cap, 30-day retention, and retry behavior
 - debug + signed release build
 
 ### CI/release verification
@@ -324,6 +336,8 @@ Crash reporting:
 - unauthenticated direct crash table reads fail
 - crash ingest accepts a valid bounded event
 - malformed/oversized event is rejected
+- 21st accepted request within an hour for one derived client key is rejected with 429
+- raw client IP is never stored in crash tables/rate-limit rows
 - admin crash endpoints reject unauthenticated/expired sessions
 - issue status update is owner-only
 - APK STORE publish rejects wrong package/signing certificate
