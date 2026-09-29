@@ -1,29 +1,31 @@
-import { createHash } from 'node:crypto';
-import { bodySizeAllowed, normalizeCrashPayload } from './crash-payload.mjs';
+import { bodySizeAllowed, normalizeCrashPayload, MAX_BODY_BYTES } from './crash-payload.mjs';
 
 const jsonHeaders = {
   'content-type': 'application/json; charset=utf-8',
   'cache-control': 'no-store'
 };
+const encoder = new TextEncoder();
 
 function reply(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: jsonHeaders });
 }
 
-function hourlyRateKey(request: Request, secret: string) {
+async function derivedClientKey(request: Request, secret: string) {
   const rawIp = request.headers.get('cf-connecting-ip')
     || request.headers.get('x-real-ip')
     || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
     || 'unknown';
-  const hour = new Date().toISOString().slice(0, 13);
-  return createHash('sha256').update(`${rawIp}|${hour}|${secret}`).digest('hex');
+  const key = await crypto.subtle.importKey(
+    'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(rawIp));
+  return Array.from(new Uint8Array(signature), value => value.toString(16).padStart(2, '0')).join('');
 }
 
 Deno.serve(async (request) => {
   if (request.method !== 'POST') return reply(405, { error: 'POST required' });
 
   const declaredLength = Number(request.headers.get('content-length') || '0');
-  if (declaredLength > 24_000) return reply(413, { error: 'Crash report too large' });
+  if (declaredLength > MAX_BODY_BYTES) return reply(413, { error: 'Crash report too large' });
 
   let raw = '';
   try {
@@ -52,7 +54,7 @@ Deno.serve(async (request) => {
       'content-type': 'application/json'
     },
     body: JSON.stringify({
-      p_rate_key: hourlyRateKey(request, serviceKey),
+      p_client_key: await derivedClientKey(request, serviceKey),
       p_fingerprint: event.fingerprint,
       p_package_id: event.package_id,
       p_version_code: event.version_code,
