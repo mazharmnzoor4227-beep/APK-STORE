@@ -19,10 +19,6 @@ jobs:
           p = Path('apps/android/app/src/main/java/com/apkstore/client/MainActivity.java')
           s = p.read_text()
           old = '''                ApkIntegrity.verifyFile(apk, release.optString("apk_sha256"), release.optLong("byte_size"));
-                          ApkIntegrity.verifyPackage(this, apk, target.optString("package_id"), release.optString("certificate_sha256"));
-                          InstallCoordinator.install(this, apk, slug, target.optString("package_id"));'''
-          if old not in s:
-              old = '''                ApkIntegrity.verifyFile(apk, release.optString("apk_sha256"), release.optLong("byte_size"));
                 ApkIntegrity.verifyPackage(this, apk, target.optString("package_id"), release.optString("certificate_sha256"));
                 InstallCoordinator.install(this, apk, slug, target.optString("package_id"));'''
           if old not in s:
@@ -39,17 +35,7 @@ jobs:
                     }
                 }
                 InstallCoordinator.install(this, apk, slug, target.optString("package_id"));'''
-          s = s.replace(old, new, 1)
-          old_catch = '''            } catch (Exception error) {
-                runOnUiThread(() -> {'''
-          new_catch = '''            } catch (Exception error) {
-                File rejected = new File(path);
-                if (rejected.exists() && !rejected.delete()) rejected.deleteOnExit();
-                runOnUiThread(() -> {'''
-          if old_catch not in s:
-              raise SystemExit('install error block not found')
-          s = s.replace(old_catch, new_catch, 1)
-          p.write_text(s)
+          p.write_text(s.replace(old, new, 1))
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
