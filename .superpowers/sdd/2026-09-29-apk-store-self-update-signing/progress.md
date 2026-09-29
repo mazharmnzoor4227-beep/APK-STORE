@@ -1,0 +1,4 @@
+# SDD ledger — plan: docs/superpowers/plans/2026-09-29-apk-store-self-update-signing.md
+Setup: executing on isolated branch `fix/full-audit-20260929`; this harness has GitHub connector writes but no authenticated local git worktree, so the branch is the isolation boundary.
+Pre-flight: Task 2 consumes StoreIdentity from Task 1; Task 3 consumes identity/update policy from Tasks 1-2; Task 4 protects the same catalog identity; Task 5 consumes signer fingerprint established by Tasks 1/4; Task 6 verifies all prior outputs. No interface conflict found.
+Ruling: production signing secret cannot be generated or stored through GitHub connector because secrets APIs are intentionally unavailable; implement secret-based fail-closed release workflow and verify non-secret branch CI now. Final permanent-signer E2E remains blocked until repository secrets are set by the owner. Cost if wrong: signed public artifact cannot be produced yet, but no insecure fallback will ship.
