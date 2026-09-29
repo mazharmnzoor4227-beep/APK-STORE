@@ -1,0 +1,17 @@
+name: Dispatch APK STORE v1.1.8 release build
+on:
+  push:
+    branches: [ops/dispatch-apk-store-1.1.6]
+    paths: ['.github/workflows/dispatch-apk-store-v118-temp.yml']
+permissions:
+  actions: write
+  contents: read
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch official signed release workflow from main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/workflows/build-android.yml/dispatches" -f ref='main'
