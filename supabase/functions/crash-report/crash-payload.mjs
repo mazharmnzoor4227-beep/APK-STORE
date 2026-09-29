@@ -48,7 +48,7 @@ export function normalizeCrashPayload(input, now = Date.now()) {
   if (!Number.isInteger(androidSdk) || androidSdk < 26 || androidSdk > 100) throw new Error('Invalid Android SDK');
 
   const occurredAtMs = Date.parse(String(input.occurred_at ?? ''));
-  if (!Number.isFinite(occurredAtMs) || occurredAtMs < now - 7 * 24 * 60 * 60 * 1000 || occurredAtMs > now + 10 * 60 * 1000)
+  if (!Number.isFinite(occurredAtMs) || occurredAtMs < now - 90 * 24 * 60 * 60 * 1000 || occurredAtMs > now + 5 * 60 * 1000)
     throw new Error('Invalid crash timestamp');
 
   const exceptionClass = clipped(input.exception_class, 180);
