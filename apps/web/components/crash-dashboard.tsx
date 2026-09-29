@@ -15,9 +15,11 @@ type CrashIssue = {
   latest_version_code: number; latest_version_name: string;
   versions: string[]; androidVersions: string[]; deviceModels: string[]; latestEvent: CrashEvent | null;
 };
+type BackendError = { id: string; source: string; message: string; details: Record<string, unknown>; created_at: string };
 type CrashResponse = {
-  summary: { openCount: number; recentReports: number; issueCount: number };
+  summary: { openCount: number; recentReports: number; issueCount: number; backendErrorCount: number };
   issues: CrashIssue[];
+  backendErrors: BackendError[];
 };
 
 function when(value: string) {
@@ -32,16 +34,15 @@ export function CrashDashboard() {
   const [busy, setBusy] = useState('');
   const [query, setQuery] = useState('');
   const [status, setStatusFilter] = useState<'all' | CrashStatus>('all');
+  const needle = query.trim().toLowerCase();
 
-  const shown = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return (data?.issues ?? []).filter(issue => status === 'all' || issue.status === status).filter(issue => {
-      if (!needle) return true;
-      return [issue.title, issue.exception_class, issue.latest_version_name, issue.fingerprint,
-        issue.latestEvent?.message ?? '', ...issue.deviceModels, ...issue.androidVersions, ...issue.versions]
-        .some(value => value.toLowerCase().includes(needle));
-    });
-  }, [data, query, status]);
+  const shown = useMemo(() => (data?.issues ?? [])
+    .filter(issue => status === 'all' || issue.status === status)
+    .filter(issue => !needle || [issue.title, issue.exception_class, issue.latest_version_name, issue.fingerprint,
+      issue.latestEvent?.message ?? '', ...issue.deviceModels, ...issue.androidVersions, ...issue.versions]
+      .some(value => value.toLowerCase().includes(needle))), [data, needle, status]);
+  const backendShown = useMemo(() => status === 'all' ? (data?.backendErrors ?? []).filter(item =>
+    !needle || [item.source, item.message, JSON.stringify(item.details)].some(value => value.toLowerCase().includes(needle))) : [], [data, needle, status]);
 
   async function refresh(accessToken: string) {
     const response = await fetch('/api/admin/crashes', { headers: { Authorization: `Bearer ${accessToken}` }, cache: 'no-store' });
@@ -79,10 +80,11 @@ export function CrashDashboard() {
   return <section className="review-list" aria-label="APK STORE crash reports">
     <div className="review-heading"><div><span className="section-index">OWNER / STABILITY</span><h2>Crash & error reports</h2></div><button type="button" disabled={!token} onClick={() => token && refresh(token).catch(error => setMessage(error.message))}>Refresh</button></div>
     <p role="status">{message}</p>
-    {data && <dl className="inspection-details"><div><dt>Open issues</dt><dd>{data.summary.openCount}</dd></div><div><dt>Reports · 7 days</dt><dd>{data.summary.recentReports}</dd></div><div><dt>Total issue groups</dt><dd>{data.summary.issueCount}</dd></div></dl>}
-    <div className="admin-form"><label>Search diagnostics<input aria-label="Search diagnostics" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Exception, device, version, message" /></label><label>Status<select aria-label="Diagnostic status" value={status} onChange={event => setStatusFilter(event.target.value as 'all' | CrashStatus)}><option value="all">All</option><option value="open">Open</option><option value="resolved">Resolved</option><option value="ignored">Ignored</option></select></label></div>
-    {data && data.issues.length === 0 && <div className="empty-state"><h3>No diagnostics reported</h3><p>Crashes and important handled errors will appear here after the app uploads its private queue on a successful launch.</p></div>}
-    {data && data.issues.length > 0 && shown.length === 0 && <div className="empty-state"><h3>No matching diagnostics</h3><p>Change the search text or status filter.</p></div>}
+    {data && <dl className="inspection-details"><div><dt>Open client issues</dt><dd>{data.summary.openCount}</dd></div><div><dt>Client reports · 7 days</dt><dd>{data.summary.recentReports}</dd></div><div><dt>Client issue groups</dt><dd>{data.summary.issueCount}</dd></div><div><dt>Recent backend errors</dt><dd>{data.summary.backendErrorCount}</dd></div></dl>}
+    <div className="admin-form"><label>Search diagnostics<input aria-label="Search diagnostics" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Exception, backend route, device, version, message" /></label><label>Status<select aria-label="Diagnostic status" value={status} onChange={event => setStatusFilter(event.target.value as 'all' | CrashStatus)}><option value="all">All</option><option value="open">Open client issues</option><option value="resolved">Resolved client issues</option><option value="ignored">Ignored client issues</option></select></label></div>
+    {data && data.issues.length === 0 && data.backendErrors.length === 0 && <div className="empty-state"><h3>No diagnostics reported</h3><p>Crashes, important handled errors, and backend/API failures will appear here.</p></div>}
+    {data && (data.issues.length > 0 || data.backendErrors.length > 0) && shown.length === 0 && backendShown.length === 0 && <div className="empty-state"><h3>No matching diagnostics</h3><p>Change the search text or status filter.</p></div>}
+    {backendShown.length > 0 && <div className="review-item"><div className="review-item-heading"><div><span className="section-index">SERVER / API</span><h3>Backend failures</h3></div><span className="review-status">{backendShown.length}</span></div>{backendShown.map(item => <details key={item.id}><summary>{when(item.created_at)} · {item.source}</summary><p>{item.message}</p>{Object.keys(item.details ?? {}).length > 0 && <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{JSON.stringify(item.details, null, 2)}</pre>}</details>)}</div>}
     {shown.map(issue => <article className="review-item" key={issue.fingerprint}>
       <div className="review-item-heading"><div><span className="section-index">{issue.status.toUpperCase()} / {issue.event_count} REPORT{issue.event_count === 1 ? '' : 'S'}</span><h3>{issue.title}</h3></div><span className="review-status">{issue.status}</span></div>
       <dl className="inspection-details"><div><dt>Latest version</dt><dd>{issue.latest_version_name} ({issue.latest_version_code})</dd></div><div><dt>First seen</dt><dd>{when(issue.first_seen_at)}</dd></div><div><dt>Last seen</dt><dd>{when(issue.last_seen_at)}</dd></div><div><dt>Fingerprint</dt><dd>{issue.fingerprint.slice(0, 16)}…</dd></div></dl>
