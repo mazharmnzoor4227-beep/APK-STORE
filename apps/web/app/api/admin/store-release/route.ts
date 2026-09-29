@@ -1,5 +1,6 @@
 import { adminDatabase, requireOwner } from '../../../../lib/admin/server';
 import { validateStoreRelease } from '../../../../lib/admin/store-release-policy';
+import { recordAdminError } from '../../../../lib/admin/errors';
 
 export async function POST(request: Request) {
   try {
@@ -33,13 +34,9 @@ export async function POST(request: Request) {
     if (violation) return Response.json({ error: violation }, { status: 400 });
 
     const { data: appId, error: publishError } = await db.rpc('publish_candidate', {
-      p_candidate_id: candidateId,
-      p_actor_id: ownerId,
-      p_slug: identity.slug,
-      p_title: app?.title || 'APK STORE',
-      p_category: app?.category || 'Installer & app stores',
-      p_description: app?.description || 'APK STORE Android client.',
-      p_release_notes: releaseNotes,
+      p_candidate_id: candidateId, p_actor_id: ownerId, p_slug: identity.slug,
+      p_title: app?.title || 'APK STORE', p_category: app?.category || 'Installer & app stores',
+      p_description: app?.description || 'APK STORE Android client.', p_release_notes: releaseNotes,
       p_target_app_id: app?.id || null,
     });
     if (publishError) throw publishError;
@@ -57,6 +54,7 @@ export async function POST(request: Request) {
     if (auditError) throw auditError;
     return Response.json({ status: 'published', appId, versionCode: candidate.inspection.versionCode });
   } catch (error) {
+    await recordAdminError('api/admin/store-release', error);
     const message = error instanceof Error ? error.message : 'APK STORE release publish failed';
     return Response.json({ error: message }, { status: /owner|authorization|token|auth/i.test(message) ? 401 : 400 });
   }
