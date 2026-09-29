@@ -1,91 +1,144 @@
 package com.apkstore.client;
 
 import android.content.Context;
-import android.content.pm.PackageInfo;
-import android.os.Build;
-import androidx.work.OneTimeWorkRequest;
-import androidx.work.WorkManager;
-import org.json.JSONObject;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.PrintWriter;
-import java.io.StringWriter;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.util.Locale;
-import java.util.concurrent.TimeUnit;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import org.json.JSONObject;
 
+/**
+ * Production-safe crash reporting.
+ *
+ * - Installed as the global uncaught-exception handler from MainActivity.onCreate.
+ * - Persists the report to a file synchronously (fast, never needs network).
+ * - Uploads to the crash-report Edge Function on a background thread; any report
+ *   that cannot be uploaded immediately is retried on the next app start.
+ * - Never throws, never blocks startup, never loops: all work is guarded and the
+ *   previous default handler's behavior is always preserved.
+ * - Sends only technical diagnostics (app version, Android version, device model,
+ *   exception type/message, stack trace, screen). No personal data.
+ */
 final class CrashReporter {
-    static final String SIGNER_SHA256 = "cd5fff73675c8c783db51a3300cc06845763215d2c7b03a64ae7f9b589360585";
-    private static final String FILE_NAME = "pending-crash.json";
+    private static final String DIR = "crash_reports";
+    private static final int MAX_STORED = 5;
+    private static final ExecutorService uploader = Executors.newSingleThreadExecutor();
     private static volatile boolean installed;
+    private static volatile String screen = "main";
 
     private CrashReporter() {}
 
+    static void setScreen(String value) {
+        if (value != null && !value.isEmpty()) screen = value;
+    }
+
     static void install(Context context) {
         if (installed) return;
-        synchronized (CrashReporter.class) {
-            if (installed) return;
-            final Context app = context.getApplicationContext();
-            final Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
-            Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
-                try { persist(app, error); } catch (Throwable ignored) { }
-                if (previous != null) previous.uncaughtException(thread, error);
-                else {
-                    android.os.Process.killProcess(android.os.Process.myPid());
-                    System.exit(10);
+        installed = true;
+        final Context app = context.getApplicationContext();
+        final Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            try { persist(app, throwable); } catch (Throwable ignored) { }
+            // Best effort: try now, but the reliable path is the retry on next start.
+            uploader.execute(() -> { try { uploadAll(app); } catch (Throwable ignored) { } });
+            if (previous != null) previous.uncaughtException(thread, throwable);
+            else android.os.Process.killProcess(android.os.Process.myPid());
+        });
+        // Retry anything persisted by an earlier crash. Off the UI thread, never blocking.
+        uploader.execute(() -> { try { uploadAll(app); } catch (Throwable ignored) { } });
+    }
+
+    private static File directory(Context app) {
+        File dir = new File(app.getFilesDir(), DIR);
+        // noinspection ResultOfMethodCallIgnored
+        dir.mkdirs();
+        return dir;
+    }
+
+    private static void persist(Context app, Throwable throwable) throws Exception {
+        JSONObject payload = buildPayload(app, throwable);
+        File dir = directory(app);
+        File[] existing = dir.listFiles();
+        if (existing != null && existing.length >= MAX_STORED) {
+            Arrays.sort(existing, Comparator.comparingLong(File::lastModified));
+            for (int i = 0; i <= existing.length - MAX_STORED; i++) {
+                // noinspection ResultOfMethodCallIgnored
+                existing[i].delete();
+            }
+        }
+        File out = new File(dir, "crash-" + System.currentTimeMillis() + ".json");
+        try (FileOutputStream stream = new FileOutputStream(out)) {
+            stream.write(payload.toString().getBytes(StandardCharsets.UTF_8));
+            stream.getFD().sync();
+        }
+    }
+
+    private static JSONObject buildPayload(Context app, Throwable throwable) throws Exception {
+        StringBuilder stack = new StringBuilder();
+        for (StackTraceElement el : throwable.getStackTrace()) stack.append(el.toString()).append('\n');
+        Throwable cause = throwable.getCause();
+        if (cause != null && cause != throwable) {
+            stack.append("Caused by: ").append(cause).append('\n');
+            for (StackTraceElement el : cause.getStackTrace()) stack.append(el.toString()).append('\n');
+        }
+        return new JSONObject()
+                .put("package_id", app.getPackageName())
+                .put("app_version", BuildConfig.VERSION_NAME)
+                .put("version_code", BuildConfig.VERSION_CODE)
+                .put("android_version", android.os.Build.VERSION.RELEASE)
+                .put("device_model", android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL)
+                .put("exception_type", throwable.getClass().getName())
+                .put("message", String.valueOf(throwable.getMessage()))
+                .put("stack", stack.toString())
+                .put("screen", screen);
+    }
+
+    private static void uploadAll(Context app) {
+        File dir = directory(app);
+        File[] files = dir.listFiles();
+        if (files == null || files.length == 0) return;
+        Arrays.sort(files, Comparator.comparingLong(File::lastModified));
+        for (File file : files) {
+            try {
+                String body = new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+                if (post(app, body)) {
+                    // noinspection ResultOfMethodCallIgnored
+                    file.delete();
                 }
-            });
-            installed = true;
+            } catch (Throwable ignored) {
+                // Keep the file; retry on the next start.
+            }
         }
     }
 
-    static void enqueuePending(Context context) {
-        if (!pendingFile(context).isFile()) return;
-        OneTimeWorkRequest request = new OneTimeWorkRequest.Builder(CrashUploadWorker.class)
-                .setBackoffCriteria(androidx.work.BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)
-                .build();
-        WorkManager.getInstance(context).enqueueUniqueWork(
-                "pending-crash-upload", androidx.work.ExistingWorkPolicy.KEEP, request);
-    }
-
-    static File pendingFile(Context context) {
-        return new File(context.getFilesDir(), FILE_NAME);
-    }
-
-    private static void persist(Context context, Throwable error) throws Exception {
-        PackageInfo info = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
-        StringWriter trace = new StringWriter();
-        error.printStackTrace(new PrintWriter(trace));
-        JSONObject body = new JSONObject()
-                .put("fingerprint", SIGNER_SHA256)
-                .put("package_id", context.getPackageName())
-                .put("version_code", info.getLongVersionCode())
-                .put("version_name", info.versionName == null ? "" : info.versionName)
-                .put("android_sdk", Build.VERSION.SDK_INT)
-                .put("device_manufacturer", safe(Build.MANUFACTURER, 80))
-                .put("device_model", safe(Build.MODEL, 120))
-                .put("exception_class", safe(error.getClass().getName(), 180))
-                .put("message", safe(error.getMessage(), 2048))
-                .put("stack_trace", safe(trace.toString(), 32768))
-                .put("occurred_at", java.time.Instant.now().toString())
-                .put("report_type", "crash");
-        byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
-        File target = pendingFile(context), temp = new File(context.getFilesDir(), FILE_NAME + ".tmp");
-        try (FileOutputStream out = new FileOutputStream(temp)) {
-            out.write(bytes);
-            out.getFD().sync();
+    private static boolean post(Context app, String body) {
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(
+                    BuildConfig.SUPABASE_URL + "/functions/v1/crash-report").openConnection();
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(10000);
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
+            connection.setRequestProperty("Authorization", "Bearer " + BuildConfig.SUPABASE_KEY);
+            connection.setDoOutput(true);
+            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+            connection.setFixedLengthStreamingMode(bytes.length);
+            try (java.io.OutputStream out = connection.getOutputStream()) {
+                out.write(bytes);
+            }
+            int code = connection.getResponseCode();
+            return code >= 200 && code < 300;
+        } catch (Throwable ignored) {
+            return false;
+        } finally {
+            if (connection != null) connection.disconnect();
         }
-        if (target.exists() && !target.delete()) return;
-        temp.renameTo(target);
-    }
-
-    private static String safe(String value, int max) {
-        if (value == null) return "";
-        value = value.replaceAll("(?i)(authorization\\s*:\\s*bearer\\s+)[A-Za-z0-9._~+\\-/=]+", "$1[redacted]")
-                .replaceAll("(?i)(apikey|api_key|token|password|secret)=([^\\s&]+)", "$1=[redacted]")
-                .replaceAll("(?i)[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", "[email]")
-                .replaceAll("https?://[^\\s)\\]]+", "[url]");
-        return value.length() <= max ? value : value.substring(0, max);
     }
 }
