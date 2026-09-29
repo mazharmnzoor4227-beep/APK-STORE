@@ -1,5 +1,6 @@
 import { adminDatabase, requireOwner } from '../../../../../lib/admin/server';
 import { callAdminUploadEdge } from '../../../../../lib/admin/admin-upload-edge';
+import { classifyIconBytes, managedIconPath } from '../../../../../lib/admin/icon-upload';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -21,14 +22,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
     if (input.iconUrl !== undefined) {
       const url = String(input.iconUrl);
-      const base = `${process.env.SUPABASE_URL}/storage/v1/object/public/app-icons/admin-icons/`;
-      if (!url.startsWith(base) || !/^[-0-9a-f]{36}\.(png|webp|jpg)$/.test(url.slice(base.length)))
-        return Response.json({ error: 'Upload an icon through this panel' }, { status: 400 });
-      const key = `admin-icons/${url.slice(base.length)}`;
+      const supabaseUrl = process.env.SUPABASE_URL ?? '';
+      const key = managedIconPath(url, supabaseUrl);
+      if (!key) return Response.json({ error: 'Upload an icon through this panel' }, { status: 400 });
       const db = adminDatabase();
-      const { data, error } = await db.storage.from('app-icons').info(key);
-      if (error || !data || Number(data.metadata?.size ?? data.size ?? 0) > 300000)
+      const { data: info, error: infoError } = await db.storage.from('app-icons').info(key);
+      const size = Number(info?.metadata?.size ?? info?.size ?? 0);
+      if (infoError || !info || size < 1 || size > 300000)
         return Response.json({ error: 'Icon upload is missing or too large' }, { status: 400 });
+      const { data: blob, error: downloadError } = await db.storage.from('app-icons').download(key);
+      if (downloadError || !blob) return Response.json({ error: 'Icon upload could not be verified' }, { status: 400 });
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const detected = classifyIconBytes(bytes.subarray(0, 16));
+      const expected = key.endsWith('.jpg') ? 'jpg' : key.endsWith('.webp') ? 'webp' : 'png';
+      if (detected !== expected) {
+        await db.storage.from('app-icons').remove([key]);
+        return Response.json({ error: 'Uploaded file is not a valid image of the selected type' }, { status: 400 });
+      }
       changes.icon_url = url;
     }
     if (!Object.keys(changes).length) return Response.json({ error: 'No changes' }, { status: 400 });
