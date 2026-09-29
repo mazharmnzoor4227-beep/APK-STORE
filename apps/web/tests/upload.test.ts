@@ -10,10 +10,13 @@ test('only verified owner can issue a private upload target', async () => {
   assert.equal(called, false);
 });
 
-test('invalid extensions and files over the configured limit fail before upload', async () => {
-  const provider = { create: async () => ({ id: '1', signedUrl: 'url' }) };
+test('invalid extensions and files over the 300 MB contract fail before upload', async () => {
+  let calls = 0;
+  const provider = { create: async () => { calls += 1; return { id: '1', signedUrl: 'url' }; } };
   await assert.rejects(createCandidateUpload({ ownerId: 'owner', filename: 'not-apk.zip', byteSize: 1024 }, provider), /APK file required/);
-  await assert.rejects(createCandidateUpload({ ownerId: 'owner', filename: 'test.apk', byteSize: 52_428_801 }, provider), /50 MB/);
+  await createCandidateUpload({ ownerId: 'owner', filename: 'large.apk', byteSize: 250 * 1024 * 1024 }, provider);
+  assert.equal(calls, 1);
+  await assert.rejects(createCandidateUpload({ ownerId: 'owner', filename: 'too-large.apk', byteSize: 300 * 1024 * 1024 + 1 }, provider), /300 MB/);
 });
 
 test('an expired or interrupted candidate cannot be inspected as a valid release', async () => {
