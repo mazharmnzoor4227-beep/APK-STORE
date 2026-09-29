@@ -29,6 +29,7 @@ test('owner management destinations are real pages', async ({ page }) => {
 test('owner management pages expose real controls', async ({ page }) => {
   await page.goto('/admin/trash');
   await expect(page.getByRole('button', { name: 'Refresh trash' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Empty trash' })).toBeVisible();
   await page.goto('/admin/queue');
   await expect(page.getByLabel('Queue status')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Refresh queue' })).toBeVisible();
@@ -36,6 +37,7 @@ test('owner management pages expose real controls', async ({ page }) => {
   await expect(page.getByLabel('New password')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Change password' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Validate live catalog' })).toBeVisible();
+  await expect(page.getByLabel('Admin theme')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
 });
 
