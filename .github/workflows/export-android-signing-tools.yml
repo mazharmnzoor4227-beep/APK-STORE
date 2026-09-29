@@ -1,0 +1,25 @@
+name: Export Android signing tools for verification
+on:
+  push:
+    branches: [fix/full-audit-20260929]
+    paths: ['.github/workflows/export-android-signing-tools.yml']
+jobs:
+  tools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: "build-tools;35.0.0"
+      - name: Collect verification tools
+        run: |
+          set -euo pipefail
+          mkdir -p verification-tools/lib64 verification-tools/lib
+          cp "$ANDROID_HOME/build-tools/35.0.0/apksigner" verification-tools/
+          cp "$ANDROID_HOME/build-tools/35.0.0/zipalign" verification-tools/
+          cp "$ANDROID_HOME/build-tools/35.0.0/aapt" verification-tools/
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" verification-tools/lib/
+          if [ -d "$ANDROID_HOME/build-tools/35.0.0/lib64" ]; then cp -a "$ANDROID_HOME/build-tools/35.0.0/lib64/." verification-tools/lib64/; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-signing-tools-internal
+          path: verification-tools
