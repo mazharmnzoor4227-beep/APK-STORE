@@ -29,9 +29,9 @@ final class CrashReportPayload {
         payload.put("version_code", versionCode);
         payload.put("version_name", safe(versionName, 64));
         payload.put("android_sdk", androidSdk);
-        payload.put("device_manufacturer", sanitize(manufacturer, 128));
-        payload.put("device_model", sanitize(model, 128));
-        payload.put("exception_class", error == null ? "java.lang.Throwable" : safe(error.getClass().getName(), 256));
+        payload.put("device_manufacturer", sanitize(manufacturer, 80));
+        payload.put("device_model", sanitize(model, 120));
+        payload.put("exception_class", error == null ? "java.lang.Throwable" : safe(error.getClass().getName(), 180));
         payload.put("message", sanitize(error == null ? "" : String.valueOf(error.getMessage()), MAX_MESSAGE));
         payload.put("stack_trace", stackTrace(error));
         payload.put("occurred_at", isoUtc(occurredAtMillis));
