@@ -1,19 +1,19 @@
 import { adminDatabase, requireOwner } from '../../../../../../lib/admin/server';
+import { callAdminUploadEdge } from '../../../../../../lib/admin/admin-upload-edge';
 import { dispatchInspection } from '../../../../../../lib/admin/dispatch-inspection';
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const ownerId = await requireOwner(request);
     const { id } = await context.params;
+    if (!/^[0-9a-f-]{36}$/.test(id)) return Response.json({ error: 'Invalid upload' }, { status: 400 });
+
+    const completed = await callAdminUploadEdge<{ status?: string; error?: string }>(request, 'complete', { id });
+    if (!completed.ok) return Response.json({ error: completed.data.error || 'Could not confirm upload' }, { status: completed.status });
+
     const db = adminDatabase();
-    const { data: candidate } = await db.from('upload_candidates').select('*').eq('id', id).eq('owner_id', ownerId).eq('status', 'uploading').single();
-    if (!candidate || Date.parse(candidate.expires_at) < Date.now()) return Response.json({ error: 'Upload expired or unavailable' }, { status: 409 });
-    const { data: object, error } = await db.storage.from('apk-files').info(candidate.object_key);
-    if (error || !object || Number(object.size) !== Number(candidate.byte_size)) return Response.json({ error: 'Uploaded file missing or size mismatch' }, { status: 409 });
-    const { error: updateError } = await db.from('upload_candidates').update({ status: 'uploaded' }).eq('id', id).eq('status', 'uploading');
-    if (updateError) throw updateError;
     try {
-      const queued = await dispatchInspection(id, candidate.object_key);
+      const queued = await dispatchInspection(id);
       if (!queued) {
         await db.from('upload_candidates').update({ error: 'Inspection service is not configured yet' }).eq('id', id).eq('owner_id', ownerId);
       }
