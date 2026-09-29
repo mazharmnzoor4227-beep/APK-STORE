@@ -1,4 +1,4 @@
-import { callAdminUploadEdge } from '../../../../../../lib/admin/admin-upload-edge';
+import { callAdminUploadEdge } from '../../../../../lib/admin/admin-upload-edge';
 
 function validId(value: string) { return /^[0-9a-f-]{36}$/i.test(value); }
 
