@@ -19,8 +19,8 @@ jobs:
           p = Path('apps/android/app/src/main/java/com/apkstore/client/MainActivity.java')
           s = p.read_text()
           old = '''                ApkIntegrity.verifyFile(apk, release.optString("apk_sha256"), release.optLong("byte_size"));
-                ApkIntegrity.verifyPackage(this, apk, target.optString("package_id"), release.optString("certificate_sha256"));
-                InstallCoordinator.install(this, apk, slug, target.optString("package_id"));'''
+                          ApkIntegrity.verifyPackage(this, apk, target.optString("package_id"), release.optString("certificate_sha256"));
+                          InstallCoordinator.install(this, apk, slug, target.optString("package_id"));'''
           if old not in s:
               raise SystemExit('install verification block not found')
           new = '''                ApkIntegrity.verifyFile(apk, release.optString("apk_sha256"), release.optLong("byte_size"));
