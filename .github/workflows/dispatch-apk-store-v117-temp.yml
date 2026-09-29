@@ -10,8 +10,8 @@ jobs:
   dispatch:
     runs-on: ubuntu-latest
     steps:
-      - name: Dispatch official release workflow
+      - name: Dispatch official v1.1.7 release workflow from main
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/workflows/build-android.yml/dispatches" -f ref='fix/stability-crash-reporting'
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/workflows/build-android.yml/dispatches" -f ref='main'
