@@ -8,7 +8,7 @@ export async function createCandidateUpload(input: UploadInput, provider: { crea
   if (!input.ownerId) throw new Error('Owner authorization required');
   if (!/\.apk$/i.test(input.filename)) throw new Error('APK file required');
   if (!Number.isSafeInteger(input.byteSize) || input.byteSize <= 0) throw new Error('Invalid file size');
-  if (input.byteSize > 50 * 1024 * 1024) throw new Error('APK exceeds the 50 MB storage limit');
+  if (input.byteSize > 300 * 1024 * 1024) throw new Error('APK exceeds the 300 MB upload limit');
   return provider.create(input);
 }
 
