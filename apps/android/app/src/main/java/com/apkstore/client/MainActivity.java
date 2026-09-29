@@ -57,6 +57,7 @@ import java.util.concurrent.Executors;
 import androidx.work.WorkManager;
 import androidx.work.PeriodicWorkRequest;
 import androidx.work.ExistingPeriodicWorkPolicy;
+import androidx.work.Configuration;
 import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends Activity {
@@ -87,6 +88,8 @@ public class MainActivity extends Activity {
     private final HashMap<String, Long> completedDownloads = new HashMap<>();
     private final HashMap<String, String> downloadPaths = new HashMap<>();
     private final HashMap<String, Runnable> downloadPolls = new HashMap<>();
+    private final java.util.LinkedList<JSONObject> updateQueue = new java.util.LinkedList<>();
+    private int updateQueueTotal = 0;
     private JSONObject detailApp;
     private TextView detailPrimary, detailSecondary, detailPercent, detailStatus;
     private ProgressRing detailRing;
@@ -129,6 +132,7 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        setupCrashReporting();
         settingsStore = new SettingsStore(this);
         String theme = settingsStore.theme();
         light = "light".equals(theme) || ("system".equals(theme) &&
@@ -159,10 +163,51 @@ public class MainActivity extends Activity {
         if (catalog.length() > 0) load();
         scheduleUpdates();
     }
+    /** Catches uncaught crashes and reports them to the crash-report Edge Function. Never crashes the app itself. */
+    private void setupCrashReporting() {
+        Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            try { reportCrash(throwable); } catch (Exception ignored) { }
+            if (previous != null) previous.uncaughtException(thread, throwable);
+            else android.os.Process.killProcess(android.os.Process.myPid());
+        });
+    }
+    private void reportCrash(Throwable throwable) {
+        new Thread(() -> {
+            try {
+                StringBuilder stack = new StringBuilder();
+                for (StackTraceElement el : throwable.getStackTrace()) stack.append(el.toString()).append('\n');
+                org.json.JSONObject payload = new org.json.JSONObject();
+                payload.put("app_version", BuildConfig.VERSION_NAME);
+                payload.put("version_code", BuildConfig.VERSION_CODE);
+                payload.put("android_version", android.os.Build.VERSION.RELEASE);
+                payload.put("device_model", android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL);
+                payload.put("message", String.valueOf(throwable.getMessage()));
+                payload.put("stack", stack.toString());
+                payload.put("screen", detailApp != null ? "detail" : "main");
+                java.net.HttpURLConnection c = (java.net.HttpURLConnection)
+                        new java.net.URL(BuildConfig.SUPABASE_URL + "/functions/v1/crash-report").openConnection();
+                c.setRequestMethod("POST");
+                c.setConnectTimeout(10000); c.setReadTimeout(10000);
+                c.setRequestProperty("Content-Type", "application/json");
+                c.setDoOutput(true);
+                c.getOutputStream().write(payload.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                c.getResponseCode(); // fire and forget
+            } catch (Exception ignored) { }
+        }).start();
+    }
     private void scheduleUpdates() {
-        int hours = settingsStore.updateHours();
-        PeriodicWorkRequest request = new PeriodicWorkRequest.Builder(UpdateCheckWorker.class, hours, TimeUnit.HOURS).build();
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork("catalog-update-check", ExistingPeriodicWorkPolicy.UPDATE, request);
+        // Background update checks must never crash the app. Manual WorkManager
+        // init is required because this build does not merge the WorkManager
+        // ContentProvider into the manifest.
+        try {
+            if (!WorkManager.isInitialized()) {
+                WorkManager.initialize(this, new Configuration.Builder().build());
+            }
+            int hours = settingsStore.updateHours();
+            PeriodicWorkRequest request = new PeriodicWorkRequest.Builder(UpdateCheckWorker.class, hours, TimeUnit.HOURS).build();
+            WorkManager.getInstance(this).enqueueUniquePeriodicWork("catalog-update-check", ExistingPeriodicWorkPolicy.UPDATE, request);
+        } catch (Throwable ignored) { }
     }
     @Override protected void onResume() {
         super.onResume();
@@ -197,6 +242,29 @@ public class MainActivity extends Activity {
             Long id = completedDownloads.get(slug);
             history.record(slug, slug, result.equals("Cancelled") ? "Cancelled" : "Failed", result,
                     id == null ? -1 : id, downloadPaths.getOrDefault(slug, ""), 100);
+        }
+    }
+    /** Maps Android API level to human-readable OS version (e.g. 23 -> "6.0"). */
+    private String apiToVersion(int api) {
+        switch (api) {
+            case 19: return "4.4";
+            case 21: return "5.0";
+            case 22: return "5.1";
+            case 23: return "6.0";
+            case 24: return "7.0";
+            case 25: return "7.1";
+            case 26: return "8.0";
+            case 27: return "8.1";
+            case 28: return "9";
+            case 29: return "10";
+            case 30: return "11";
+            case 31: return "12";
+            case 32: return "12L";
+            case 33: return "13";
+            case 34: return "14";
+            case 35: return "15";
+            case 36: return "16";
+            default: return api < 19 ? "4.4" : "16";
         }
     }
     private TextView text(String value, int size, int color, boolean bold) {
@@ -526,7 +594,13 @@ public class MainActivity extends Activity {
             else {
                 TextView updateAll = text("Update all", 15, green(), true);
                 updateAll.setMinHeight(dp(48)); updateAll.setOnClickListener(v -> {
-                    for (int i = 0; i < pending.length(); i++) startDownload(pending.optJSONObject(i));
+                    updateQueue.clear();
+                    for (int i = 0; i < pending.length(); i++) {
+                        JSONObject app = pending.optJSONObject(i);
+                        if (app != null) updateQueue.add(app);
+                    }
+                    updateQueueTotal = updateQueue.size();
+                    startNextQueuedUpdate();
                 }); body.addView(updateAll);
                 for (int i = 0; i < pending.length(); i++) {
                     JSONObject app = pending.optJSONObject(i);
@@ -843,12 +917,12 @@ public class MainActivity extends Activity {
             return;
         }
         if (tab == SEARCH && query.trim().isEmpty()) {
-            LinkedHashSet<String> names = new LinkedHashSet<>(java.util.Arrays.asList(
-                    "All", "AI agents", "Android Auto", "Android TV", "Audio", "Automation", "Communication",
-                    "Customization", "Development utilities", "Device owner (DPM)", "Display management", "Entertainment", "File management",
-                    "Games", "Input methods", "Installer & app stores", "Miscellaneous", "Network", "Patching",
-                    "Power management", "Privacy", "Productivity", "Quick settings", "Shizuku implementations",
-                    "Software management", "Task manager", "Terminals", "Google Pixel", "MIUI", "Other", "Samsung OneUI"));
+            LinkedHashSet<String> names = new LinkedHashSet<>();
+            names.add("All");
+            for (int i = 0; i < catalog.length(); i++) {
+                JSONObject app = catalog.optJSONObject(i);
+                if (app != null && !blacklisted(app) && !app.optString("category").isEmpty()) names.add(app.optString("category"));
+            }
             LinearLayout rows = vertical();
             LinearLayout row = new LinearLayout(this); rows.addView(row);
             int width = 0;
@@ -932,16 +1006,11 @@ public class MainActivity extends Activity {
         HorizontalScrollView filters = new HorizontalScrollView(this); filters.setHorizontalScrollBarEnabled(false);
         LinearLayout chips = new LinearLayout(this); chips.setPadding(dp(16), dp(6), dp(16), dp(10));
         listingChip(chips, listCategory.isEmpty() ? "All" : listCategory, !listCategory.isEmpty(), () -> {
-            java.util.LinkedHashSet<String> categories = new java.util.LinkedHashSet<>(java.util.Arrays.asList(
-                    "All", "AI agents", "Android Auto", "Android TV", "Audio", "Automation", "Communication",
-                    "Customization", "Development utilities", "Device owner (DPM)", "Display management", "Entertainment",
-                    "File management", "Games", "Input methods", "Installer & app stores", "Miscellaneous", "Network",
-                    "Patching", "Power management", "Privacy", "Productivity", "Quick settings",
-                    "Shizuku implementations", "Software management", "Task manager", "Terminals",
-                    "Google Pixel", "MIUI", "Other", "Samsung OneUI"));
+            java.util.LinkedHashSet<String> categories = new java.util.LinkedHashSet<>();
+            categories.add("All");
             for (int i = 0; i < catalog.length(); i++) {
                 JSONObject app = catalog.optJSONObject(i);
-                if (app != null && !app.optString("category").isEmpty()) categories.add(app.optString("category"));
+                if (app != null && !blacklisted(app) && !app.optString("category").isEmpty()) categories.add(app.optString("category"));
             }
             String[] choices = categories.toArray(new String[0]);
             showChoiceSheet("Filter by category", choices, listCategory.isEmpty() ? "All" : listCategory,
@@ -1177,6 +1246,8 @@ public class MainActivity extends Activity {
         space(page, 10);
         page.addView(text("Version " + BuildConfig.VERSION_NAME, 13, muted(), false));
         space(page, 26);
+        informationLink(page, "Check for update", "See if a newer APK STORE is available", this::checkSelfUpdate);
+        space(page, 14);
         informationLink(page, "Privacy Policy", "How this app handles data", () -> showLegal("Privacy Policy", privacyPolicy()));
         informationLink(page, "Terms of Use", "Downloads and use of the store", () -> showLegal("Terms of Use", termsOfUse()));
         informationLink(page, "Project and contact", "Open the GitHub repository", () -> openLink("https://github.com/mazharmnzoor4227-beep/APK-STORE"));
@@ -1184,6 +1255,80 @@ public class MainActivity extends Activity {
     }
     private void openLink(String url) {
         startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+    }
+    /** Checks whether a newer APK STORE release is published (slug: apk-store-client). */
+    private void checkSelfUpdate() {
+        LinearLayout page = informationPage("App update", this::showAbout);
+        TextView status = text("Checking for updates…", 15, muted(), false);
+        page.addView(status); space(page, 16);
+        worker.execute(() -> {
+            try {
+                String endpoint = BuildConfig.SUPABASE_URL + "/rest/v1/apps?select=slug,title,current_release_id&slug=eq.apk-store-client&visibility=eq.published&limit=1";
+                java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(endpoint).openConnection();
+                c.setConnectTimeout(12000); c.setReadTimeout(12000);
+                c.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
+                c.setRequestProperty("Authorization", "Bearer " + BuildConfig.SUPABASE_KEY);
+                if (c.getResponseCode() != 200) throw new Exception("Update check failed (" + c.getResponseCode() + ").");
+                String body;
+                try (java.io.InputStream in = c.getInputStream()) {
+                    body = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                }
+                org.json.JSONArray rows = new org.json.JSONArray(body);
+                if (rows.length() == 0) throw new Exception("No APK STORE release is published yet.");
+                org.json.JSONObject self = rows.getJSONObject(0);
+                String releaseId = self.optString("current_release_id");
+                String rep = BuildConfig.SUPABASE_URL + "/rest/v1/releases?select=version_code,version_name,release_notes,byte_size&id=eq." + releaseId + "&limit=1";
+                java.net.HttpURLConnection rc = (java.net.HttpURLConnection) new java.net.URL(rep).openConnection();
+                rc.setConnectTimeout(12000); rc.setReadTimeout(12000);
+                rc.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
+                rc.setRequestProperty("Authorization", "Bearer " + BuildConfig.SUPABASE_KEY);
+                if (rc.getResponseCode() != 200) throw new Exception("Update check failed.");
+                String rbody;
+                try (java.io.InputStream in = rc.getInputStream()) {
+                    rbody = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                }
+                org.json.JSONArray rrows = new org.json.JSONArray(rbody);
+                if (rrows.length() == 0) throw new Exception("Release details unavailable.");
+                org.json.JSONObject rel = rrows.getJSONObject(0);
+                long latest = rel.optLong("version_code");
+                String latestName = rel.optString("version_name", String.valueOf(latest));
+                runOnUiThread(() -> {
+                    page.removeAllViews();
+                    page.addView(text("App update", 22, ink(), true)); space(page, 12);
+                    if (latest <= BuildConfig.VERSION_CODE) {
+                        page.addView(text("You're up to date.", 16, ink(), true)); space(page, 8);
+                        page.addView(text("Version " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ") is the latest.", 14, muted(), false));
+                    } else {
+                        page.addView(text("Update available", 16, green(), true)); space(page, 8);
+                        page.addView(text("Version " + latestName + " (" + latest + ")", 15, ink(), false)); space(page, 6);
+                        String notes = rel.optString("release_notes");
+                        if (notes.isEmpty()) notes = rel.optString("changelog");
+                        if (!notes.isEmpty()) { page.addView(text("What's new", 14, ink(), true)); space(page, 4); page.addView(text(notes, 14, muted(), false)); space(page, 8); }
+                        long bytes = rel.optLong("byte_size");
+                        if (bytes > 0) { page.addView(text(String.format(java.util.Locale.ROOT, "%.1f MB", bytes / 1048576.0), 13, muted(), false)); space(page, 12); }
+                        android.widget.Button update = new android.widget.Button(this);
+                        update.setText("Update now");
+                        update.setOnClickListener(v -> {
+                            // Reuse the catalog download flow: integrity + cert checks included.
+                            for (int i = 0; i < catalog.length(); i++) {
+                                org.json.JSONObject app = catalog.optJSONObject(i);
+                                if (app != null && "apk-store-client".equals(app.optString("slug"))) { startDownload(app); showTab(APPS); return; }
+                            }
+                            android.widget.Toast.makeText(this, "Release found, but catalog needs refresh. Pull to refresh, then retry.", android.widget.Toast.LENGTH_LONG).show();
+                        });
+                        page.addView(update);
+                    }
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> {
+                    status.setText("Couldn't check for updates: " + e.getMessage());
+                    android.widget.Button retry = new android.widget.Button(this);
+                    retry.setText("Retry");
+                    retry.setOnClickListener(v -> checkSelfUpdate());
+                    page.addView(retry);
+                });
+            }
+        });
     }
     private void informationLink(LinearLayout page, String title, String subtitle, Runnable open) {
         LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
@@ -1254,8 +1399,10 @@ public class MainActivity extends Activity {
         top.addView(heart, new LinearLayout.LayoutParams(dp(56), dp(52)));
         TextView share = action("↗", "Share app");
         share.setOnClickListener(v -> {
+            String slug = app.optString("slug");
+            String link = BuildConfig.SITE_URL + (slug.isEmpty() ? "/" : "/app/" + slug);
             Intent intent = new Intent(Intent.ACTION_SEND).setType("text/plain")
-                    .putExtra(Intent.EXTRA_TEXT, "https://apk-store-mazhar.mazharmanzoor4117.chatgpt.site/  ·  " + app.optString("title"));
+                    .putExtra(Intent.EXTRA_TEXT, app.optString("title") + " · " + link);
             startActivity(Intent.createChooser(intent, "Share app"));
         });
         top.addView(share, new LinearLayout.LayoutParams(dp(52), dp(52)));
@@ -1323,7 +1470,7 @@ public class MainActivity extends Activity {
         if (!app.optString("category").isEmpty()) detailChip(chipRow, app.optString("category"));
         if (!size.isEmpty()) detailChip(chipRow, size);
         int minSdk = app.optInt("min_sdk", 0);
-        if (minSdk > 0) detailChip(chipRow, "Android " + minSdk + "+");
+        if (minSdk > 0) detailChip(chipRow, "Android " + apiToVersion(minSdk) + "+");
         String license = app.optString("license");
         if (!license.isEmpty()) detailChip(chipRow, license);
         chipScroll.addView(chipRow); page.addView(chipScroll);
@@ -1413,9 +1560,10 @@ public class MainActivity extends Activity {
         lp.setMargins(0, 0, dp(8), 0); row.addView(chip, lp);
     }
     private boolean trustedImage(String url) {
-        return url.startsWith(BuildConfig.SUPABASE_URL + "/storage/v1/object/public/app-screenshots/") ||
-                url.startsWith(BuildConfig.SUPABASE_URL + "/storage/v1/object/public/app-icons/") ||
-                (url.startsWith("https://apk-store-mazhar.mazharmanzoor4117.chatgpt.site/") && url.endsWith(".png"));
+        if (url == null || url.isEmpty()) return false;
+        // Accept any HTTPS image URL: Supabase storage, GitHub, F-Droid, etc.
+        // Client-side image fetch has no SSRF risk; failures fall back gracefully.
+        return url.startsWith("https://");
     }
     private ImageView remoteImage(String url) {
         ImageView image = new ImageView(this); image.setScaleType(ImageView.ScaleType.FIT_CENTER);
@@ -1542,6 +1690,15 @@ public class MainActivity extends Activity {
             });
         }
     }
+    /** Starts the next app in the Update All queue, one at a time. */
+    private void startNextQueuedUpdate() {
+        if (updateQueue.isEmpty()) { updateQueueTotal = 0; return; }
+        JSONObject next = updateQueue.poll();
+        if (next == null) { startNextQueuedUpdate(); return; }
+        int done = updateQueueTotal - updateQueue.size();
+        android.widget.Toast.makeText(this, "Updating " + done + " of " + updateQueueTotal, android.widget.Toast.LENGTH_SHORT).show();
+        startDownload(next);
+    }
     private void startDownload(JSONObject app) {
         String slug = app.optString("slug");
         if (!slug.matches("[a-z0-9]+(-[a-z0-9]+)*") || downloads.containsKey(slug)) return;
@@ -1632,13 +1789,16 @@ public class MainActivity extends Activity {
                         downloadProgress.put(slug, 100);
                         refreshDetail();
                         openDownloaded(slug);
+                        startNextQueuedUpdate();
                         return;
                     }
                     if (status == DownloadManager.STATUS_FAILED) {
                         int reason = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON));
                         cancelDownload(slug); downloadErrors.put(slug, "Download failed (" + reason + "). Tap Install to retry.");
                         history.record(slug, slug, "Failed", downloadErrors.get(slug), id, "", 0);
-                        refreshDetail(); return;
+                        refreshDetail();
+                        startNextQueuedUpdate();
+                        return;
                     }
                     if (status == DownloadManager.STATUS_PAUSED)
                         downloadErrors.put(slug, "Paused · waiting for network or retry");
