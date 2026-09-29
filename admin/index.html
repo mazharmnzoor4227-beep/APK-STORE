@@ -234,10 +234,23 @@ input:focus,textarea:focus{border-color:var(--acc);}
       <div id="upStep2" class="hidden">
         <div class="card" id="inspCard"></div>
         <div class="section-title">Title</div><div class="searchbar"><input id="rvTitle" placeholder="App title"></div>
+        <div class="section-title">Version <span style="text-transform:none;font-weight:400;">(from APK, automatic)</span></div>
+        <div class="card meta" id="rvVer" style="font-weight:700;">—</div>
         <div class="section-title">Category</div><div class="searchbar"><input id="rvCat" placeholder="Tools"></div>
         <div class="section-title">Short description</div><div class="searchbar"><input id="rvShort" placeholder="One line"></div>
         <div class="section-title">Description</div><div class="searchbar"><input id="rvDesc" placeholder="Full description"></div>
         <div class="section-title">Release notes</div><div class="searchbar"><input id="rvNotes" placeholder="What's new"></div>
+        <div class="section-title">Screenshots <span style="text-transform:none;font-weight:400;">(optional, up to 8)</span></div>
+        <div class="card">
+          <div id="rvShots" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;"></div>
+          <button class="btn" onclick="document.getElementById('rvShotFile').click()">+ Add screenshots</button>
+          <input type="file" id="rvShotFile" accept="image/*" multiple class="hidden">
+          <div class="meta" id="rvShotMsg" style="margin-top:8px;">Converted to WebP automatically (max 300 KB each).</div>
+        </div>
+        <div class="card" style="display:flex;gap:10px;align-items:flex-start;margin-bottom:12px;">
+          <input type="checkbox" id="rvFeatured" style="width:20px;height:20px;margin-top:2px;flex:none;">
+          <label for="rvFeatured" style="font-size:13px;color:var(--mut);">Feature on home page banner (replaces the current featured app).</label>
+        </div>
         <div class="card" style="display:flex;gap:10px;align-items:flex-start;">
           <input type="checkbox" id="rvRights" style="width:20px;height:20px;margin-top:2px;flex:none;">
           <label for="rvRights" style="font-size:13px;color:var(--mut);">I confirm I have the right to distribute this app.</label>
@@ -297,6 +310,12 @@ input:focus,textarea:focus{border-color:var(--acc);}
           <button class="toggle" id="adToggle" onclick="togglePublish()"></button>
         </div>
       </div>
+      <div class="card" style="padding:0;overflow:hidden;margin-bottom:14px;">
+        <div class="setrow">
+          <div class="st"><div class="t">Featured on home</div><div class="s" id="adFeatSub">—</div></div>
+          <button class="toggle" id="adFeatToggle" onclick="toggleFeatured()"></button>
+        </div>
+      </div>
       <div class="btnrow" style="margin-bottom:10px;">
         <button class="btn primary" onclick="openEdit()">✎ Edit app</button>
         <button class="btn" onclick="reupload()">⭱ Re-upload version</button>
@@ -318,6 +337,13 @@ input:focus,textarea:focus{border-color:var(--acc);}
       <div class="section-title">Category</div><div class="searchbar"><input id="edCat"></div>
       <div class="section-title">Short description</div><div class="searchbar"><input id="edShort"></div>
       <div class="section-title">Description</div><div class="searchbar"><input id="edDesc"></div>
+      <div class="section-title">Screenshots <span style="text-transform:none;font-weight:400;">(up to 8)</span></div>
+      <div class="card">
+        <div id="edShots" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;"></div>
+        <button class="btn" onclick="document.getElementById('edShotFile').click()">+ Add screenshots</button>
+        <input type="file" id="edShotFile" accept="image/*" multiple class="hidden">
+        <div class="meta" id="edShotMsg" style="margin-top:8px;">Converted to WebP automatically (max 300 KB each).</div>
+      </div>
       <div class="btnrow" style="margin-top:18px;">
         <button class="btn primary" onclick="saveEdit()">Save changes</button>
         <button class="btn" onclick="goBackDetail()">Cancel</button>
@@ -482,6 +508,7 @@ function renderApps(){
       '<div class="appicon">'+icon+'</div>'+
       '<div class="appmeta"><div class="name">'+esc(a.title)+'</div>'+
       '<div class="sub">'+esc(a.package_id||"")+' · '+esc(ver)+'</div></div>'+
+      (a.is_recommended?'<span class="pill blue">★ Featured</span>':"")+
       '<span class="pill '+(pub?"green":"grey")+'">'+(pub?"Published":"Hidden")+'</span>'+
       '<span class="chev">›</span></button>';
   }).join(""):'<div class="empty"><div class="big">📭</div>No apps found.</div>';
@@ -496,7 +523,7 @@ function openAppDetail(id){
   const r=a.release;
   document.getElementById("adVer").textContent=(r?(r.version_name+" ("+r.version_code+")"):"no release")+" · "+(a.category||"");
   document.getElementById("adDesc").textContent=a.description||a.short_description||"No description.";
-  syncPublishUI(); showScreen("scr-appdetail");
+  syncPublishUI(); syncFeaturedUI(); showScreen("scr-appdetail");
 }
 function syncPublishUI(){
   const a=getApp(currentApp); const on=a&&a.visibility==="published";
@@ -511,6 +538,31 @@ async function togglePublish(){
     toast(to==="published"?"Published ✓":"Hidden"); }
   catch(e){ toast("Failed: "+e.message); }
 }
+function syncFeaturedUI(){
+  const a=getApp(currentApp); const on=a&&a.is_recommended;
+  document.getElementById("adFeatToggle").classList.toggle("on",!!on);
+  document.getElementById("adFeatSub").textContent=on?"Shown as the home page banner":"Not featured";
+}
+async function toggleFeatured(){
+  const a=getApp(currentApp); if(!a) return;
+  const to=!a.is_recommended;
+  const btn=document.getElementById("adFeatToggle"); btn.disabled=true;
+  try{
+    if(to){
+      // Website/app show a single featured banner: unset any other featured app first.
+      for(const o of APPS){
+        if(o.id!==a.id&&o.is_recommended){
+          await api("manage-app","POST",{id:o.id,is_recommended:false});
+          o.is_recommended=false;
+        }
+      }
+    }
+    await api("manage-app","POST",{id:a.id,is_recommended:to});
+    a.is_recommended=to; syncFeaturedUI(); renderApps();
+    toast(to?"Featured on home ★":"Removed from featured");
+  }catch(e){ toast("Failed: "+e.message); }
+  btn.disabled=false;
+}
 function goBackApps(){ showScreen("scr-apps"); syncNav(2); }
 function goBackDetail(){ showScreen("scr-appdetail"); }
 function syncNav(i){ document.querySelectorAll(".nav-item").forEach((x,j)=>x.classList.toggle("on",j===i)); }
@@ -520,6 +572,9 @@ function openEdit(){
   document.getElementById("edCat").value=a.category||"";
   document.getElementById("edShort").value=a.short_description||"";
   document.getElementById("edDesc").value=a.description||"";
+  editShots=(a.screenshots||[]).map(u=>({url:u,uploading:false}));
+  document.getElementById("edShotMsg").textContent="";
+  renderShots();
   showScreen("scr-appedit");
 }
 async function saveEdit(){
@@ -528,7 +583,8 @@ async function saveEdit(){
       title:document.getElementById("edTitle").value.trim(),
       category:document.getElementById("edCat").value.trim(),
       short_description:document.getElementById("edShort").value.trim(),
-      description:document.getElementById("edDesc").value.trim() });
+      description:document.getElementById("edDesc").value.trim(),
+      screenshots:editShots.filter(s=>s.url).map(s=>s.url) });
     Object.assign(a,{title:j.app.title,visibility:j.app.visibility});
     await loadApps(); openAppDetail(currentApp); toast("Saved ✓"); }
   catch(e){ toast("Save failed: "+e.message); }
@@ -543,6 +599,7 @@ function reupload(){
 function resetUploadKeepTarget(){
   candidateId=null; inspection=null;
   document.getElementById("apkFile").value="";
+  reviewShots=[]; renderShots();
   document.getElementById("upProgCard").classList.add("hidden");
   document.getElementById("upProg").style.width="0";
   setStep(0);
@@ -554,6 +611,70 @@ async function deleteApp(){
     toast("Moved to Trash"); goBackApps(); loadApps(); }
   catch(e){ toast("Delete failed: "+e.message); }
 }
+
+/* ---------- screenshots ---------- */
+let reviewShots=[], editShots=[];
+function shotThumb(list,idx,s){
+  const inner=s.uploading
+    ?'<div class="meta" style="display:flex;height:100%;align-items:center;justify-content:center;">…</div>'
+    :'<img src="'+esc(s.url)+'" style="width:100%;height:100%;object-fit:cover;" loading="lazy">';
+  return '<div style="position:relative;width:72px;height:128px;border-radius:10px;overflow:hidden;background:var(--bg2);border:1px solid var(--line);flex:none;">'+inner+
+    '<button onclick="removeShot(\''+list+'\','+idx+')" aria-label="Remove" style="position:absolute;top:2px;right:2px;width:24px;height:24px;border-radius:50%;background:rgba(0,0,0,.65);color:#fff;font-size:14px;line-height:1;">×</button></div>';
+}
+function renderShots(){
+  document.getElementById("rvShots").innerHTML=reviewShots.length?reviewShots.map((s,i)=>shotThumb("review",i,s)).join(""):'<div class="meta">No screenshots yet.</div>';
+  document.getElementById("edShots").innerHTML=editShots.length?editShots.map((s,i)=>shotThumb("edit",i,s)).join(""):'<div class="meta">No screenshots yet.</div>';
+}
+function removeShot(list,idx){
+  (list==="review"?reviewShots:editShots).splice(idx,1); renderShots();
+}
+function fileToWebP(file){
+  return new Promise((res,rej)=>{
+    const img=new Image(); const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      URL.revokeObjectURL(url);
+      let w=img.naturalWidth,h=img.naturalHeight;
+      const sc=Math.min(1,1600/Math.max(w,h)); w=Math.round(w*sc); h=Math.round(h*sc);
+      const cv=document.createElement("canvas"); cv.width=w; cv.height=h;
+      cv.getContext("2d").drawImage(img,0,0,w,h);
+      const attempt=(q)=>cv.toBlob(b=>{
+        if(!b) return rej(new Error("Could not read image"));
+        if(b.size<=307200||q<=0.4) return res(b);
+        attempt(q-0.15);
+      },"image/webp",q);
+      attempt(0.85);
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error("Could not read image")); };
+    img.src=url;
+  });
+}
+async function uploadShot(file){
+  const blob=await fileToWebP(file);
+  const s=await api("screenshot-start","POST",{byteSize:blob.size});
+  await new Promise((res,rej)=>{
+    const xhr=new XMLHttpRequest();
+    xhr.onload=()=>xhr.status<300?res():rej(new Error("Upload failed ("+xhr.status+")"));
+    xhr.onerror=()=>rej(new Error("Network error"));
+    xhr.open("PUT",s.signedUrl); xhr.setRequestHeader("Content-Type","image/webp"); xhr.send(blob);
+  });
+  return s.screenshotUrl;
+}
+async function addShots(list,files){
+  const arr=list==="review"?reviewShots:editShots;
+  const msg=document.getElementById(list==="review"?"rvShotMsg":"edShotMsg");
+  for(const f of files){
+    if(arr.length>=8){ toast("Up to 8 screenshots"); break; }
+    if(!/^image\//.test(f.type)){ toast("Skipped a non-image file"); continue; }
+    const slot={url:"",uploading:true}; arr.push(slot); renderShots();
+    try{ slot.url=await uploadShot(f); slot.uploading=false; }
+    catch(e){ arr.splice(arr.indexOf(slot),1); toast("Screenshot failed: "+e.message); }
+    renderShots();
+  }
+  const ready=arr.filter(s=>s.url).length;
+  msg.textContent=ready?ready+" screenshot"+(ready>1?"s":"")+" ready":"";
+}
+document.getElementById("rvShotFile").addEventListener("change",e=>{ addShots("review",e.target.files); e.target.value=""; });
+document.getElementById("edShotFile").addEventListener("change",e=>{ addShots("edit",e.target.files); e.target.value=""; });
 
 /* ---------- queue ---------- */
 function renderQueue(){
@@ -631,8 +752,12 @@ async function inspectCandidate(id){
       'Signer: <span style="font-family:monospace;font-size:10px;">'+esc((i.certificateSha256||"").slice(0,24))+'…</span></div>';
     document.getElementById("rvTitle").value=target?target.title:(i.appName||"");
     document.getElementById("rvCat").value=target?(target.category||"Tools"):"Tools";
+    document.getElementById("rvVer").textContent=((i.versionName||"")+" ("+i.versionCode+")").trim();
     document.getElementById("rvShort").value=target?(target.short_description||""):"";
     document.getElementById("rvDesc").value=target?(target.description||""):"";
+    reviewShots=[]; document.getElementById("rvFeatured").checked=false;
+    document.getElementById("rvShotMsg").textContent="Converted to WebP automatically (max 300 KB each).";
+    renderShots();
     setStep(2);
   }catch(e){ toast("Inspect failed: "+e.message); setStep(0); }
 }
@@ -640,6 +765,7 @@ async function publishCandidate(){
   if(!document.getElementById("rvRights").checked) return toast("Confirm distribution rights first");
   const title=document.getElementById("rvTitle").value.trim();
   if(!title) return toast("Enter a title");
+  const feat=document.getElementById("rvFeatured").checked;
   try{
     const target=reuploadTarget?getApp(reuploadTarget):null;
     const j=await api("publish","POST",{ id:candidateId, rightsConfirmed:true, title,
@@ -647,9 +773,22 @@ async function publishCandidate(){
       shortDescription:document.getElementById("rvShort").value.trim(),
       description:document.getElementById("rvDesc").value.trim(),
       releaseNotes:document.getElementById("rvNotes").value.trim(),
+      recommended:feat,
       targetAppId:target?target.id:null });
+    const shotUrls=reviewShots.filter(s=>s.url).map(s=>s.url);
+    if(shotUrls.length)
+      await api("manage-app","POST",{id:j.appId,screenshots:shotUrls});
+    await loadApps();
+    if(feat){
+      // single featured banner: unset any other featured app
+      for(const o of APPS){
+        if(o.id!==j.appId&&o.is_recommended)
+          await api("manage-app","POST",{id:o.id,is_recommended:false});
+      }
+      await loadApps();
+    }
     document.getElementById("pubDoneTxt").textContent=title+(target?" updated to the new version.":" is live.");
-    setStep(3); loadApps(); loadQueue();
+    setStep(3); loadQueue();
   }catch(e){ toast("Publish failed: "+e.message); }
 }
 async function discardCandidate(){ if(!candidateId) return resetUpload();
@@ -659,6 +798,8 @@ async function discardCandidate(){ if(!candidateId) return resetUpload();
 }
 function resetUpload(){ candidateId=null; inspection=null; reuploadTarget=null;
   document.getElementById("apkFile").value="";
+  document.getElementById("rvFeatured").checked=false;
+  reviewShots=[]; renderShots();
   document.getElementById("upProgCard").classList.add("hidden");
   document.getElementById("upProg").style.width="0";
   setStep(0);
@@ -713,6 +854,7 @@ async function resolveCrash(id){
 /* ---------- boot ---------- */
 (function(){
   if(!anonKey) document.getElementById("setupBox").classList.remove("hidden");
+  renderShots();
   if(token&&userEmail){ document.getElementById("authView").classList.add("hidden"); enterApp(); }
   else { document.getElementById("authView").classList.remove("hidden"); }
 })();
