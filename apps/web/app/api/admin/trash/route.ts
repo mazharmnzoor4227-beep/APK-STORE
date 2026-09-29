@@ -1,4 +1,4 @@
-import { adminDatabase, requireOwner } from '../../../../../lib/admin/server';
+import { adminDatabase, requireOwner } from '../../../../lib/admin/server';
 
 export async function GET(request: Request) {
   try {
