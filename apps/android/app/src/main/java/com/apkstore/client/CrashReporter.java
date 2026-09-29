@@ -10,18 +10,22 @@ import java.util.Date;
 import java.util.Locale;
 
 final class CrashReporter {
-    private static final int MAX_STACK = 16000;
+    private static final int MAX_MESSAGE = 2 * 1024;
+    private static final int MAX_STACK = 32 * 1024;
     private static Thread.UncaughtExceptionHandler previous;
+    private static boolean installed;
 
     private CrashReporter() {}
 
     static synchronized void install(Context context) {
-        if (previous != null) return;
+        if (installed) return;
+        installed = true;
         Context app = context.getApplicationContext();
         previous = Thread.getDefaultUncaughtExceptionHandler();
         Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
             try {
-                new CrashQueue(app).enqueue(payload(error, System.currentTimeMillis()).toString(), System.currentTimeMillis());
+                long now = System.currentTimeMillis();
+                new CrashQueue(app).enqueue(payload(error, now).toString(), now);
             } catch (Throwable ignored) {
                 // Crash diagnostics must never replace or mask the original app failure.
             } finally {
@@ -48,7 +52,7 @@ final class CrashReporter {
         error.printStackTrace(new PrintWriter(writer));
         String stack = safe(writer.toString(), MAX_STACK);
         String exception = safe(error.getClass().getName(), 180);
-        String message = safe(error.getMessage(), 1000);
+        String message = safe(error.getMessage(), MAX_MESSAGE);
         return basePayload(CrashFingerprint.of(error), exception, message, stack, occurredAt);
     }
 
@@ -61,7 +65,7 @@ final class CrashReporter {
         return basePayload(
                 CrashFingerprint.ofHandled(safeCategory, actual),
                 "HandledError." + safeCategory,
-                safe(message == null || message.isBlank() ? actual.getMessage() : message, 1000),
+                safe(message == null || message.isBlank() ? actual.getMessage() : message, MAX_MESSAGE),
                 stack,
                 occurredAt);
     }
@@ -76,7 +80,7 @@ final class CrashReporter {
         json.put("device_manufacturer", safe(Build.MANUFACTURER, 80));
         json.put("device_model", safe(Build.MODEL, 120));
         json.put("exception_class", safe(exception, 180));
-        json.put("message", safe(message, 1000));
+        json.put("message", safe(message, MAX_MESSAGE));
         json.put("stack_trace", safe(stack, MAX_STACK));
         json.put("occurred_at", new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", Locale.ROOT).format(new Date(occurredAt)));
         return json;
@@ -84,7 +88,12 @@ final class CrashReporter {
 
     static String safe(String value, int max) {
         if (value == null) return "";
-        String cleaned = value.replaceAll("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]", "");
+        String cleaned = value
+                .replaceAll("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]", "")
+                .replaceAll("(?i)(authorization\\s*:\\s*bearer\\s+)[A-Za-z0-9._~+\\-/=]+", "$1[redacted]")
+                .replaceAll("(?i)(apikey|api_key|token|password|secret)=([^\\s&]+)", "$1=[redacted]")
+                .replaceAll("(?i)[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", "[email]")
+                .replaceAll("(?i)https?://[^\\s)\\]]+", "[url]");
         return cleaned.substring(0, Math.min(max, cleaned.length()));
     }
 }
