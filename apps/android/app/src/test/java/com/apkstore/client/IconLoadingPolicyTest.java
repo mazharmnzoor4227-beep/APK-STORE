@@ -30,12 +30,15 @@ public class IconLoadingPolicyTest {
     }
 
     @Test
-    public void launcherHasLegacyDensityResources() {
-        String[] densities = {"mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi"};
-        for (String density : densities) {
-            Path icon = projectFile("src/main/res/mipmap-" + density + "/ic_launcher.png");
-            assertTrue("Missing launcher icon for " + density, Files.isRegularFile(icon));
-        }
+    public void launcherUsesAdaptiveIconForSupportedMinSdk() throws Exception {
+        Path buildGradle = projectFile("build.gradle");
+        assertTrue("Android module build.gradle must exist", Files.isRegularFile(buildGradle));
+        String gradle = read(buildGradle);
+        assertTrue("Adaptive-only launcher resources require minSdk 26 or newer",
+                gradle.contains("minSdk 26"));
+
+        Path adaptive = projectFile("src/main/res/mipmap-anydpi-v26/ic_launcher.xml");
+        assertTrue("Adaptive launcher icon must exist", Files.isRegularFile(adaptive));
     }
 
     @Test
