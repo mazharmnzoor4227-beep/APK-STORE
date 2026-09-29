@@ -3,6 +3,7 @@ import { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand, Delete
 import { getSignedUrl } from 'npm:@aws-sdk/s3-request-presigner@3.901.0';
 import { parseApkFile, parseApkUrl } from 'npm:simple-apk-parser@0.1.2';
 import { createHash } from 'node:crypto';
+import { hasRequiredIcon, managedMediaPath } from './inspection-policy.mjs';
 
 const allowedOrigins = [
   'https://apk-store-mazhar.mazharmanzoor4117.chatgpt.site',
@@ -114,6 +115,11 @@ Deno.serve(async (request) => {
         const iconKey = `${id}.${parsed.iconBlob.type.split('/')[1] === 'jpeg' ? 'jpg' : parsed.iconBlob.type.split('/')[1]}`;
         const { error } = await db.storage.from('app-icons').upload(iconKey, parsed.iconBlob, { contentType: parsed.iconBlob.type, upsert: true });
         if (!error) Object.assign(inspection, { iconUrl: db.storage.from('app-icons').getPublicUrl(iconKey).data.publicUrl });
+      }
+      if (!hasRequiredIcon(inspection)) {
+        const reason = 'APK launcher icon could not be extracted. Upload a valid APK with a launcher icon or use the owner icon replacement flow before publishing.';
+        await db.from('upload_candidates').update({ error: reason }).eq('id', id).eq('owner_id', user.id).eq('status', 'uploaded');
+        return json({ error: reason }, 422);
       }
       const { error } = await db.from('upload_candidates').update({ status: 'inspected', inspection, error: null }).eq('id', id).eq('owner_id', user.id).eq('status', 'uploaded');
       if (error) throw error;
@@ -292,10 +298,21 @@ Deno.serve(async (request) => {
     }
     if (request.method === 'GET' && route === 'crashes') {
       const { data, error } = await db.from('crash_reports')
-        .select('id,app_version,version_code,android_version,device_model,message,stack,screen,device_id,created_at')
-        .order('created_at', { ascending: false }).limit(200);
+        .select('id,version_name,version_code,android_sdk,device_model,message,exception_class,stack_trace,occurred_at,received_at')
+        .order('occurred_at', { ascending: false }).limit(200);
       if (error) throw error;
-      return json({ crashes: data || [] });
+      return json({ crashes: (data || []).map(row => ({
+        id: row.id,
+        app_version: row.version_name || '',
+        version_code: row.version_code,
+        android_version: row.android_sdk ? `SDK ${row.android_sdk}` : '',
+        device_model: row.device_model || '',
+        message: row.message || row.exception_class || 'Unknown error',
+        stack: row.stack_trace || row.exception_class || '',
+        screen: '',
+        device_id: '',
+        created_at: row.occurred_at || row.received_at,
+      })) });
     }
     if (request.method === 'POST' && route === 'resolve-crash') {
       const { id } = await request.json();
@@ -331,7 +348,7 @@ async function removeApk(objectKey: string): Promise<void> {
 }
 async function removeMedia(bucket: 'app-icons' | 'app-screenshots', urls: string[]): Promise<void> {
   const prefix = db.storage.from(bucket).getPublicUrl('').data.publicUrl;
-  const paths = urls.filter(Boolean).filter(url => url.startsWith(prefix)).map(url => url.slice(prefix.length)).filter(path => /^(?:admin\/[0-9a-f-]{36}|[0-9a-f-]{36})\.(?:png|jpg|webp)$/.test(path));
+  const paths = urls.filter(Boolean).filter(url => url.startsWith(prefix)).map(url => url.slice(prefix.length)).filter(path => managedMediaPath(path));
   if (!paths.length) return;
   const { error } = await db.storage.from(bucket).remove(paths);
   if (error) throw new Error(bucket+' deletion failed: '+error.message);
