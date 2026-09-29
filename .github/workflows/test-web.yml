@@ -1,0 +1,34 @@
+name: Test APK STORE web
+on:
+  push:
+    branches: [fix/full-audit-20260929, main]
+    paths:
+      - 'apps/web/**'
+      - '.github/workflows/test-web.yml'
+  workflow_dispatch:
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - name: Unit tests
+        run: npm run test:unit
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_test
+          SUPABASE_SERVICE_ROLE_KEY: test-service-role
+          ADMIN_EMAIL: owner@example.com
+        run: npm run build
