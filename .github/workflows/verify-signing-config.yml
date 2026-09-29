@@ -1,0 +1,30 @@
+name: Verify permanent signing configuration
+on:
+  push:
+    branches: [fix/full-audit-20260929]
+    paths: ['.github/workflows/verify-signing-config.yml']
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Verify configured keystore matches permanent certificate
+        env:
+          KEYSTORE_B64: ${{ secrets.APK_STORE_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.APK_STORE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.APK_STORE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.APK_STORE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_B64" || { echo 'APK_STORE_KEYSTORE_B64 is not configured'; exit 20; }
+          test -n "$STORE_PASSWORD" || { echo 'APK_STORE_KEYSTORE_PASSWORD is not configured'; exit 21; }
+          test -n "$KEY_ALIAS" || { echo 'APK_STORE_KEY_ALIAS is not configured'; exit 22; }
+          test -n "$KEY_PASSWORD" || { echo 'APK_STORE_KEY_PASSWORD is not configured'; exit 23; }
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/apk-store-release.jks"
+          ACTUAL=$(keytool -list -v -keystore "$RUNNER_TEMP/apk-store-release.jks" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" | sed -n 's/^[[:space:]]*SHA256: //p' | head -1 | tr '[:upper:]' '[:lower:]' | tr -d ': ')
+          test "$ACTUAL" = '4c8a4d67022c354b62db264461e0d4f9cc16f6ea3c0cbce204fb7a9f7708ac60'
+          keytool -keypasswd -keystore "$RUNNER_TEMP/apk-store-release.jks" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" -keypass "$KEY_PASSWORD" -new "$KEY_PASSWORD" >/dev/null
+          echo 'Permanent signing configuration is valid.'
