@@ -1413,9 +1413,7 @@ public class MainActivity extends Activity {
         lp.setMargins(0, 0, dp(8), 0); row.addView(chip, lp);
     }
     private boolean trustedImage(String url) {
-        return url.startsWith(BuildConfig.SUPABASE_URL + "/storage/v1/object/public/app-screenshots/") ||
-                url.startsWith(BuildConfig.SUPABASE_URL + "/storage/v1/object/public/app-icons/") ||
-                (url.startsWith("https://apk-store-mazhar.mazharmanzoor4117.chatgpt.site/") && url.endsWith(".png"));
+        return MediaUrlPolicy.trusted(url, BuildConfig.SUPABASE_URL);
     }
     private ImageView remoteImage(String url) {
         ImageView image = new ImageView(this); image.setScaleType(ImageView.ScaleType.FIT_CENTER);
