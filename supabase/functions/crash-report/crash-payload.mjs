@@ -51,7 +51,7 @@ export function normalizeCrashPayload(input, now = Date.now()) {
   if (!Number.isFinite(occurredAtMs) || occurredAtMs < now - 7 * 24 * 60 * 60 * 1000 || occurredAtMs > now + 10 * 60 * 1000)
     throw new Error('Invalid crash timestamp');
 
-  const exceptionClass = clipped(input.exception_class, 256);
+  const exceptionClass = clipped(input.exception_class, 180);
   const stackTrace = redact(input.stack_trace, 16 * 1024);
   if (!exceptionClass || !stackTrace) throw new Error('Missing crash details');
 
@@ -61,8 +61,8 @@ export function normalizeCrashPayload(input, now = Date.now()) {
     version_code: versionCode,
     version_name: clipped(input.version_name, 64),
     android_sdk: androidSdk,
-    device_manufacturer: redact(input.device_manufacturer, 128),
-    device_model: redact(input.device_model, 128),
+    device_manufacturer: redact(input.device_manufacturer, 80),
+    device_model: redact(input.device_model, 120),
     exception_class: exceptionClass,
     message: redact(input.message, 1024),
     stack_trace: stackTrace,
