@@ -101,6 +101,9 @@ public class MainActivity extends Activity {
     private Typeface symbolTypeface;
     private final java.util.HashSet<String> previousHomeSlugs = new java.util.HashSet<>();
     private final long randomOrderSeed = new java.security.SecureRandom().nextLong();
+    private final BulkUpdateQueue bulkUpdateQueue = new BulkUpdateQueue();
+    private final HashMap<Integer, Integer> tabScrollY = new HashMap<>();
+    private ScrollView activeTabScroll;
 
     private class ProgressRing extends View {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -222,6 +225,7 @@ public class MainActivity extends Activity {
             if (!"Cancelled".equals(result))
                 CrashReporter.recordHandled(this, "install_failed", result, new IllegalStateException(result));
         }
+        finishBulkUpdate(slug);
     }
     private TextView text(String value, int size, int color, boolean bold) {
         TextView t = new TextView(this);
@@ -332,6 +336,7 @@ public class MainActivity extends Activity {
         });
     }
     private void showTab(int selected) {
+        if (activeTabScroll != null && detailApp == null) tabScrollY.put(tab, activeTabScroll.getScrollY());
         detailApp = null;
         legalPage = false;
         tab = selected;
@@ -368,6 +373,7 @@ public class MainActivity extends Activity {
         root.addView(header, new LinearLayout.LayoutParams(-1, dp(58)));
 
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true);
+        activeTabScroll = scroll;
         body = vertical(); body.setPadding(dp(16), dp(7), dp(16), dp(24));
         scroll.addView(body);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -386,12 +392,14 @@ public class MainActivity extends Activity {
             if (pending.length() > 0) {
                 TextView all = text("Update all", 15, green(), true);
                 all.setGravity(Gravity.CENTER); all.setMinHeight(dp(48));
-                all.setOnClickListener(v -> { for (int i = 0; i < pending.length(); i++) startDownload(pending.optJSONObject(i)); });
+                all.setOnClickListener(v -> startUpdateAll(pending));
                 body.addView(all);
             }
             space(body, 18);
         }
         render();
+        int restoreY = tabScrollY.getOrDefault(selected, 0);
+        scroll.post(() -> scroll.scrollTo(0, restoreY));
         if (catalog.length() == 0) load();
         if (!firstScreen && ValueAnimator.areAnimatorsEnabled()) {
             header.setAlpha(0.65f); header.setTranslationY(-dp(8));
@@ -549,9 +557,8 @@ public class MainActivity extends Activity {
             if (pending.length() == 0) empty("You're up to date", "Installed catalog apps have no new releases.");
             else {
                 TextView updateAll = text("Update all", 15, green(), true);
-                updateAll.setMinHeight(dp(48)); updateAll.setOnClickListener(v -> {
-                    for (int i = 0; i < pending.length(); i++) startDownload(pending.optJSONObject(i));
-                }); body.addView(updateAll);
+                updateAll.setMinHeight(dp(48)); updateAll.setOnClickListener(v -> startUpdateAll(pending));
+                body.addView(updateAll);
                 for (int i = 0; i < pending.length(); i++) {
                     JSONObject app = pending.optJSONObject(i);
                     if (app != null) renderUpdateRow(app);
@@ -1345,8 +1352,9 @@ public class MainActivity extends Activity {
         top.addView(heart, new LinearLayout.LayoutParams(dp(56), dp(52)));
         TextView share = action("↗", "Share app");
         share.setOnClickListener(v -> {
+            String appUrl = "https://apk-store-mazhar.mazharmanzoor4117.chatgpt.site/apps/" + Uri.encode(app.optString("slug"));
             Intent intent = new Intent(Intent.ACTION_SEND).setType("text/plain")
-                    .putExtra(Intent.EXTRA_TEXT, "https://apk-store-mazhar.mazharmanzoor4117.chatgpt.site/  ·  " + app.optString("title"));
+                    .putExtra(Intent.EXTRA_TEXT, app.optString("title") + " · " + appUrl);
             startActivity(Intent.createChooser(intent, "Share app"));
         });
         top.addView(share, new LinearLayout.LayoutParams(dp(52), dp(52)));
@@ -1655,6 +1663,7 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             downloadErrors.put(slug, "Download could not start: " + e.getMessage());
             CrashReporter.recordHandled(this, "download_start_failed", downloadErrors.get(slug), e);
+            finishBulkUpdate(slug);
             refreshDetail();
         }
     }
@@ -1671,11 +1680,11 @@ public class MainActivity extends Activity {
             JSONObject candidate = catalog.optJSONObject(i);
             if (candidate != null && slug.equals(candidate.optString("slug"))) { app = candidate; break; }
         }
-        if (app == null) { downloadErrors.put(slug, "Listing unavailable. Refresh the catalog."); refreshDetail(); return; }
+        if (app == null) { downloadErrors.put(slug, "Listing unavailable. Refresh the catalog."); finishBulkUpdate(slug); refreshDetail(); return; }
         JSONObject release = app.optJSONObject("release");
-        if (release == null) { downloadErrors.put(slug, "Release metadata unavailable. Refresh the catalog."); refreshDetail(); return; }
+        if (release == null) { downloadErrors.put(slug, "Release metadata unavailable. Refresh the catalog."); finishBulkUpdate(slug); refreshDetail(); return; }
         String path = downloadPaths.get(slug);
-        if (path == null) { downloadErrors.put(slug, "APK file is missing. Download again."); refreshDetail(); return; }
+        if (path == null) { downloadErrors.put(slug, "APK file is missing. Download again."); finishBulkUpdate(slug); refreshDetail(); return; }
         final JSONObject target = app;
         worker.execute(() -> {
             try {
@@ -1702,6 +1711,7 @@ public class MainActivity extends Activity {
                     downloadErrors.put(slug, error.getMessage() == null ? "APK verification failed." : error.getMessage());
                     completedDownloads.remove(slug);
                     ((DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE)).remove(id);
+                    finishBulkUpdate(slug);
                     refreshDetail();
                 });
             }
@@ -1716,6 +1726,36 @@ public class MainActivity extends Activity {
         history.record(slug, slug, "Cancelled", "", id == null ? -1 : id, "", 0);
         downloadProgress.remove(slug); refreshDetail();
         downloadSizes.remove(slug);
+        finishBulkUpdate(slug);
+    }
+    private void startUpdateAll(JSONArray pending) {
+        java.util.ArrayList<String> slugs = new java.util.ArrayList<>();
+        for (int i = 0; i < pending.length(); i++) {
+            JSONObject app = pending.optJSONObject(i);
+            if (app != null && !app.optString("slug").isBlank()) slugs.add(app.optString("slug"));
+        }
+        bulkUpdateQueue.reset(slugs);
+        startNextBulkUpdate();
+    }
+    private void startNextBulkUpdate() {
+        String slug = bulkUpdateQueue.startNext();
+        if (slug == null) return;
+        JSONObject app = null;
+        for (int i = 0; i < catalog.length(); i++) {
+            JSONObject candidate = catalog.optJSONObject(i);
+            if (candidate != null && slug.equals(candidate.optString("slug"))) { app = candidate; break; }
+        }
+        if (app == null || !updateAvailable(app)) {
+            bulkUpdateQueue.complete(slug);
+            handler.post(this::startNextBulkUpdate);
+            return;
+        }
+        startDownload(app);
+    }
+    private void finishBulkUpdate(String slug) {
+        if (!bulkUpdateQueue.isActive(slug)) return;
+        bulkUpdateQueue.complete(slug);
+        handler.post(this::startNextBulkUpdate);
     }
     private void pollDownload(String slug) {
         Runnable previous = downloadPolls.remove(slug);
@@ -1789,7 +1829,10 @@ public class MainActivity extends Activity {
                     installResultPoll = null;
                 } else if (android.os.SystemClock.uptimeMillis() < deadline) {
                     handler.postDelayed(this, 700);
-                } else installResultPoll = null;
+                } else {
+                    installResultPoll = null;
+                    finishBulkUpdate(slug);
+                }
             }
         };
         handler.postDelayed(installResultPoll, 700);
