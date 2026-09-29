@@ -17,5 +17,6 @@ supabase/.temp/
 *.aab
 **/local.properties
 **/build/
+**/.gradle/
 release-signing/
 *signing-password*
