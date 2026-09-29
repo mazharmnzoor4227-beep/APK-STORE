@@ -1,21 +1,16 @@
-import { randomUUID } from 'node:crypto';
-import { adminDatabase, requireOwner } from '../../../../lib/admin/server';
+import { requireOwner } from '../../../../lib/admin/server';
+import { callAdminUploadEdge } from '../../../../lib/admin/admin-upload-edge';
 import { createCandidateUpload } from '../../../../lib/apk/inspection';
 
 export async function POST(request: Request) {
   try {
     const ownerId = await requireOwner(request);
     const input = await request.json() as { filename?: string; byteSize?: number };
-    const db = adminDatabase();
     const result = await createCandidateUpload({ ownerId, filename: input.filename ?? '', byteSize: input.byteSize ?? 0 }, {
       create: async ({ filename, byteSize }) => {
-        const id = randomUUID();
-        const objectKey = `candidates/${id}.apk`;
-        const { data, error } = await db.from('upload_candidates').insert({ id, owner_id: ownerId, filename, byte_size: byteSize, object_key: objectKey }).select('id').single();
-        if (error || !data) throw new Error('Could not create upload');
-        const signed = await db.storage.from('apk-files').createSignedUploadUrl(objectKey);
-        if (signed.error || !signed.data) throw new Error('Could not prepare upload');
-        return { id, signedUrl: signed.data.signedUrl };
+        const edge = await callAdminUploadEdge<{ id?: string; signedUrl?: string; method?: string; error?: string }>(request, 'start', { filename, byteSize });
+        if (!edge.ok || !edge.data.id || !edge.data.signedUrl) throw new Error(edge.data.error || 'Could not prepare upload');
+        return { id: edge.data.id, signedUrl: edge.data.signedUrl };
       },
     });
     return Response.json(result, { status: 201 });
