@@ -233,6 +233,13 @@ footer{margin-top:56px;border-top:1px solid var(--border)}
 .fb{border-top:1px solid var(--border);padding:16px 0;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:12px;color:var(--faint)}
 
 /* modal */
+.lbg{position:fixed;inset:0;background:rgba(0,0,0,.93);z-index:500;display:none;align-items:center;justify-content:center;flex-direction:column}
+.lbg.show{display:flex}
+.lbg img{max-width:92vw;max-height:76vh;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,.5)}
+.lclose{position:absolute;top:14px;right:14px;width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.16);color:#fff;border:0;font-size:19px;cursor:pointer;line-height:1}
+.lprev,.lnext{position:absolute;top:50%;transform:translateY(-50%);width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.16);color:#fff;border:0;font-size:26px;cursor:pointer;line-height:1}
+.lprev{left:10px}.lnext{right:10px}
+.lcount{color:#fff;margin-top:14px;font-size:13px;opacity:.75}
 .mbg{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px;opacity:0;pointer-events:none;transition:opacity .25s}
 .mbg.show{opacity:1;pointer-events:auto}
 .modal{background:var(--surface);border:1px solid var(--border);border-radius:20px;max-width:380px;width:100%;padding:30px 26px;text-align:center;transform:translateY(14px);transition:transform .25s}
@@ -328,6 +335,7 @@ footer{margin-top:56px;border-top:1px solid var(--border)}
   <button data-n="updates" onclick="go('updates')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-2.6-6.4M21 4v5h-5"/></svg>Updates</button>
 </nav>
 
+<div class="lbg" id="shotBox" onclick="if(event.target===this)closeShot()"><button class="lclose" onclick="closeShot()" aria-label="Close">✕</button><button class="lprev" onclick="shotNav(-1)" aria-label="Previous">‹</button><img id="shotImg" alt="Screenshot"><button class="lnext" onclick="shotNav(1)" aria-label="Next">›</button><div class="lcount" id="shotCount"></div></div>
 <div class="mbg" id="installModal"><div class="modal">
   <div id="imMain">
     <img src="data:image/webp;base64,UklGRlYFAABXRUJQVlA4IEoFAADwJgCdASrAAMAAPpVKoEslpKMhp1TYuLASiWNu3V4ZRdmSJc7Ttnv/X0aj6LZT2k/Z3/h8fM82cQKpO+RL7ucJltFO+W70gwuCrC5GEL2QuvXz0k6WZgkrWgB4GXcN7BlRVA2sKDEUVj9zLtEq5ljofnIwHtnQHrh9Osw5kkX7GsxmnZAKeJHj2OhcLYbUx02Iaj/eAcm89kxFMLApXssHh4Pj3asrNn9jwKDiJdmAK6aKCDirLnm2xVZ66NElOptldwA4J5F0LGXEBQStMcW62DCBOEFpn5f1a6Oujh3H7zfgsm7DRBcLByaZS43cPpnL/sUBIl/kyG5MelGkGG47/7apNnV/maJ7k2TgIU6Ofx3z6ay5L7uWTXYTriNQXAE+W0AulgJ2zDs4Ar+no2rDQa8v6/NVq8nHDblh0Q2cAAD++COVPKZmtY4dpNGAaJDtq0ioA4Plz2xe217WsV3PZfnneqGd6xdQJoWuN2KWnx/WK8e1MxoY4fVT2//bh2EkxsQfPicuKj5LtBYFKV+7tkpJlJk6xLczS/+P74HHEqJch9rj77fXSzAPks2Cu47JVmd5wGrHVQs9RO+UWBDbhLQxU0Sv2lVPl9m9MYs2zB7I9RRF73ZHu9fI1gq/fldZ3n+C/z4YhqX3OTSOJaC13V4wYOxNSiEMLKFniDehGen4EGZLGUSBsSTohtCql0jAhWyExVtKyst8Rx5Ync4lUl3giPDId1LKKsxYcx4mo4lacqVPZi/81F0Q6JAscILT8rvbUOpN9D/SS1Ew5jV+J84Gx2Zg3UEjpIPKU0wtAeJwHkRU893L2/zJJ9r2LcDBiW+7F6Si6lvberVlQZSTJ8OSuGdxWUpT9OeNd0hScesvodLfNlbuYG5kA2OdAB0O4ZY2DH1ZuUKACLNVSSqmf/mH8df8h9G1Xt1cXONv+mDnE7Wu/3CfBR34ULjHUl3BtMUH0iJmOWIE4424Ox2FZCj+DrBjbfXnEYH8jl91t2mb07CmQIYfsd1nTRghJbzEWEy8iIsFI8qrEYPhBZ78cuJ0mzlqL5BxS2ctM87ce9VP8GSkfOKfhDYjHsKvr780Oftmp/jvns7LPBKPP5poaekoNZKXD/kdJhH2X4YCRDvL/RofuKKnUDzWWdaN/ktkEo+l/Gt4FTITwyQPSRE/sVeb9cF0ZkX1aHaDT8v/SjdYRFE/zBm01w0lnTjzMVpNPOLBXoDdB5gn6n5jPGKDuffhhpCN12+8SbvwFdA3VSJol6gB9fuxEeeLMcVSWC1HQdzH53Zq9F4Zya3LrojVW+vVfl2M8D1Z7Ho5z+v/IgcbKGSPzhwjNZDzFji7lnCENQAvWSVrF0AGL/gRluBM/bHsXebEfT/qtl+Gul+9AoXyvgW53e2L8iYrVH8ErRSGzn4az3NQjOzB6R66VQb9vogKFElkNrGQkECTtnukfd9MS7xz88uP/bg+Egu9ULuD7aSmqfm2xRM703CagRWDYQXNxdvCvVBFMVbMR71LsQuD4eue5F9BrvwR8cL0i+Y8GGuspCY2JHhqEXZhOFxUJFps28SX7P5oo3h2Zh5Jqe2+UUV48QvekvwMqgPsJ8qOXhW+p3vVwvqMVeCtB44I/3U9Bu+ENBW5W/N1T6opXMWsNGOP7J7iJPGC7GDWqn2X6y7IwBTN2kyG4oK4aq9L39djFEa1eZZML+9TMepVuAht4Fmp4+IEz+dhn8VDHJD4JhddmOJl3FvaA3PoqMcxapGfver1BtfjplwAAA4ePK/Tlws5SrlPcPcPcSMFLUfQwIifnAy8oAAA" id="imImg" alt="APK STORE">
@@ -400,6 +408,15 @@ applyTheme(localStorage.getItem("as_theme")||"dark");
 /* banner + modal */
 setTimeout(()=>{ if(!localStorage.getItem("as_banner")&&APPS.some(a=>a.slug==="apk-store-client")) $("installBanner").classList.add("show"); },1500);
 function dismissBanner(){ $("installBanner").classList.remove("show"); localStorage.setItem("as_banner","1"); }
+let CUR_SHOTS=[],CUR_SHOT=0;
+function openShot(i){ if(!CUR_SHOTS.length) return; CUR_SHOT=((i%CUR_SHOTS.length)+CUR_SHOTS.length)%CUR_SHOTS.length; showShot(); $("shotBox").classList.add("show"); document.body.style.overflow="hidden"; }
+function showShot(){ $("shotImg").src=CUR_SHOTS[CUR_SHOT]; $("shotCount").textContent=(CUR_SHOT+1)+" / "+CUR_SHOTS.length; }
+function shotNav(d){ if(!CUR_SHOTS.length) return; CUR_SHOT=(CUR_SHOT+d+CUR_SHOTS.length)%CUR_SHOTS.length; showShot(); }
+function closeShot(){ $("shotBox").classList.remove("show"); document.body.style.overflow=""; }
+(function(){ var sx=0; var b=$("shotBox"); if(!b) return;
+ b.addEventListener("touchstart",function(e){ sx=e.touches[0].clientX; },{passive:true});
+ b.addEventListener("touchend",function(e){ var dx=e.changedTouches[0].clientX-sx; if(Math.abs(dx)>40) shotNav(dx<0?1:-1); },{passive:true}); })();
+function sdkName(n){ n=+n||0; var m={21:"5.0",23:"6.0",24:"7.0",25:"7.1",26:"8.0",27:"8.1",28:"9",29:"10",30:"11",31:"12",32:"12L",33:"13",34:"14",35:"15"}; return m[n]?("Android "+m[n]+"+"):("API "+n+"+"); }
 function openInstallModal(){ const c=APPS.find(a=>a.slug==="apk-store-client");
  const img=$("imImg"),btn=$("imBtn");
  if(c){ if(img&&c.icon) img.src=c.icon; if(btn) btn.textContent="Download APK \u00b7 v"+c.ver+" \u00b7 "+c.size; }
@@ -412,9 +429,8 @@ function startAppDownload(){ location.href=CLIENT_DL; }
 function openDrawer(){ $("drawer").classList.add("show"); $("scrim").classList.add("show"); }
 function closeDrawer(){ $("drawer").classList.remove("show"); $("scrim").classList.remove("show"); }
 function syncNav(){ const n=route.indexOf("app:")===0?"":route; document.querySelectorAll(".nav a,.mnav button").forEach(e=>e.classList.toggle("on",e.dataset.n===n)); }
-function navPush(r){ route=r; syncNav();
- try{ history.pushState({route:r},"","#/"+encodeURIComponent(r)); }catch(e){}
- render(); window.scrollTo({top:0}); }
+function navPush(r){ try{ history.replaceState({route:route,scroll:window.scrollY},""); history.pushState({route:r,scroll:0},"","#/"+encodeURIComponent(r)); }catch(e){}
+ route=r; syncNav(); render(); window.scrollTo(0,0); }
 function go(r){ navPush(r); }
 function goCat(c){ activeCat=c; go("apps"); }
 function doSearch(){ goSearch($("q").value.trim()); }
@@ -481,9 +497,9 @@ function trackDl(a){ if(!a||a.code==null) return; const d=getDls().filter(x=>x.s
 function dlApp(id){ const a=APPS.find(x=>x.id===id); if(!a||!a.dl) return; trackDl(a); location.href=a.dl; }
 
 /* views */
-function cardHTML(a){ return '<div class="card" onclick="openApp(\''+a.id+'\')">'+im(a,"width:56px;height:56px;border-radius:14px;margin-bottom:10px")+
+function cardHTML(a,toPage){ return '<div class="card" onclick="openApp(\''+a.id+'\')">'+im(a,"width:56px;height:56px;border-radius:14px;margin-bottom:10px")+
  '<h3>'+a.title+'</h3><div class="c">'+a.cat+'</div><div class="m">'+a.ver+' · '+a.size+'</div>'+
- '<button class="g" onclick="event.stopPropagation();dlApp(\''+a.id+'\')">Get</button></div>'; }
+ '<button class="g" onclick="event.stopPropagation();'+(toPage?("openApp(\\'"+a.id+"\\')"):("dlApp(\\'"+a.id+"\\')"))+'">Get</button></div>'; }
 function vHome(){ const f=APPS.find(a=>a.id===FEATURED_ID)||APPS[0];
  let h='<div class="hero" onclick="openApp(\''+f.id+'\')" style="cursor:pointer">'+im(f,"width:96px;height:96px;border-radius:22px;flex-shrink:0;box-shadow:var(--shadow)")+
  '<div class="hero-t"><div class="kick">Featured app</div><h1>'+f.title+'</h1><p>'+shortDesc(f.desc)+'</p>'+
@@ -491,7 +507,7 @@ function vHome(){ const f=APPS.find(a=>a.id===FEATURED_ID)||APPS[0];
  '<div class="row" onclick="event.stopPropagation()"><button class="btn-p" onclick="dlApp(\''+f.id+'\')">Download APK</button><button class="btn-s" onclick="openApp(\''+f.id+'\')">Details</button></div></div></div>';
  h+='<div class="trustbar"><div><i>✓</i><div><b>Signature-verified</b><span>Every APK checked before publishing</span></div></div><div><i>⚡</i><div><b>Fast downloads</b><span>Direct links, no speed limits</span></div></div><div><i>◈</i><div><b>No account needed</b><span>Download freely, no sign-up</span></div></div></div>';
  h+='<div class="cats">'+CATS.map(c=>'<button class="cat'+(c==="All"?" on":"")+'" onclick="goCat(\''+c+'\')">'+c+'</button>').join("")+'</div>';
- h+='<div class="sec"><div class="sec-h"><h2>Trending now</h2><a href="#" onclick="go(\'apps\');return false">See all</a></div><div class="shelf">'+APPS.map(cardHTML).join("")+'</div></div>';
+ h+='<div class="sec"><div class="sec-h"><h2>Trending now</h2><a href="#" onclick="go(\'apps\');return false">See all</a></div><div class="shelf">'+APPS.map(a=>cardHTML(a,true)).join("")+'</div></div>';
  h+='<div class="sec"><div class="sec-h"><h2>Recently added</h2><a href="#" onclick="go(\'apps\');return false">See all</a></div><div class="shelf">'+
   APPS.map(a=>'<div class="wcard" onclick="openApp(\''+a.id+'\')">'+im(a,"width:60px;height:60px;border-radius:15px;flex-shrink:0")+
   '<div><h3>'+a.title+'</h3><div class="c">'+a.cat+'</div><div class="d">'+shortDesc(a.desc)+'</div><div class="m">'+(a.ver?"v"+a.ver:"")+(a.size?" · "+a.size:"")+'</div></div></div>').join("")+'</div></div>';
@@ -501,7 +517,7 @@ function vHome(){ const f=APPS.find(a=>a.id===FEATURED_ID)||APPS[0];
  Object.keys(seen).slice(0,6).forEach(d=>{ h+='<div class="udate">'+d+'</div>'+seen[d].map(a=>
   '<div class="urow" onclick="openApp(\''+a.id+'\')">'+im(a,"width:46px;height:46px;border-radius:11px;flex-shrink:0")+
   '<div class="t"><b>'+a.title+'</b><span>'+(a.ver?"v"+a.ver:"")+(a.size?" · "+a.size:"")+' · '+a.cat+'</span></div>'+
-  '<button class="g" onclick="event.stopPropagation();dlApp(\''+a.id+'\')">Get</button></div>').join(""); });
+  '<button class="g" onclick="event.stopPropagation();openApp(\''+a.id+'\')">Get</button></div>').join(""); });
  h+='</div>';
  h+='<div class="sec"><div class="sec-h"><h2>All apps</h2><a href="#" onclick="go(\'apps\');return false">See all</a></div><div class="grid">'+
   APPS.map(a=>'<div class="gcard" onclick="openApp(\''+a.id+'\')">'+im(a,"width:52px;height:52px;border-radius:13px;margin-bottom:10px")+'<h3>'+a.title+'</h3><div class="c">'+a.cat+'</div><div class="m">'+a.ver+' · '+a.size+'</div></div>').join("")+'</div></div>';
@@ -536,8 +552,10 @@ function vSearch(){ const svg='<svg width="20" height="20" viewBox="0 0 24 24" f
  h+='<div id="sres">'+searchResultsHTML(searchQuery)+'</div>';
  return h; }
 function vApp(id){ const a=APPS.find(x=>x.id===id); if(!a)return vHome();
+ CUR_SHOTS=a.shots||[];
  const hist=REL_CACHE[a.appid]||[];
  const rel=hist.length?hist.map((r,i)=>({v:r.version_name,s:fmtSize(r.byte_size),d:fmtDate(r.created_at),cur:i===0,notes:r.release_notes||""})):[{v:a.ver,s:a.size,d:a.updated,cur:1,notes:a.notes||""}];
+ const minSdk=(hist.length&&hist[0].min_sdk)?hist[0].min_sdk:"";
  let h='<div class="crumb"><a href="#" onclick="go(\'home\');return false">Home</a> / <a href="#" onclick="goCat(\''+a.cat+'\');return false">'+a.cat+'</a> / '+a.title+'</div>';
  h+='<div class="dhead">'+im(a,"width:100px;height:100px;border-radius:24px;flex-shrink:0;box-shadow:var(--shadow)")+
  '<div class="di"><h1>'+a.title+'</h1><div class="dev">'+a.cat+'</div>'+
@@ -545,11 +563,11 @@ function vApp(id){ const a=APPS.find(x=>x.id===id); if(!a)return vHome();
  '<div class="row c"><button class="btn-p" onclick="dlApp(\''+a.id+'\')">Download APK · v'+a.ver+' · '+a.size+'</button><button class="btn-s" onclick="openInstallModal()">Get the App</button></div>'+
  '<div><span class="scan"><b>✓ Scan result: Secure</b> — no malware · signature verified</span></div></div></div>';
  h+='<div class="dgrid"><div>';
- h+='<div class="panel"><h2>Screenshots</h2>'+(a.shots.length?'<div class="shots">'+a.shots.map(s=>'<div class="shot"><img src="'+escAttr(s)+'" loading="lazy" alt="Screenshot" style="width:100%;height:100%;object-fit:cover"></div>').join("")+'</div>':'<p style="color:var(--muted);font-size:13.5px;margin:0">No screenshots yet.</p>')+'</div>';
+ h+='<div class="panel"><h2>Screenshots</h2>'+(a.shots.length?'<div class="shots">'+a.shots.map((s,i)=>'<div class="shot" onclick="openShot('+i+')" style="cursor:zoom-in"><img src="'+escAttr(s)+'" loading="lazy" alt="Screenshot" style="width:100%;height:100%;object-fit:cover"></div>').join("")+'</div>':'<p style="color:var(--muted);font-size:13.5px;margin:0">No screenshots yet.</p>')+'</div>';
  h+='<div class="panel"><h2>About this app</h2><p>'+a.desc+'</p></div>';
  h+='<div class="panel"><h2>Version history</h2>'+rel.map(r=>'<div class="vrow"><div class="v"><b>v'+r.v+(r.cur?' <span class="tag">LATEST</span>':"")+'</b><span>'+r.s+' · '+r.d+'</span></div><button class="g" onclick="dlApp(\''+a.id+'\')">Get</button></div>').join("")+'</div>';
  h+='</div><div>';
- h+='<div class="panel"><h2>App info</h2><table class="it"><tr><td>Package</td><td><code>'+a.pkg+'</code></td></tr><tr><td>Version</td><td>'+a.ver+' ('+a.code+')</td></tr><tr><td>Size</td><td>'+a.size+'</td></tr><tr><td>Category</td><td>'+a.cat+'</td></tr><tr><td>Updated</td><td>'+a.updated+'</td></tr><tr><td>SHA-256</td><td><code style="font-size:11px;word-break:break-all">'+(a.sha?a.sha.slice(0,32)+"…":"—")+'</code></td></tr><tr><td>Signature</td><td style="color:var(--green)">Verified</td></tr></table></div>';
+ h+='<div class="panel"><h2>App info</h2><table class="it"><tr><td>Package</td><td><code>'+a.pkg+'</code></td></tr><tr><td>Version</td><td>'+a.ver+' ('+a.code+')</td></tr><tr><td>Size</td><td>'+a.size+'</td></tr><tr><td>Category</td><td>'+a.cat+'</td></tr><tr><td>Updated</td><td>'+a.updated+'</td></tr>'+(minSdk?'<tr><td>Android</td><td>'+sdkName(minSdk)+'</td></tr>':"")+'<tr><td>SHA-256</td><td><code style="font-size:11px;word-break:break-all">'+(a.sha?a.sha.slice(0,32)+"…":"—")+'</code></td></tr><tr><td>Signature</td><td style="color:var(--green)">Verified</td></tr></table></div>';
  h+='<div class="panel"><h2>Get the app</h2><p style="margin-bottom:12px">One-tap installs and automatic updates on your phone.</p><button class="btn-p" style="width:100%" onclick="startAppDownload()">Download APK STORE</button></div>';
  h+='</div></div>';
  const more=APPS.filter(x=>x.id!==a.id).slice(0,4);
@@ -564,8 +582,8 @@ function render(){ const st=stateHTML(); if(st){ $("main").innerHTML=st; return;
  else if(route==="updates")h=vUpdates(); else if(route==="search")h=vSearch();
  else if(route.indexOf("app:")===0)h=vApp(route.slice(4));
  $("main").innerHTML=h; fixCatScroll(); }
-window.addEventListener("popstate",function(e){ const r=(e.state&&e.state.route)||decodeURIComponent((location.hash||"").replace(/^#\/?/,""))||"home";
- route=r; syncNav(); render(); window.scrollTo({top:0}); });
+window.addEventListener("popstate",function(e){ const st=e.state||{}; const r=st.route||decodeURIComponent((location.hash||"").replace(/^#\/?/,""))||"home";
+ route=r; syncNav(); render(); const sy=st.scroll||0; requestAnimationFrame(function(){ window.scrollTo(0,sy); }); });
 (function(){ const hr=decodeURIComponent((location.hash||"").replace(/^#\/?/,"")); if(hr) route=hr;
  try{ history.replaceState({route:route},"","#/"+encodeURIComponent(route)); }catch(e){} })();
 render(); loadCatalog();
