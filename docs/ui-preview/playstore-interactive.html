@@ -1,0 +1,324 @@
+<style>
+.pw{box-sizing:border-box;font-family:Roboto,system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;flex-direction:column;align-items:center;padding:10px 4px 4px;max-width:100%}
+.pw-cap{text-align:center;font-size:14px;font-weight:600;color:var(--hatch-widget-text,#e8eaed);margin-bottom:2px}
+.pw-cap small{display:block;font-weight:400;font-size:11.5px;color:var(--hatch-widget-muted,#9aa0a6);margin-top:2px}
+.pw-hint{font-size:11px;color:var(--hatch-widget-muted,#9aa0a6);margin-top:8px;text-align:center;max-width:340px;line-height:1.5}
+.phone{width:300px;height:636px;background:#050505;border-radius:40px;padding:12px;margin-top:10px;box-shadow:0 12px 40px rgba(0,0,0,.55);box-sizing:border-box}
+.scr{background:#131314;border-radius:30px;height:100%;overflow:hidden;display:flex;flex-direction:column;position:relative;color:#e3e3e3;font-size:14px}
+.st{display:flex;justify-content:space-between;align-items:center;padding:12px 20px 2px;font-size:12px;font-weight:600}
+.sbody{flex:1;overflow-y:auto;overflow-x:hidden;scrollbar-width:none}
+.sbody::-webkit-scrollbar{display:none}
+.srch{margin:8px 14px 2px;background:#282a2c;border-radius:28px;display:flex;align-items:center;padding:0 6px 0 14px;gap:8px;height:46px;color:#9aa0a6;font-size:13.5px;border:1px solid transparent}
+.srch input{flex:1;background:none;border:none;outline:none;color:#e3e3e3;font-size:13.5px;font-family:inherit;min-width:0}
+.srch input::placeholder{color:#9aa0a6}
+.chips{display:flex;gap:8px;padding:10px 14px 4px;overflow-x:auto;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{font-size:12.5px;padding:7px 15px;border-radius:20px;border:1px solid #3c4043;color:#c7c7c7;background:none;white-space:nowrap;font-family:inherit}
+.chip.on{background:#a8c7fa;border-color:#a8c7fa;color:#062e6f;font-weight:700}
+.sec{display:flex;justify-content:space-between;align-items:center;padding:16px 16px 4px;font-size:15px;font-weight:600}
+.sec .m{color:#9aa0a6;font-size:12px;font-weight:400;cursor:pointer}
+.feat{margin:10px 14px 2px;border-radius:20px;padding:0;position:relative;overflow:hidden;border:1px solid #2e2f31;background:#1e1f20}
+.feat .fb{padding:16px 16px 14px;background:linear-gradient(120deg,rgba(26,115,232,.28),rgba(123,31,162,.22));}
+.feat .fl{font-size:10px;letter-spacing:1.6px;color:#a8c7fa;font-weight:700}
+.fact{min-height:44px;display:flex;align-items:center}
+.feat h3{margin:8px 0 3px;font-size:17px;display:flex;align-items:center;gap:10px}
+.feat p{margin:0 0 12px;font-size:12px;color:#9aa0a6;line-height:1.5}
+.arow{display:flex;align-items:center;gap:12px;padding:8px 16px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.arow:active{background:#1b1c1e}
+.aic{position:relative;flex:0 0 auto}
+.aic img{width:54px;height:54px;border-radius:14px;display:block;background:#222;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.ainfo{flex:1;min-width:0}
+.ainfo .t{font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ainfo .s{font-size:11.5px;color:#9aa0a6;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{background:#a8c7fa;color:#062e6f;font-size:12.5px;font-weight:700;border:none;border-radius:20px;padding:8px 20px;font-family:inherit;cursor:pointer}
+.pill:active{transform:scale(.96)}
+.openbtn{background:none;border:none;color:#a8c7fa;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;padding:8px 6px}
+.rbtn{position:relative;width:42px;height:42px;border:none;background:none;cursor:pointer;flex:0 0 42px}
+.rbtn svg{transform:rotate(-90deg);display:block}
+.rbtn .x{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#e3e3e3;font-size:15px;font-weight:400}
+.hscr{display:flex;gap:10px;overflow-x:auto;padding:6px 16px 10px;scrollbar-width:none}
+.hscr::-webkit-scrollbar{display:none}
+.hcard{flex:0 0 148px;background:#1e1f20;border:1px solid #2c2e30;border-radius:16px;padding:12px;cursor:pointer}
+.hcard img{width:46px;height:46px;border-radius:12px;background:#222}
+.hcard .t{font-size:12.5px;font-weight:500;margin:9px 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hcard .s{font-size:11px;color:#9aa0a6;margin-bottom:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nav{border-top:1px solid #2c2e30;display:flex;padding:9px 4px 16px;background:#131314}
+.nit{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10.5px;color:#9aa0a6;background:none;border:none;font-family:inherit;cursor:pointer;position:relative}
+.nit.on{color:#a8c7fa;font-weight:700}
+.nit .pp{width:46px;height:28px;border-radius:15px;display:flex;align-items:center;justify-content:center}
+.nit.on .pp{background:#303a52}
+.nbadge{position:absolute;top:-2px;right:calc(50% - 24px);background:#a8c7fa;color:#062e6f;font-size:9px;font-weight:700;min-width:16px;height:16px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 4px}
+.dbar{display:flex;align-items:center;gap:6px;padding:8px 8px 2px}
+.dbar .sp{flex:1}
+.icobtn{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#e3e3e3;background:none;border:none;cursor:pointer}
+.dhead{display:flex;gap:14px;padding:10px 16px 2px;align-items:center}
+.dhead h2{margin:0;font-size:18px;font-weight:600}
+.dhead .c{font-size:12.5px;color:#a8c7fa;margin-top:4px}
+.dhead .d{font-size:11.5px;color:#9aa0a6;margin-top:2px}
+.stats{display:flex;margin:14px 16px 0;border-top:1px solid #2c2e30;border-bottom:1px solid #2c2e30}
+.stat{flex:1;text-align:center;padding:11px 4px;border-left:1px solid #2c2e30;min-width:0}
+.stat:first-child{border-left:none}
+.stat b{display:block;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stat span{font-size:10.5px;color:#9aa0a6}
+.dact{margin:16px 16px 0;display:flex;gap:10px;align-items:center}
+.biginstall{flex:1;background:#a8c7fa;color:#062e6f;font-size:14px;font-weight:700;border:none;border-radius:26px;height:48px;font-family:inherit;cursor:pointer;position:relative;overflow:hidden}
+.biginstall .fill{position:absolute;left:0;top:0;bottom:0;background:rgba(6,46,111,.22);width:0%}
+.biginstall .lb{position:relative}
+.xbtn{width:48px;height:48px;border-radius:50%;border:1px solid #3c4043;background:none;color:#e3e3e3;font-size:17px;cursor:pointer;flex:0 0 48px;font-family:inherit}
+.halfbtn{flex:1;height:46px;border-radius:24px;font-size:13.5px;font-weight:700;font-family:inherit;cursor:pointer}
+.halfbtn.out{background:none;border:1px solid #5f6368;color:#a8c7fa}
+.halfbtn.fil{background:#a8c7fa;border:none;color:#062e6f}
+.tag{font-size:10.5px;font-weight:700;color:#9aa0a6;letter-spacing:1.2px;margin:18px 16px 2px}
+.shots{display:flex;gap:10px;overflow-x:auto;padding:8px 16px;scrollbar-width:none}
+.shots::-webkit-scrollbar{display:none}
+.shot{flex:0 0 96px;height:160px;border-radius:14px;background:linear-gradient(165deg,#232a38,#141920);border:1px solid #2c2e30;position:relative;overflow:hidden}
+.shot i{position:absolute;left:14px;right:14px;border-radius:4px;background:#31363c}
+.about{margin:4px 16px;font-size:12.5px;color:#9aa0a6;line-height:1.6}
+.about b{color:#e3e3e3}
+.rrow{display:flex;align-items:center;gap:12px;padding:9px 16px;font-size:13px;color:#e3e3e3;cursor:pointer}
+.rrow:active{background:#1b1c1e}
+.rrow .x{margin-left:auto;color:#9aa0a6;font-size:15px}
+.catgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px 16px}
+.cat{background:#1e1f20;border:1px solid #2c2e30;border-radius:16px;padding:14px 12px;display:flex;align-items:center;gap:10px;font-size:12.5px;font-weight:500;cursor:pointer;font-family:inherit;color:#e3e3e3;text-align:left}
+.cat img{width:36px;height:36px;border-radius:10px;background:#222}
+.uhead{display:flex;justify-content:space-between;align-items:center;padding:14px 16px 0}
+.uhead h2{margin:0;font-size:18px;font-weight:600}
+.uall{font-size:13px;font-weight:700;color:#a8c7fa;background:none;border:none;font-family:inherit;cursor:pointer}
+.unote{font-size:12px;color:#9aa0a6;padding:4px 16px 2px}
+.toast{position:absolute;left:24px;right:24px;bottom:78px;background:#323232;color:#e3e3e3;font-size:12.5px;padding:11px 16px;border-radius:10px;text-align:center;opacity:0;transition:opacity .25s;pointer-events:none;z-index:5}
+.toast.show{opacity:1}
+.ver{font-size:11px;color:#9aa0a6}
+.empty{padding:40px 30px;text-align:center;color:#9aa0a6;font-size:13px;line-height:1.6}
+.toolbar{display:flex;align-items:center;gap:2px;padding:8px;background:#1e1f20;border-bottom:1px solid #2c2e30;min-height:54px;box-sizing:border-box}
+.toolbar .tt{font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sicobtn{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#c7c7c7;background:none;border:none;cursor:pointer;flex:0 0 auto}
+.srchrow{display:flex;align-items:center;padding:8px 8px 2px 0}
+.sheetwrap{position:absolute;inset:0;z-index:20;display:flex;align-items:flex-end;background:rgba(0,0,0,.6)}
+.sheet{background:#222326;border-radius:20px 20px 0 0;width:100%;padding:6px 0 22px;animation:sup .22s ease}
+@keyframes sup{from{transform:translateY(50px);opacity:.4}to{transform:none;opacity:1}}
+.sheet h4{margin:8px 20px 6px;font-size:15px}
+.sheet .grab{width:36px;height:4px;border-radius:2px;background:#3c4043;margin:6px auto 4px}
+.irow{display:flex;justify-content:space-between;gap:14px;padding:9px 20px;font-size:12.5px}
+.irow .k{color:#9aa0a6;flex:0 0 auto}
+.irow .v{color:#e3e3e3;text-align:right;word-break:break-all}
+.lbwrap{position:absolute;inset:0;z-index:30;background:rgba(0,0,0,.97);display:flex;flex-direction:column}
+.lbtop{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;color:#e3e3e3;font-size:13px}
+.lbmain{flex:1;display:flex;align-items:center;justify-content:center;gap:10px;padding:0 10px}
+.lbshot{width:196px;height:336px;border-radius:16px;position:relative;overflow:hidden;border:1px solid #2c2e30}
+.lbshot i{position:absolute;left:20px;right:20px;border-radius:5px;background:#31363c}
+.lbarr{width:42px;height:42px;border-radius:50%;border:1px solid #3c4043;background:none;color:#e3e3e3;font-size:19px;cursor:pointer;flex:0 0 42px;font-family:inherit}
+.srow{display:flex;align-items:center;gap:14px;padding:13px 16px;cursor:pointer}
+.srow:active{background:#1b1c1e}
+.sic{width:38px;height:38px;border-radius:50%;background:#2a2c30;display:flex;align-items:center;justify-content:center;color:#a8c7fa;flex:0 0 38px}
+.srow .tx{flex:1;min-width:0}
+.srow .tx .t{font-size:13.5px;font-weight:500}
+.srow .tx .s{font-size:11.5px;color:#9aa0a6;margin-top:2px}
+.srow .chev{color:#9aa0a6;font-size:15px}
+.ptext{padding:6px 18px 30px;font-size:13px;line-height:1.7;color:#c7c7c7}
+.ptext h5{color:#e3e3e3;font-size:14px;margin:16px 0 6px}
+.verline{text-align:center;color:#9aa0a6;font-size:11.5px;padding:18px 0}
+</style>
+<div class="pw">
+<div class="pw-cap">APK STORE — interactive Play Store UI<small>Asli icons + asli download flow. Har button kaam karta hai — try karo.</small></div>
+<div class="phone"><div class="scr" id="scr">
+<div class="st"><span>9:41</span><span>▲ ▂▄ ▮</span></div>
+<div class="sbody" id="sbody"></div>
+<div class="nav" id="pnav"></div>
+<div class="toast" id="toast"></div>
+</div></div>
+<div class="pw-hint">Home screen sirf browsing ke liye hai — banner ho ya list, kisi bhi app par tap karo to uska page khulega, download/install wahin se hoga.</div>
+</div>
+<script>
+var APPS=[
+{id:"fgal",pkg:"org.fossify.gallery",av:"8.0+",t:"Fossify Gallery",c:"Photos & Gallery",v:"1.13.1",s:"37 MB",d:"Fossify Org",i:"https://qfbfxencwsgryoczkdyj.supabase.co/storage/v1/object/public/app-icons/proxy/ce072864-544e-4502-b9a3-b8540bbdd100.png",ab:"A fast, private gallery for your photos and videos. No ads, no cloud, no nonsense — just your memories, beautifully organized."},
+{id:"lark",pkg:"com.dywx.larkplayer",av:"5.0+",t:"Lark Player",c:"Entertainment",v:"2026.12.6",s:"24 MB",d:"Lark Tools",i:"https://qfbfxencwsgryoczkdyj.supabase.co/storage/v1/object/public/app-icons/1c69b8cf-5c00-495b-a429-a71c8fac2261.webp",ab:"Music and video player with floating window, equalizer and sleep timer. Plays everything you throw at it."},
+{id:"blackhole",pkg:"com.blackhole.app",av:"8.0+",t:"BLACK HOLE",c:"Tools",v:"1.1.2",s:"64 MB",d:"BlackHole Labs",i:"https://qfbfxencwsgryoczkdyj.supabase.co/storage/v1/object/public/app-icons/317be973-3522-4fe6-9526-287420fd4e0c.jpg",ab:"Minimal, blazing-fast video downloader. Paste a link, pick quality, done — with a gorgeous dark interface."},
+{id:"fcal",pkg:"org.fossify.calendar",av:"8.0+",t:"Fossify Calendar",c:"Productivity",v:"1.11.0",s:"7 MB",d:"Fossify Org",i:"https://qfbfxencwsgryoczkdyj.supabase.co/storage/v1/object/public/app-icons/proxy/ef003038-5aaf-4b7f-9189-db0e26ec1783.png",ab:"Simple, private calendar. No ads, no tracking — events, reminders and widgets, cleanly organized."},
+{id:"antenna",pkg:"de.danoeh.antennapod",av:"8.0+",t:"AntennaPod",c:"Podcasts",v:"3.12.2",s:"17 MB",d:"AntennaPod Team",i:"https://qfbfxencwsgryoczkdyj.supabase.co/storage/v1/object/public/app-icons/proxy/66cf5ce5-89b3-4360-a96e-16ed402ecab7.png",ab:"The open-source podcast manager. Automatic downloads, variable speed, chapters and Chromecast support."},
+{id:"localsend",pkg:"org.localsend.localsend_app",av:"7.0+",t:"LocalSend",c:"File sharing",v:"1.18.2",s:"44 MB",d:"LocalSend Team",i:"https://qfbfxencwsgryoczkdyj.supabase.co/storage/v1/object/public/app-icons/proxy/83c27de8-f8a4-4fa0-9c5d-6fab5537b975.png",ab:"Share files with nearby devices over Wi-Fi. No internet, no servers — open source and cross-platform."},
+{id:"termux",pkg:"com.termux",av:"7.0+",t:"Termux",c:"Developer Tools",v:"0.119.0-beta.3",s:"110 MB",d:"Termux",i:"https://qfbfxencwsgryoczkdyj.supabase.co/storage/v1/object/public/app-icons/proxy/109487bc-c51d-499b-a021-39caef6b0dd2.png",ab:"A full Linux terminal on Android. Packages, SSH, Python, git — a pocket computer for developers."},
+{id:"keepass",pkg:"com.kunzisoft.keepass.free",av:"7.0+",t:"KeePassDX",c:"Security",v:"4.5.5",s:"13 MB",d:"KeePassDX",i:"https://qfbfxencwsgryoczkdyj.supabase.co/storage/v1/object/public/app-icons/proxy/ead8b09e-1bec-47da-85d3-31a7d384c7bd.png",ab:"Open-source password manager. Your vault stays on your device, encrypted with AES-256."},
+{id:"amaze",pkg:"com.amaze.filemanager",av:"7.0+",t:"Amaze File Manager",c:"File management",v:"3.11.3",s:"12 MB",d:"Amaze Inc",i:"https://qfbfxencwsgryoczkdyj.supabase.co/storage/v1/object/public/app-icons/proxy/e1d467a0-e438-4dd7-afe1-f5e81236635b.png",ab:"Beautiful Material file manager. Root explorer, SMB, encryption — open source and ad-free."},
+{id:"obtainium",pkg:"dev.imranr.obtainium",av:"7.0+",t:"Obtainium",c:"App Store & Updater",v:"1.6.17",s:"25 MB",d:"Obtainium",i:"https://qfbfxencwsgryoczkdyj.supabase.co/storage/v1/object/public/app-icons/proxy/b6f9e80e-2679-4697-b85d-c33b393fff18.png",ab:"Get Android app updates straight from the source. Track GitHub, GitLab, F-Droid and more."},
+{id:"mpv",pkg:"is.xyz.mpv",av:"8.0+",t:"mpv-android",c:"Video Players",v:"2026-09-17",s:"129 MB",d:"mpv-android",i:"https://qfbfxencwsgryoczkdyj.supabase.co/storage/v1/object/public/app-icons/proxy/153f359b-f6c9-40ae-8126-7141d192182e.png",ab:"The legendary mpv player for Android. Plays anything, hardware-accelerated, endlessly configurable."},
+{id:"fmusic",pkg:"org.fossify.musicplayer",av:"8.0+",t:"Fossify Music Player",c:"Music & Audio",v:"1.8.1",s:"11 MB",d:"Fossify Org",i:"https://qfbfxencwsgryoczkdyj.supabase.co/storage/v1/object/public/app-icons/proxy/2bcd9e3a-b7c9-4078-b0cb-ed4759a9fe5e.png",ab:"Lightweight music player with equalizer, sleep timer and beautiful widgets. No ads, ever."},
+{id:"appman",pkg:"io.github.muntashirakon.AppManager",av:"8.0+",t:"App Manager",c:"System Tools",v:"4.1.1",s:"27 MB",d:"Muntashir Akon",i:"https://qfbfxencwsgryoczkdyj.supabase.co/storage/v1/object/public/app-icons/proxy/54df0ec4-2366-4ef9-9e62-7ff64e202beb.png",ab:"Inspect, debloat and manage every app on your device. Trackers, permissions, components — total control."},
+{id:"hail",pkg:"com.aistra.hail",av:"9.0+",t:"Hail",c:"Automation",v:"1.11.0",s:"5 MB",d:"Hail Team",i:"https://qfbfxencwsgryoczkdyj.supabase.co/storage/v1/object/public/app-icons/proxy/d24dfbff-cbca-4e56-a742-d5f698784e34.png",ab:"Freeze unused apps to save battery. Root or Shizuku powered, simple and effective."}
+];
+function byId(id){for(var k=0;k<APPS.length;k++)if(APPS[k].id===id)return APPS[k];return null;}
+var DEF={tab:"apps",htab:"foryou",detail:null,q:"",dl:{},inst:{fcal:1},upd:{termux:"0.118.0",antenna:"3.11.0"},updDone:{},recent:["video downloader","file manager","calendar"]};
+var S=JSON.parse(JSON.stringify(DEF));
+try{var bs=window.hatchWidget.getState(DEF);if(bs&&typeof bs==="object"&&Object.keys(bs).length)S=bs;}catch(e){}
+function save(){try{window.hatchWidget.setState(S);}catch(e){}}
+var timers={};
+var ICO_SEARCH='<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#9aa0a6" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>';
+var ICO_BACK='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e3e3e3" stroke-width="2.2"><path d="M15 5l-7 7 7 7"/></svg>';
+var ICO_MORE='<svg width="18" height="18" viewBox="0 0 24 24" fill="#e3e3e3"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>';
+var ICO_HIST='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9aa0a6" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>';
+var NAV={apps:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
+search:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
+updates:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>',
+library:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h12v18l-6-4-6 4z"/></svg>'};
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;");}
+function ringBtn(id){var C=(2*Math.PI*17).toFixed(1);
+return '<button class="rbtn" onclick="event.stopPropagation();cancelDl(\''+id+'\')" title="Cancel"><svg width="42" height="42" viewBox="0 0 42 42"><circle cx="21" cy="21" r="17" fill="none" stroke="#3c4043" stroke-width="3.5"/><circle data-pr="'+id+'" cx="21" cy="21" r="17" fill="none" stroke="#a8c7fa" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="'+C+'" stroke-dashoffset="'+C+'"/></svg><span class="x">✕</span></button>';}
+function iconHtml(a,big){return '<span class="aic'+(big?" big":"")+'"><img src="'+a.i+'" alt=""/></span>';}
+function actionHtml(a,stop){var id=a.id,sp=stop?"event.stopPropagation();":"";
+if(S.dl[id])return ringBtn(id);
+if(S.inst[id])return '<button class="openbtn" onclick="'+sp+'openApp(\''+id+'\')">Open</button>';
+return '<button class="pill" onclick="'+sp+'startDl(\''+id+'\')">Install</button>';}
+function rowHtml(a,na){return '<div class="arow" onclick="goDetail(\''+a.id+'\')">'+iconHtml(a)+'<div class="ainfo"><div class="t">'+esc(a.t)+'</div><div class="s">'+esc(a.c)+' · '+esc(a.s)+'</div></div>'+(na?"":actionHtml(a,true))+'</div>';}
+function updateRings(id,p){var C1=(2*Math.PI*17);
+var els=document.querySelectorAll('[data-pr="'+id+'"]');
+for(var k=0;k<els.length;k++)els[k].setAttribute("stroke-dashoffset",(C1*(1-p/100)).toFixed(1));
+var f=document.querySelector('[data-fill="'+id+'"]');if(f)f.style.width=p+"%";
+var lb=document.querySelector('[data-lb="'+id+'"]');if(lb)lb.textContent=Math.floor(p)+"%";}
+function toast(m){var t=document.getElementById("toast");t.textContent=m;t.classList.add("show");clearTimeout(t._h);t._h=setTimeout(function(){t.classList.remove("show");},1700);}
+function startDl(id){if(S.dl[id]||S.inst[id])return;S.dl[id]={p:0};save();render();
+timers[id]=setInterval(function(){var d=S.dl[id];if(!d){clearInterval(timers[id]);return;}
+d.p=Math.min(100,d.p+2+Math.random()*3.2);updateRings(id,d.p);
+if(d.p>=100){clearInterval(timers[id]);delete S.dl[id];S.inst[id]=1;if(S.upd[id]){S.updDone[id]=1;delete S.upd[id];}save();render();toast(byId(id).t+" installed");}},130);}
+function cancelDl(id){if(timers[id])clearInterval(timers[id]);delete S.dl[id];save();render();toast("Download cancelled");}
+function openApp(id){toast("Opening "+byId(id).t+"… (demo)");}
+function uninstall(id){delete S.inst[id];save();render();toast(byId(id).t+" uninstalled");}
+function goDetail(id){S.detail=id;S.tab="detail";save();render();document.getElementById("sbody").scrollTop=0;}
+function goTab(t){S.tab=t;S.detail=null;S.sheet=null;S.lb=null;save();render();document.getElementById("sbody").scrollTop=0;}
+function centerChip(){try{var el=document.querySelector(".chips .chip.on");if(el)el.scrollIntoView({behavior:"smooth",inline:"center",block:"nearest"});}catch(e){}}
+function setHtab(h){S.htab=h;save();render();centerChip();}
+function updCount(){return Object.keys(S.upd).length;}
+/* ---------- screens ---------- */
+function homeHtml(){var h='<div class="srchrow"><div class="srch" style="flex:1;margin-right:0">'+ICO_SEARCH+'<span style="flex:1" onclick="goTab(\'search\')">Search apps &amp; games</span></div><button class="sicobtn" onclick="goTab(\'settings\')" title="Settings">'+ICO_GEAR+'</button></div>';
+h+='<div class="chips"><button class="chip'+(S.htab==="foryou"?" on":"")+'" onclick="setHtab(\'foryou\')">For you</button><button class="chip'+(S.htab==="top"?" on":"")+'" onclick="setHtab(\'top\')">Top charts</button><button class="chip'+(S.htab==="cats"?" on":"")+'" onclick="setHtab(\'cats\')">Categories</button></div>';
+if(S.htab==="cats"){var cats={},cg="";
+for(var k=0;k<APPS.length;k++){var a=APPS[k];if(!cats[a.c])cats[a.c]=a;}
+for(var c in cats){cg+='<button class="cat" onclick="catGo(\''+c.replace(/'/g,"")+'\')"><img src="'+cats[c].i+'"/>'+esc(c)+'</button>';}
+h+='<div class="tag">ALL CATEGORIES</div><div class="catgrid">'+cg+'</div>';return h;}
+if(S.htab==="top"){h+='<div class="tag">TOP CHARTS</div>';var arr=APPS.slice(0,10);
+for(var i2=0;i2<arr.length;i2++)h+=rowHtml(arr[i2],true);return h;}
+var f=byId("fgal");
+h+='<div class="feat" onclick="goDetail(\''+f.id+'\')"><div class="fb"><div class="fl">FEATURED</div><h3>'+iconHtml(f)+esc(f.t)+'</h3><p>'+esc(f.ab)+'</p></div></div>';
+h+='<div class="sec"><span>Recommended for you</span><span class="m" onclick="goTab(\'all\')">More →</span></div>';
+var rec=["lark","blackhole","antenna","localsend"];
+for(var r=0;r<rec.length;r++)h+=rowHtml(byId(rec[r]),true);
+h+='<div class="sec"><span>Trending this week</span><span class="m" onclick="goTab(\'all\')">More →</span></div><div class="hscr>';
+var tr=["termux","keepass","obtainium","mpv"];
+for(var t2=0;t2<tr.length;t2++){var a2=byId(tr[t2]);
+h+='<div class="hcard" onclick="goDetail(\''+a2.id+'\')"><img src="'+a2.i+'"/><div class="t">'+esc(a2.t)+'</div><div class="s">'+esc(a2.c)+' · '+esc(a2.s)+'</div></div>';}
+h+='</div>';return h;}
+function catGo(c){S.q="";S.tab="search";S.scat=c;save();render();}
+function allHtml(){var h='<div class="toolbar"><button class="icobtn" onclick="goTab(\'apps\')">'+ICO_BACK+'</button><span class="tt">All apps</span></div><div class="unote">'+APPS.length+' apps</div>';
+for(var k=0;k<APPS.length;k++)h+=rowHtml(APPS[k]);return h;}
+function resultsHtml(){var q=S.q.trim().toLowerCase(),out="",n=0;
+for(var k=0;k<APPS.length;k++){var a=APPS[k];
+if(S.scat&&a.c!==S.scat)continue;
+if(q&&a.t.toLowerCase().indexOf(q)<0&&a.c.toLowerCase().indexOf(q)<0)continue;
+out+=rowHtml(a);n++;}
+if(!n)out='<div class="empty">No apps found.<br>Try another search.</div>';
+return out;}
+function searchHtml(){var h='<div class="srch" style="margin-top:8px"><span onclick="goTab(\'apps\')" style="display:flex;cursor:pointer">'+ICO_BACK+'</span><input id="q" placeholder="Search apps &amp; games" value="'+esc(S.q)+'" oninput="onQ(this.value)"/></div>';
+var cats=["All"],seen={};
+for(var k=0;k<APPS.length;k++){if(!seen[APPS[k].c]){seen[APPS[k].c]=1;cats.push(APPS[k].c);}}
+h+='<div class="chips">';
+for(var c2=0;c2<cats.length;c2++){var c=cats[c2],on=(!S.scat&&c==="All")||(S.scat===c);
+h+='<button class="chip'+(on?" on":"")+'" onclick="setScat(\''+c.replace(/'/g,"")+'\')">'+esc(c)+'</button>';}
+h+='</div>';
+if(!S.q&&!S.scat){h+='<div class="tag">RECENT SEARCHES</div>';
+for(var r2=0;r2<S.recent.length;r2++){h+='<div class="rrow" onclick="qGo(\''+S.recent[r2]+'\')">'+ICO_HIST+'<span style="flex:1">'+esc(S.recent[r2])+'</span></div>';}}
+h+='<div id="res">'+resultsHtml()+'</div>';return h;}
+function setScat(c){S.scat=(c==="All")?null:c;save();render();centerChip();var i=document.getElementById("q");if(i){i.focus();}}
+function onQ(v){S.q=v;var r=document.getElementById("res");if(r)r.innerHTML=resultsHtml();}
+function qGo(q){S.q=q;S.scat=null;save();render();var i=document.getElementById("q");if(i)i.focus();}
+function detailHtml(a){var h='<div class="toolbar"><button class="icobtn" onclick="goTab(\'apps\')">'+ICO_BACK+'</button><span class="tt" style="flex:1">'+esc(a.t)+'</span><button class="icobtn" onclick="goTab(\'search\')">'+ICO_SEARCH+'</button><button class="icobtn" onclick="openSheet(\''+a.id+'\')">'+ICO_MORE+'</button></div>';
+h+='<div class="dhead">'+iconHtml(a,true)+'<div><h2>'+esc(a.t)+'</h2><div class="c">'+esc(a.c)+'</div><div class="d">'+esc(a.d)+'</div></div></div>';
+h+='<div class="stats"><div class="stat"><b>'+esc(a.v)+'</b><span>Version</span></div><div class="stat"><b>'+esc(a.s)+'</b><span>Size</span></div><div class="stat"><b>'+esc(a.av)+'</b><span>Android</span></div><div class="stat"><b>Sep 2026</b><span>Updated</span></div></div>';
+h+='<div class="dact">';
+if(S.dl[a.id]){h+='<button class="biginstall"><span class="fill" data-fill="'+a.id+'"></span><span class="lb" data-lb="'+a.id+'">0%</span></button><button class="xbtn" onclick="cancelDl(\''+a.id+'\')">✕</button>';}
+else if(S.inst[a.id]){h+='<button class="halfbtn out" onclick="uninstall(\''+a.id+'\')">Uninstall</button><button class="halfbtn fil" onclick="openApp(\''+a.id+'\')">Open</button>';}
+else{h+='<button class="biginstall" onclick="startDl(\''+a.id+'\')"><span class="lb">Install</span></button>';}
+h+='</div>';
+h+='<div class="tag">SCREENSHOTS</div><div class="shots">';
+var sbgs=["#1d2733","#241d33","#1d3327"];
+for(var si=0;si<3;si++){h+='<div class="shot" onclick="openLb('+si+')"><i style="top:18px;height:9px"></i><i style="top:38px;height:9px;left:14px;right:60px"></i><i style="top:60px;bottom:18px;height:auto;background:'+sbgs[si]+'"></i></div>';}
+h+='</div>';
+h+='<div class="tag">CATEGORY</div><div class="rrow" onclick="catGo(\''+a.c.replace(/'/g,"")+'\')"><img src="'+a.i+'" style="width:38px;height:38px;border-radius:10px;background:#222"/><span style="flex:1">'+esc(a.c)+'</span><span class="chev">→</span></div>';
+h+='<div class="tag">ABOUT THIS APP</div><div class="about"><b>'+esc(a.t)+'. </b>'+esc(a.ab)+'</div>';
+h+='<div class="tag">RECOMMENDED FOR YOU</div><div class="hscr">';
+var rel=[],oth=[];
+for(var k=0;k<APPS.length;k++){if(APPS[k].id===a.id)continue;(APPS[k].c===a.c?rel:oth).push(APPS[k]);}
+var list=rel.concat(oth).slice(0,8);
+for(var ri=0;ri<list.length;ri++){var ra=list[ri];
+h+='<div class="hcard" onclick="goDetail(\''+ra.id+'\')"><img src="'+ra.i+'"/><div class="t">'+esc(ra.t)+'</div><div class="s">'+esc(ra.c)+' · '+esc(ra.s)+'</div>'+actionHtml(ra,true)+'</div>';}
+h+='</div>';return h;}
+function updatesHtml(){var ids=Object.keys(S.upd),h='<div class="uhead"><h2>Updates</h2>';
+if(ids.length)h+='<button class="uall" onclick="updateAll()">Update all</button>';
+h+='</div>';
+if(ids.length){h+='<div class="unote">'+ids.length+' update'+(ids.length>1?"s":"")+' available</div>';
+for(var k=0;k<ids.length;k++){var a=byId(ids[k]);
+h+='<div class="arow" onclick="goDetail(\''+a.id+'\')">'+iconHtml(a)+'<div class="ainfo"><div class="t">'+esc(a.t)+'</div><div class="s">v'+esc(S.upd[a.id])+' → v'+esc(a.v)+' · '+esc(a.s)+'</div></div>';
+if(S.dl[a.id])h+=ringBtn(a.id);else h+='<button class="pill" onclick="event.stopPropagation();startDl(\''+a.id+'\')">Update</button>';
+h+='</div>';}}
+else{h+='<div class="empty">You\'re up to date.<br>All apps are on their latest versions.</div>';}
+var done=Object.keys(S.updDone);
+if(done.length){h+='<div class="tag">RECENTLY UPDATED</div>';
+for(var d2=0;d2<done.length;d2++){var a2=byId(done[d2]);
+h+='<div class="arow" onclick="goDetail(\''+a2.id+'\')">'+iconHtml(a2)+'<div class="ainfo"><div class="t">'+esc(a2.t)+'</div><div class="s">Updated just now · v'+esc(a2.v)+'</div></div><button class="openbtn" onclick="event.stopPropagation();openApp(\''+a2.id+'\')">Open</button></div>';}}
+return h;}
+function updateAll(){var ids=Object.keys(S.upd);for(var k=0;k<ids.length;k++)startDl(ids[k]);}
+function libraryHtml(){var ids=Object.keys(S.inst),h='<div class="uhead"><h2>Library</h2><button class="sicobtn" style="color:#9aa0a6" onclick="goTab(\'settings\')">'+ICO_GEAR+'</button></div><div class="unote">'+ids.length+' app'+(ids.length===1?"":"s")+' installed from APK STORE</div>';
+if(!ids.length)h+='<div class="empty">Nothing installed yet.<br>Install an app to see it here.</div>';
+for(var k=0;k<ids.length;k++){var a=byId(ids[k]);if(!a)continue;
+h+='<div class="arow" onclick="goDetail(\''+a.id+'\')">'+iconHtml(a)+'<div class="ainfo"><div class="t">'+esc(a.t)+'</div><div class="s">'+esc(a.c)+' · v'+esc(a.v)+'</div></div><button class="openbtn" onclick="event.stopPropagation();openApp(\''+a.id+'\')">Open</button><button class="openbtn" style="color:#9aa0a6" onclick="event.stopPropagation();uninstall(\''+a.id+'\')">Uninstall</button></div>';}
+return h;}
+var ICO_GEAR='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h10M18 8h2M4 16h4M12 16h8"/><circle cx="16" cy="8" r="2.2"/><circle cx="10" cy="16" r="2.2"/></svg>';
+var ICO_UPD='<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 4v5h-5"/></svg>';
+var ICO_DOC='<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/></svg>';
+function openSheet(id){S.sheet=id;save();render();}
+function closeSheet(){S.sheet=null;save();render();}
+function sheetHtml(a){var h='<div class="sheetwrap" onclick="closeSheet()"><div class="sheet" onclick="event.stopPropagation()"><div class="grab"></div><h4>App info</h4>';
+var rows=[["Package",a.pkg],["Version",a.v],["Size",a.s],["Requires","Android "+a.av],["Category",a.c],["Developer",a.d]];
+for(var k=0;k<rows.length;k++)h+='<div class="irow"><span class="k">'+rows[k][0]+'</span><span class="v">'+esc(rows[k][1])+'</span></div>';
+h+='<div style="padding:12px 20px 4px"><button class="halfbtn out" style="width:100%" onclick="closeSheet()">Close</button></div></div></div>';return h;}
+function openLb(i){S.lb=i;save();render();}
+function closeLb(){S.lb=null;save();render();}
+function lbNav(d){S.lb=(S.lb+d+3)%3;save();render();}
+function lbHtml(){var grads=["linear-gradient(165deg,#232a38,#141920)","linear-gradient(165deg,#2b2338,#191426)","linear-gradient(165deg,#23382a,#142019)"];
+return '<div class="lbwrap"><div class="lbtop"><span>'+(S.lb+1)+' / 3</span><button class="icobtn" onclick="closeLb()">✕</button></div><div class="lbmain"><button class="lbarr" onclick="lbNav(-1)">‹</button><div class="lbshot" style="background:'+grads[S.lb]+'"><i style="top:26px;height:12px"></i><i style="top:52px;height:12px;left:20px;right:110px"></i><i style="top:90px;bottom:26px;height:auto;background:#2b3546"></i></div><button class="lbarr" onclick="lbNav(1)">›</button></div><div style="height:40px"></div></div>';}
+function srowHtml(t,s,fn,arg,ic){return '<div class="srow" onclick="'+fn+'(\''+arg+'\')"><span class="sic">'+ic+'</span><div class="tx" style="flex:1"><div class="t">'+t+'</div><div class="s">'+s+'</div></div><span class="chev">→</span></div>';}
+function settingsHtml(){var h='<div class="toolbar"><button class="icobtn" onclick="goTab(\'apps\')">'+ICO_BACK+'</button><span class="tt">Settings</span></div>';
+h+='<div class="tag">GENERAL</div>';
+h+='<div class="srow" onclick="checkUpdate()"><span class="sic">'+ICO_UPD+'</span><div class="tx" style="flex:1"><div class="t">Check for updates</div><div class="s" id="updst">APK STORE 1.1.6 · tap to check</div></div><span class="chev">→</span></div>';
+h+='<div class="tag">ABOUT</div>';
+h+=srowHtml("Privacy Policy","How we handle your data","policy","privacy",ICO_DOC);
+h+=srowHtml("Terms of Service","Rules for using APK STORE","policy","terms",ICO_DOC);
+h+=srowHtml("About APK STORE","Version 1.1.6 · com.apkstore.client","policy","about",ICO_DOC);
+h+='<div class="verline">APK STORE · v1.1.6 (14)</div>';
+return h;}
+function checkUpdate(){var el=document.getElementById("updst");if(el)el.textContent="Checking…";toast("Checking for updates…");
+setTimeout(function(){var e2=document.getElementById("updst");if(e2)e2.textContent="Last checked just now · up to date";toast("You're up to date");},1400);}
+function policy(k){S.tab="policy";S.pkind=k;save();render();document.getElementById("sbody").scrollTop=0;}
+function policyHtml(kind){var h='<div class="toolbar"><button class="icobtn" onclick="goTab(\'settings\')">'+ICO_BACK+'</button><span class="tt">'+(kind==="privacy"?"Privacy Policy":kind==="terms"?"Terms of Service":"About APK STORE")+'</span></div><div class="ptext">';
+if(kind==="privacy"){h+="<h5>Privacy Policy</h5>APK STORE does not need an account and does not track you across apps.<h5>What we collect</h5>Nothing personal. Update checks only compare the versions of apps you installed from APK STORE.<h5>Downloads</h5>APK files come from the developer's own published releases. We verify package names and signatures before listing an update.<h5>Permissions</h5>The app only asks for what it needs: storage access to save APKs, and install permission to update apps.";}
+else if(kind==="terms"){h+="<h5>Terms of Service</h5>APK STORE is a catalogue of apps published by their developers and trusted open-source projects.<h5>Fair use</h5>Download apps for your own devices. Do not re-upload or redistribute APKs from this store without the developer's permission.<h5>Updates</h5>We try to list updates quickly and verify signatures, but installing any app is your choice — check the developer and the permissions first.<h5>Availability</h5>Listings can change or be removed at any time, for example if a developer asks us to.";}
+else{h+="<h5>About APK STORE</h5>APK STORE is a fast, private app store for Android.<h5>Version</h5>1.1.6 (version code 14)<h5>Package</h5>com.apkstore.client<h5>Updates</h5>Use Settings → Check for updates to get the newest version of APK STORE itself.";}
+h+='</div>';return h;}
+function render(){var b=document.getElementById("sbody"),h="";
+if(S.tab==="detail"&&S.detail)h=detailHtml(byId(S.detail));
+else if(S.tab==="search")h=searchHtml();
+else if(S.tab==="updates")h=updatesHtml();
+else if(S.tab==="library")h=libraryHtml();
+else if(S.tab==="all")h=allHtml();
+else if(S.tab==="settings")h=settingsHtml();
+else if(S.tab==="policy")h=policyHtml(S.pkind||"about");
+else h=homeHtml();
+if(S.sheet)h+=sheetHtml(byId(S.sheet));
+if(S.lb!=null)h+=lbHtml();
+b.innerHTML=h;
+var tabs=[["apps","Apps"],["search","Search"],["updates","Updates"],["library","Library"]],n="";
+for(var k=0;k<tabs.length;k++){var t=tabs[k],on=(S.tab===t[0])||((S.tab==="detail"||S.tab==="all")&&t[0]==="apps");
+n+='<button class="nit'+(on?" on":"")+'" onclick="goTab(\''+t[0]+'\')"><span class="pp">'+NAV[t[0]]+'</span>'+t[1];
+if(t[0]==="updates"&&updCount())n+='<span class="nbadge">'+updCount()+'</span>';
+n+='</button>';}
+document.getElementById("pnav").innerHTML=n;
+if(S.tab==="search"){var i=document.getElementById("q");}}
+render();
+</script>
