@@ -9,11 +9,13 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 final class CrashQueue {
-    static final int MAX_REPORTS = 8;
-    static final long MAX_TOTAL_BYTES = 192_000L;
-    static final long MAX_REPORT_BYTES = 24_000L;
+    static final int MAX_REPORTS = 10;
+    static final long MAX_REPORT_BYTES = 48L * 1024L;
+    static final long MAX_TOTAL_BYTES = MAX_REPORTS * MAX_REPORT_BYTES;
+    static final long MAX_AGE_MS = TimeUnit.DAYS.toMillis(30);
 
     private final File directory;
     private final int maxReports;
@@ -33,6 +35,7 @@ final class CrashQueue {
         byte[] data = json.getBytes(StandardCharsets.UTF_8);
         if (data.length == 0 || data.length > MAX_REPORT_BYTES) return false;
         ensureDirectory();
+        pruneExpired(System.currentTimeMillis());
         pruneFor(data.length);
         File temporary = new File(directory, timestamp + ".tmp");
         File destination = new File(directory, timestamp + ".json");
@@ -49,6 +52,7 @@ final class CrashQueue {
 
     synchronized List<File> pending() {
         ensureDirectory();
+        pruneExpired(System.currentTimeMillis());
         File[] files = directory.listFiles((dir, name) -> name.endsWith(".json"));
         if (files == null) return new ArrayList<>();
         Arrays.sort(files, Comparator.comparingLong(File::lastModified).thenComparing(File::getName));
@@ -61,6 +65,15 @@ final class CrashQueue {
 
     private void ensureDirectory() {
         if (!directory.isDirectory()) directory.mkdirs();
+    }
+
+    private void pruneExpired(long nowMs) {
+        File[] files = directory.listFiles((dir, name) -> name.endsWith(".json") || name.endsWith(".tmp"));
+        if (files == null) return;
+        long cutoff = nowMs - MAX_AGE_MS;
+        for (File file : files) {
+            if (file.lastModified() > 0 && file.lastModified() < cutoff) file.delete();
+        }
     }
 
     private void pruneFor(long incomingBytes) {
