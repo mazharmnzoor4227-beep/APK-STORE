@@ -18,6 +18,12 @@ jobs:
       APKSTORE_KEYSTORE_PASSWORD: ${{ secrets.APKSTORE_KEYSTORE_PASSWORD }}
       APKSTORE_KEY_ALIAS: ${{ secrets.APKSTORE_KEY_ALIAS }}
       APKSTORE_KEY_PASSWORD: ${{ secrets.APKSTORE_KEY_PASSWORD }}
+      EXPECTED_PACKAGE: com.apkstore.client
+      EXPECTED_VERSION_NAME: 1.1.7
+      EXPECTED_VERSION_CODE: '15'
+      EXPECTED_MIN_SDK: '26'
+      EXPECTED_TARGET_SDK: '35'
+      EXPECTED_SIGNER_SHA256: cd5fff73675c8c783db51a3300cc06845763215d2c7b03a64ae7f9b589360585
     steps:
       - uses: actions/checkout@v4
 
@@ -74,14 +80,44 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
-          APK="apps/android/app/build/outputs/apk/release/app-release.apk"
+          set -euo pipefail
+          OUT="apps/android/app/build/outputs/apk/release"
+          APK="$OUT/app-release.apk"
           AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
           APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
           test -f "$APK"
-          "$AAPT" dump badging "$APK" | grep "package: name='com.apkstore.client'"
-          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee apps/android/app/build/outputs/apk/release/signing-certificate.txt
-          sha256sum "$APK" | tee apps/android/app/build/outputs/apk/release/apk-sha256.txt
-          cp "$APK" apps/android/app/build/outputs/apk/release/APK-STORE-signed.apk
+
+          BADGING="$($AAPT dump badging "$APK")"
+          PACKAGE_LINE="$(printf '%s\n' "$BADGING" | grep '^package:' | head -1)"
+          printf '%s\n' "$PACKAGE_LINE"
+          printf '%s\n' "$PACKAGE_LINE" | grep -F "name='$EXPECTED_PACKAGE'"
+          printf '%s\n' "$PACKAGE_LINE" | grep -F "versionCode='$EXPECTED_VERSION_CODE'"
+          printf '%s\n' "$PACKAGE_LINE" | grep -F "versionName='$EXPECTED_VERSION_NAME'"
+          printf '%s\n' "$BADGING" | grep -F "sdkVersion:'$EXPECTED_MIN_SDK'"
+          printf '%s\n' "$BADGING" | grep -F "targetSdkVersion:'$EXPECTED_TARGET_SDK'"
+
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$OUT/signing-certificate.txt"
+          SIGNER="$($APKSIGNER verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr '[:upper:]' '[:lower:]')"
+          if [ "$SIGNER" != "$EXPECTED_SIGNER_SHA256" ]; then
+            echo "::error::Release signer mismatch. Refusing to publish artifact."
+            exit 1
+          fi
+
+          APK_SHA256="$(sha256sum "$APK" | awk '{print $1}')"
+          APK_BYTES="$(stat -c %s "$APK")"
+          printf '%s  %s\n' "$APK_SHA256" "$APK" | tee "$OUT/apk-sha256.txt"
+          {
+            echo "package_id=$EXPECTED_PACKAGE"
+            echo "version_name=$EXPECTED_VERSION_NAME"
+            echo "version_code=$EXPECTED_VERSION_CODE"
+            echo "min_sdk=$EXPECTED_MIN_SDK"
+            echo "target_sdk=$EXPECTED_TARGET_SDK"
+            echo "certificate_sha256=$SIGNER"
+            echo "apk_sha256=$APK_SHA256"
+            echo "byte_size=$APK_BYTES"
+          } | tee "$OUT/release-identity.txt"
+
+          cp "$APK" "$OUT/APK-STORE-signed.apk"
 
       - uses: actions/upload-artifact@v4
         if: github.event_name == 'workflow_dispatch'
@@ -91,3 +127,4 @@ jobs:
             apps/android/app/build/outputs/apk/release/APK-STORE-signed.apk
             apps/android/app/build/outputs/apk/release/signing-certificate.txt
             apps/android/app/build/outputs/apk/release/apk-sha256.txt
+            apps/android/app/build/outputs/apk/release/release-identity.txt
