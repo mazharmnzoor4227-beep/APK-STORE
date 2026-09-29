@@ -1,6 +1,7 @@
 import { adminDatabase, requireOwner } from '../../../../../../lib/admin/server';
 import { callAdminUploadEdge } from '../../../../../../lib/admin/admin-upload-edge';
 import { dispatchInspection } from '../../../../../../lib/admin/dispatch-inspection';
+import { recordAdminError } from '../../../../../../lib/admin/errors';
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -15,7 +16,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     try {
       const queued = await dispatchInspection(id);
       if (!queued) {
-        await db.from('upload_candidates').update({ error: 'Inspection service is not configured yet' }).eq('id', id).eq('owner_id', ownerId);
+        const issue = new Error('Inspection service is not configured yet');
+        await db.from('upload_candidates').update({ error: issue.message }).eq('id', id).eq('owner_id', ownerId);
+        await recordAdminError('api/admin/uploads/complete', issue, { candidateId: id });
       }
       return Response.json({ status: 'uploaded', inspection: queued ? 'queued' : 'waiting-for-configuration' }, { status: 202 });
     } catch (error) {
@@ -23,6 +26,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       throw error;
     }
   } catch (error) {
+    await recordAdminError('api/admin/uploads/complete', error);
     const message = error instanceof Error ? error.message : 'Upload completion failed';
     return Response.json({ error: message }, { status: message.includes('authorization') ? 401 : 500 });
   }
