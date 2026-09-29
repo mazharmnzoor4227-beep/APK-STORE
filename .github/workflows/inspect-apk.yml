@@ -9,6 +9,11 @@ jobs:
     permissions:
       contents: read
     steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install APK parser
+        run: npm install --no-save --no-package-lock simple-apk-parser@0.1.2
       - name: Inspect private APK and report result
         env:
           CANDIDATE_ID: ${{ github.event.client_payload.candidateId }}
@@ -16,46 +21,122 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           INSPECTION_CALLBACK_URL: ${{ secrets.INSPECTION_CALLBACK_URL }}
           INSPECTION_CALLBACK_SECRET: ${{ secrets.INSPECTION_CALLBACK_SECRET }}
+        shell: bash
         run: |
-          python3 - <<'PY'
-          import hashlib, hmac, json, os, pathlib, re, subprocess, urllib.request
+          set -euo pipefail
+          if [[ ! "$CANDIDATE_ID" =~ ^[0-9a-f-]{36}$ ]]; then
+            echo "Invalid candidate ID" >&2
+            exit 1
+          fi
 
+          python3 - <<'PY'
+          import json, os, pathlib, urllib.request
           candidate = os.environ['CANDIDATE_ID']
-          if not re.fullmatch(r'[0-9a-f-]{36}', candidate):
-              raise ValueError('Invalid candidate ID')
-          sdk = pathlib.Path(os.environ['ANDROID_HOME'])
-          analyzers = list(sdk.glob('cmdline-tools/*/bin/apkanalyzer')) + list(sdk.glob('tools/bin/apkanalyzer'))
-          signers = list(sdk.glob('build-tools/*/apksigner'))
-          if not analyzers or not signers:
-              raise RuntimeError('Android APK inspection tools unavailable')
-          analyzer, signer = str(analyzers[-1]), str(sorted(signers)[-1])
+          base = os.environ['SUPABASE_URL'].rstrip('/')
+          key = os.environ['SUPABASE_SERVICE_ROLE_KEY']
+          broker = urllib.request.Request(
+              f'{base}/functions/v1/inspection-apk?candidate={candidate}',
+              headers={'Authorization': 'Bearer ' + key, 'apikey': key})
+          with urllib.request.urlopen(broker, timeout=30) as response:
+              ticket = json.load(response)
+          signed_url = ticket.get('signedUrl')
+          expected_size = int(ticket.get('byteSize') or 0)
+          if not signed_url or expected_size <= 0:
+              raise RuntimeError('Inspection download ticket is invalid')
           path = pathlib.Path('candidate.apk')
-          key = 'candidates/' + candidate + '.apk'
-          req = urllib.request.Request(os.environ['SUPABASE_URL'].rstrip('/') + '/storage/v1/object/authenticated/apk-files/' + key,
-              headers={'Authorization': 'Bearer ' + os.environ['SUPABASE_SERVICE_ROLE_KEY']})
-          with urllib.request.urlopen(req, timeout=90) as response, path.open('wb') as output:
-              while chunk := response.read(1024 * 1024): output.write(chunk)
-          def command(*args):
-              return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT).strip()
-          try:
-              certificate = command(signer, 'verify', '--verbose', '--print-certs', str(path))
-              match = re.search(r'Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F:]+)', certificate)
-              if not match: raise ValueError('Signing certificate missing')
-              metadata = {
-                'packageId': command(analyzer, 'manifest', 'application-id', str(path)),
-                'versionCode': int(command(analyzer, 'manifest', 'version-code', str(path))),
-                'versionName': command(analyzer, 'manifest', 'version-name', str(path)),
-                'certificateSha256': match.group(1).replace(':', '').lower(),
-                'apkSha256': hashlib.sha256(path.read_bytes()).hexdigest(),
-                'byteSize': path.stat().st_size,
-              }
-              payload = {'candidateId': candidate, 'metadata': metadata}
-          except Exception as error:
-              payload = {'candidateId': candidate, 'error': str(error)[:300]}
-          body = json.dumps(payload, separators=(',', ':')).encode()
-          signature = hmac.new(os.environ['INSPECTION_CALLBACK_SECRET'].encode(), body, hashlib.sha256).hexdigest()
-          callback = urllib.request.Request(os.environ['INSPECTION_CALLBACK_URL'], data=body,
-              headers={'content-type': 'application/json', 'x-apk-signature': 'sha256=' + signature}, method='POST')
-          with urllib.request.urlopen(callback, timeout=30) as result: result.read()
-          if 'error' in payload: raise RuntimeError(payload['error'])
+          with urllib.request.urlopen(signed_url, timeout=120) as response, path.open('wb') as output:
+              while True:
+                  chunk = response.read(1024 * 1024)
+                  if not chunk: break
+                  output.write(chunk)
+          if path.stat().st_size != expected_size:
+              raise RuntimeError('APK size changed after upload')
           PY
+
+          export APK_SIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          test -x "$APK_SIGNER"
+
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import crypto from 'node:crypto';
+          import { execFileSync } from 'node:child_process';
+          import { parseApkFile } from 'simple-apk-parser';
+
+          const candidate = process.env.CANDIDATE_ID;
+          const supabase = process.env.SUPABASE_URL.replace(/\/$/, '');
+          const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
+          const apk = fs.readFileSync('candidate.apk');
+          let payload;
+          try {
+            const signatureOutput = execFileSync(process.env.APK_SIGNER, ['verify', '--verbose', '--print-certs', 'candidate.apk'], { encoding: 'utf8' });
+            const signer = signatureOutput.match(/Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F:]+)/);
+            if (!signer) throw new Error('Signing certificate missing');
+            const certificateSha256 = signer[1].replaceAll(':', '').toLowerCase();
+            const parsed = await parseApkFile(new Blob([apk]), { locale: 'en-US' });
+            if (!parsed.packageName || !Number.isSafeInteger(Number(parsed.versionCode)) || Number(parsed.versionCode) <= 0) {
+              throw new Error('APK package or version could not be verified');
+            }
+            const extended = parsed;
+            const list = execFileSync('unzip', ['-Z1', 'candidate.apk'], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+            const abis = [...new Set(list.split('\n').map(line => line.match(/^lib\/([^/]+)\//)?.[1]).filter(Boolean))].slice(0, 20);
+            let iconUrl;
+            if (parsed.iconBlob && parsed.iconBlob.size > 0 && parsed.iconBlob.size <= 1_048_576) {
+              const contentType = String(parsed.iconBlob.type || '').toLowerCase();
+              const extension = contentType === 'image/png' ? 'png' : contentType === 'image/jpeg' ? 'jpg' : contentType === 'image/webp' ? 'webp' : null;
+              if (extension) {
+                const objectPath = `inspection/${candidate}.${extension}`;
+                const iconBytes = Buffer.from(await parsed.iconBlob.arrayBuffer());
+                const upload = await fetch(`${supabase}/storage/v1/object/app-icons/${objectPath}`, {
+                  method: 'POST',
+                  headers: {
+                    Authorization: `Bearer ${serviceRole}`,
+                    apikey: serviceRole,
+                    'Content-Type': contentType,
+                    'x-upsert': 'true',
+                  },
+                  body: iconBytes,
+                });
+                if (!upload.ok) throw new Error(`Icon upload failed (${upload.status})`);
+                iconUrl = `${supabase}/storage/v1/object/public/app-icons/${objectPath}`;
+              }
+            }
+            const permissions = Array.isArray(extended.permissions) ? extended.permissions.map(String).slice(0, 300) : [];
+            const minSdkValue = Number(extended.minSdkVersion ?? extended.minSdk ?? 0);
+            const targetSdkValue = Number(extended.targetSdkVersion ?? extended.targetSdk ?? 0);
+            payload = {
+              candidateId: candidate,
+              metadata: {
+                packageId: String(parsed.packageName),
+                versionCode: Number(parsed.versionCode),
+                versionName: String(parsed.versionName || parsed.versionCode),
+                certificateSha256,
+                apkSha256: crypto.createHash('sha256').update(apk).digest('hex'),
+                byteSize: apk.length,
+                appName: String(parsed.appName || parsed.packageName).slice(0, 100),
+                minSdk: Number.isSafeInteger(minSdkValue) && minSdkValue > 0 ? minSdkValue : null,
+                targetSdk: Number.isSafeInteger(targetSdkValue) && targetSdkValue > 0 ? targetSdkValue : null,
+                permissions,
+                abis,
+                ...(iconUrl ? { iconUrl } : {}),
+              },
+            };
+          } catch (error) {
+            payload = { candidateId: candidate, error: String(error instanceof Error ? error.message : error).slice(0, 300) };
+          }
+          fs.writeFileSync('inspection-payload.json', JSON.stringify(payload));
+          NODE
+
+          python3 - <<'PY'
+          import hashlib, hmac, os, pathlib, urllib.request
+          body = pathlib.Path('inspection-payload.json').read_bytes()
+          signature = hmac.new(os.environ['INSPECTION_CALLBACK_SECRET'].encode(), body, hashlib.sha256).hexdigest()
+          callback = urllib.request.Request(
+              os.environ['INSPECTION_CALLBACK_URL'],
+              data=body,
+              headers={'content-type': 'application/json', 'x-apk-signature': 'sha256=' + signature},
+              method='POST')
+          with urllib.request.urlopen(callback, timeout=30) as response:
+              response.read()
+          PY
+
+          node -e "const p=require('./inspection-payload.json'); if(p.error){console.error(p.error); process.exit(1)}"
