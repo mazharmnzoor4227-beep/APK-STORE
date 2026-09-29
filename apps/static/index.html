@@ -96,8 +96,8 @@ header{position:sticky;top:0;z-index:100;background:color-mix(in srgb,var(--bg) 
 .hero img{width:96px;height:96px;border-radius:22px;flex-shrink:0;box-shadow:var(--shadow)}
 .hero-t{flex:1;min-width:0}
 .kick{font-size:11px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--acc);margin-bottom:6px}
-.hero-t h1{font-size:27px;font-weight:700;letter-spacing:-.3px;margin-bottom:6px}
-.hero-t p{color:var(--muted);font-size:14.5px;max-width:560px;margin-bottom:14px}
+.hero-t h1{font-size:27px;font-weight:700;letter-spacing:-.3px;margin-bottom:6px;overflow-wrap:anywhere}
+.hero-t p{color:var(--muted);font-size:14.5px;max-width:560px;margin-bottom:14px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 .hero-m{display:flex;gap:20px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-bottom:18px}
 .hero-m b{color:var(--ink);font-weight:600}
 .row{display:flex;gap:10px;flex-wrap:wrap}
@@ -130,9 +130,10 @@ header{position:sticky;top:0;z-index:100;background:color-mix(in srgb,var(--bg) 
 .wcard{flex-shrink:0;width:300px;scroll-snap-align:start;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;display:flex;gap:12px;cursor:pointer}
 .wcard:hover{border-color:var(--faint)}
 .wcard img{width:60px;height:60px;border-radius:15px;flex-shrink:0}
-.wcard h3{font-size:14px;font-weight:600}
+.wcard>div{min-width:0;flex:1}
+.wcard h3{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wcard .c{font-size:11.5px;color:var(--acc);font-weight:500}
-.wcard .d{font-size:12.5px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:3px 0 6px}
+.wcard .d{font-size:12.5px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:3px 0 6px;overflow-wrap:anywhere}
 .wcard .m{font-size:11.5px;color:var(--faint)}
 
 /* latest uploads — dense rows */
@@ -141,7 +142,7 @@ header{position:sticky;top:0;z-index:100;background:color-mix(in srgb,var(--bg) 
 .urow img{width:46px;height:46px;border-radius:11px;flex-shrink:0}
 .urow .t{flex:1;min-width:0}
 .urow .t b{display:block;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.urow .t span{font-size:12px;color:var(--muted)}
+.urow .t span{display:block;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .urow .d{font-size:12px;color:var(--faint);flex-shrink:0;text-align:right}
 .urow .g{flex-shrink:0;background:var(--surface2);border:1px solid var(--border);font-weight:600;font-size:12.5px;padding:7px 18px;border-radius:8px}
 .urow .g:hover{background:var(--acc);border-color:var(--acc);color:var(--acc-ink)}
@@ -162,7 +163,7 @@ header{position:sticky;top:0;z-index:100;background:color-mix(in srgb,var(--bg) 
 .dhead{display:flex;gap:20px;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:22px;margin-bottom:14px;align-items:flex-start}
 .dhead img{width:100px;height:100px;border-radius:24px;flex-shrink:0;box-shadow:var(--shadow)}
 .di{flex:1;min-width:0}
-.di h1{font-size:24px;font-weight:700;letter-spacing:-.3px}
+.di h1{font-size:24px;font-weight:700;letter-spacing:-.3px;overflow-wrap:anywhere}
 .di .dev{color:var(--acc);font-size:13.5px;font-weight:600;margin:2px 0 12px}
 .dstats{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:16px}
 .ds b{display:block;font-size:16px;font-weight:700}
@@ -174,7 +175,7 @@ header{position:sticky;top:0;z-index:100;background:color-mix(in srgb,var(--bg) 
 .grid>*{min-width:0}
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:14px}
 .panel h2{font-size:15.5px;font-weight:700;margin-bottom:10px}
-.panel p{color:var(--muted);font-size:14px;white-space:pre-line}
+.panel p{color:var(--muted);font-size:14px;white-space:pre-line;overflow-wrap:anywhere}
 .shots{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:none}
 .shots::-webkit-scrollbar{display:none}
 .shots{display:flex;gap:10px;overflow-x:auto;padding:4px 2px 12px;scrollbar-width:none;scroll-snap-type:x mandatory;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y;max-width:100%}
@@ -406,15 +407,20 @@ function startAppDownload(){ location.href=CLIENT_DL; }
 /* nav */
 function openDrawer(){ $("drawer").classList.add("show"); $("scrim").classList.add("show"); }
 function closeDrawer(){ $("drawer").classList.remove("show"); $("scrim").classList.remove("show"); }
-function go(r){ route=r; document.querySelectorAll(".nav a,.mnav button").forEach(e=>e.classList.toggle("on",e.dataset.n===r)); render(); window.scrollTo({top:0}); }
+function syncNav(){ const n=route.indexOf("app:")===0?"":route; document.querySelectorAll(".nav a,.mnav button").forEach(e=>e.classList.toggle("on",e.dataset.n===n)); }
+function navPush(r){ route=r; syncNav();
+ try{ history.pushState({route:r},"","#/"+encodeURIComponent(r)); }catch(e){}
+ render(); window.scrollTo({top:0}); }
+function go(r){ navPush(r); }
 function goCat(c){ activeCat=c; go("apps"); }
 function doSearch(){ goSearch($("q").value.trim()); }
 /* dedicated search page */
 let searchQuery="";
-function goSearch(q){ searchQuery=q||""; route="search";
- document.querySelectorAll(".nav a,.mnav button").forEach(e=>e.classList.toggle("on",e.dataset.n==="search"));
- render(); window.scrollTo({top:0});
+function goSearch(q){ searchQuery=q||""; navPush("search");
  setTimeout(()=>{ const i=$("q2"); if(i){ i.focus(); if(searchQuery) i.setSelectionRange(i.value.length,i.value.length); } },120); }
+function shortDesc(d){ d=String(d||"").split("\n")[0];
+ const m=d.search(/\s*(Source|License|Homepage|Website)\s*:/i); if(m>30) d=d.slice(0,m);
+ d=d.trim(); if(d.length>170){ d=d.slice(0,170).replace(/\s+\S*$/,"")+"\u2026"; } return d; }
 function escAttr(s){ return String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;"); }
 function getRecents(){ try{ return JSON.parse(localStorage.getItem("as_recent")||"[]"); }catch(e){ return []; } }
 function saveRecent(q){ q=(q||"").trim(); if(!q) return;
@@ -432,13 +438,17 @@ function searchResultsHTML(q){ q=(q||"").trim().toLowerCase();
  let h='<p style="color:var(--muted);font-size:13.5px;margin-bottom:12px">'+list.length+' result'+(list.length===1?"":"s")+' for &ldquo;'+escAttr(q)+'&rdquo;</p>';
  h+='<div class="grid">'+(list.map(gcard).join("")||'<div class="empty">No apps found.<br>Try a different keyword.</div>')+'</div>';
  return h; }
-async function openApp(id){ route="app:"+id; render(); window.scrollTo({top:0});
+async function openApp(id){ navPush("app:"+id);
  const a=APPS.find(x=>x.id===id);
  if(a&&a.appid&&!REL_CACHE[a.appid]){ try{
   const q=new URLSearchParams({select:"version_code,version_name,byte_size,release_notes,created_at",app_id:"eq."+a.appid,status:"eq.published",order:"version_code.desc",limit:"10"});
   REL_CACHE[a.appid]=await sbGet("releases?"+q); if(route==="app:"+id) render();
  }catch(e){} } }
-function dlApp(id){ const a=APPS.find(x=>x.id===id); if(!a||!a.dl) return; location.href=a.dl; }
+function getDls(){ try{ return JSON.parse(localStorage.getItem("as_downloads")||"[]"); }catch(e){ return []; } }
+function trackDl(a){ if(!a||a.code==null) return; const d=getDls().filter(x=>x.slug!==a.slug);
+ d.unshift({slug:a.slug,code:a.code,ver:a.ver,at:Date.now()});
+ try{ localStorage.setItem("as_downloads",JSON.stringify(d.slice(0,100))); }catch(e){} }
+function dlApp(id){ const a=APPS.find(x=>x.id===id); if(!a||!a.dl) return; trackDl(a); location.href=a.dl; }
 
 /* views */
 function cardHTML(a){ return '<div class="card" onclick="openApp(\''+a.id+'\')">'+im(a,"width:56px;height:56px;border-radius:14px;margin-bottom:10px")+
@@ -446,7 +456,7 @@ function cardHTML(a){ return '<div class="card" onclick="openApp(\''+a.id+'\')">
  '<button class="g" onclick="event.stopPropagation();dlApp(\''+a.id+'\')">Get</button></div>'; }
 function vHome(){ const f=APPS.find(a=>a.id===FEATURED_ID)||APPS[0];
  let h='<div class="hero" onclick="openApp(\''+f.id+'\')" style="cursor:pointer">'+im(f,"width:96px;height:96px;border-radius:22px;flex-shrink:0;box-shadow:var(--shadow)")+
- '<div class="hero-t"><div class="kick">Featured app</div><h1>'+f.title+'</h1><p>'+f.desc.split("\n")[0]+'</p>'+
+ '<div class="hero-t"><div class="kick">Featured app</div><h1>'+f.title+'</h1><p>'+shortDesc(f.desc)+'</p>'+
  '<div class="hero-m"><span><b>v'+f.ver+'</b> version</span><span><b>'+f.size+'</b></span><span><b>'+f.updated+'</b> updated</span></div>'+
  '<div class="row" onclick="event.stopPropagation()"><button class="btn-p" onclick="dlApp(\''+f.id+'\')">Download APK</button><button class="btn-s" onclick="openApp(\''+f.id+'\')">Details</button></div></div></div>';
  h+='<div class="trustbar"><div><i>✓</i><div><b>Signature-verified</b><span>Every APK checked before publishing</span></div></div><div><i>⚡</i><div><b>Fast downloads</b><span>Direct links, no speed limits</span></div></div><div><i>◈</i><div><b>No account needed</b><span>Download freely, no sign-up</span></div></div></div>';
@@ -454,7 +464,7 @@ function vHome(){ const f=APPS.find(a=>a.id===FEATURED_ID)||APPS[0];
  h+='<div class="sec"><div class="sec-h"><h2>Trending now</h2><a href="#" onclick="go(\'apps\');return false">See all</a></div><div class="shelf">'+APPS.map(cardHTML).join("")+'</div></div>';
  h+='<div class="sec"><div class="sec-h"><h2>Recently added</h2><a href="#" onclick="go(\'apps\');return false">See all</a></div><div class="shelf">'+
   APPS.map(a=>'<div class="wcard" onclick="openApp(\''+a.id+'\')">'+im(a,"width:60px;height:60px;border-radius:15px;flex-shrink:0")+
-  '<div><h3>'+a.title+'</h3><div class="c">'+a.cat+'</div><div class="d">'+a.desc.split("\n")[0]+'</div><div class="m">'+(a.ver?"v"+a.ver:"")+(a.size?" · "+a.size:"")+'</div></div></div>').join("")+'</div></div>';
+  '<div><h3>'+a.title+'</h3><div class="c">'+a.cat+'</div><div class="d">'+shortDesc(a.desc)+'</div><div class="m">'+(a.ver?"v"+a.ver:"")+(a.size?" · "+a.size:"")+'</div></div></div>').join("")+'</div></div>';
  h+='<div class="sec"><div class="sec-h"><h2>Latest uploads</h2><a href="#" onclick="go(\'updates\');return false">See all</a></div>';
  const seen={};
  APPS.forEach(a=>{ const d=a.updated||"Recently"; (seen[d]=seen[d]||[]).push(a); });
@@ -477,9 +487,16 @@ function vCats(){
  CATS.slice(1).forEach(c=>{ const n=APPS.filter(a=>a.cat===c).length;
   h+='<div class="gcard" onclick="goCat(\''+c+'\')" style="text-align:center;padding:24px 12px"><span style="width:52px;height:52px;border-radius:13px;margin:0 auto 10px;display:inline-flex;align-items:center;justify-content:center;background:var(--acc-soft);color:var(--acc);font-weight:700;font-size:22px">'+escHtml(c.charAt(0))+'</span><h3>'+c+'</h3><div class="m">'+n+' apps</div></div>'; });
  return h+'</div>'; }
-function vUpdates(){ let h='<div class="crumb"><a href="#" onclick="go(\'home\');return false">Home</a> / Updates</div><h1 style="font-size:22px;font-weight:700;margin-bottom:4px">Recently updated</h1><p style="color:var(--muted);font-size:13.5px;margin-bottom:14px">Fresh versions, verified signatures</p>';
- APPS.forEach(a=>{ h+='<div class="urow" onclick="openApp(\''+a.id+'\')">'+im(a,"width:46px;height:46px;border-radius:11px;flex-shrink:0")+
-  '<div class="t"><b>'+a.title+'</b><span>'+(a.ver?"v"+a.ver:"")+(a.size?" · "+a.size:"")+(a.updated?" · "+a.updated:"")+'</span></div><button class="g" onclick="event.stopPropagation();dlApp(\''+a.id+'\')">Get</button></div>'; });
+function vUpdates(){ const dls=getDls(); const upd=[];
+ dls.forEach(d=>{ const a=APPS.find(x=>x.slug===d.slug); if(!a) return;
+  if(a.code!=null&&d.code!=null&&a.code>d.code) upd.push({a:a,old:d.ver}); });
+ upd.sort((x,y)=>String(y.a.updated).localeCompare(String(x.a.updated)));
+ let h='<div class="crumb"><a href="#" onclick="go(\'home\');return false">Home</a> / Updates</div><h1 style="font-size:22px;font-weight:700;margin-bottom:4px">Updates</h1><p style="color:var(--muted);font-size:13.5px;margin-bottom:14px">New versions of apps you downloaded</p>';
+ if(!upd.length) return h+'<div class="empty"><b>You\u2019re up to date \u2713</b><br>Apps you download from here will appear here when a new version arrives.</div>';
+ upd.forEach(u=>{ const a=u.a; h+='<div class="urow" onclick="openApp(\''+a.id+'\')">'
+  +im(a,"width:46px;height:46px;border-radius:11px;flex-shrink:0")
+  +'<div class="t"><b>'+a.title+'</b><span>'+(u.old?"v"+u.old+" \u2192 ":"")+(a.ver?"v"+a.ver:"")+(a.size?" \u00B7 "+a.size:"")+(a.updated?" \u00B7 "+a.updated:"")+'</span></div>'
+  +'<span class="tag">UPDATE</span><button class="g" onclick="event.stopPropagation();dlApp(\''+a.id+'\')">Get</button></div>'; });
  return h; }
 function vSearch(){ const svg='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
  let h='<div class="crumb"><a href="#" onclick="go(\'home\');return false">Home</a> / Search</div>';
@@ -517,6 +534,10 @@ function render(){ const st=stateHTML(); if(st){ $("main").innerHTML=st; return;
  else if(route==="updates")h=vUpdates(); else if(route==="search")h=vSearch();
  else if(route.indexOf("app:")===0)h=vApp(route.slice(4));
  $("main").innerHTML=h; }
+window.addEventListener("popstate",function(e){ const r=(e.state&&e.state.route)||decodeURIComponent((location.hash||"").replace(/^#\/?/,""))||"home";
+ route=r; syncNav(); render(); window.scrollTo({top:0}); });
+(function(){ const hr=decodeURIComponent((location.hash||"").replace(/^#\/?/,"")); if(hr) route=hr;
+ try{ history.replaceState({route:route},"","#/"+encodeURIComponent(route)); }catch(e){} })();
 render(); loadCatalog();
 </script>
 </body>
