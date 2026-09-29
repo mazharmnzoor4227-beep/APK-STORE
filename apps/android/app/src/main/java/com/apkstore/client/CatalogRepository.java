@@ -15,14 +15,16 @@ final class CatalogRepository {
     CatalogRepository(Context context) { cache = new File(context.getFilesDir(), "catalog.json"); }
 
     JSONArray cached() {
-        try { return new JSONArray(new String(java.nio.file.Files.readAllBytes(cache.toPath()), StandardCharsets.UTF_8)); }
-        catch (Exception ignored) { return new JSONArray(); }
+        try {
+            JSONArray cached = new JSONArray(new String(java.nio.file.Files.readAllBytes(cache.toPath()), StandardCharsets.UTF_8));
+            return visibleOnly(cached);
+        } catch (Exception ignored) { return new JSONArray(); }
     }
 
     void save(JSONArray apps) throws Exception {
         File temporary = new File(cache.getParentFile(), "catalog.tmp");
         try (FileOutputStream output = new FileOutputStream(temporary)) {
-            output.write(apps.toString().getBytes(StandardCharsets.UTF_8));
+            output.write(visibleOnly(apps).toString().getBytes(StandardCharsets.UTF_8));
             output.getFD().sync();
         }
         if (!temporary.renameTo(cache)) throw new Exception("Catalog cache unavailable");
@@ -45,10 +47,19 @@ final class CatalogRepository {
                 }
                 for (int i = 0; i < page.length(); i++) {
                     JSONObject app = page.optJSONObject(i);
-                    if (app != null) result.put(app);
+                    if (app != null && CatalogPolicy.shouldList(app.optString("slug"), app.optString("package_id"))) result.put(app);
                 }
                 if (page.length() < pageSize) return result;
             } finally { connection.disconnect(); }
         }
+    }
+
+    private JSONArray visibleOnly(JSONArray apps) {
+        JSONArray result = new JSONArray();
+        for (int i = 0; i < apps.length(); i++) {
+            JSONObject app = apps.optJSONObject(i);
+            if (app != null && CatalogPolicy.shouldList(app.optString("slug"), app.optString("package_id"))) result.put(app);
+        }
+        return result;
     }
 }
