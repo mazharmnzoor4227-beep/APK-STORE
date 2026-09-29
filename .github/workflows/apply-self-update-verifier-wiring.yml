@@ -5,7 +5,7 @@ on:
     paths: ['.github/workflows/apply-self-update-verifier-wiring.yml']
 permissions:
   contents: write
-# Re-run after verifier compile fix; remove this one-off workflow before merge.
+# Diagnostic rerun: keep until verifier wiring and Android suite are green, then remove before merge.
 jobs:
   apply:
     runs-on: ubuntu-latest
@@ -47,9 +47,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - name: Verify Android tests and debug build
+      - name: Diagnose Android unit tests
         working-directory: apps/android
-        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+        run: gradle --no-daemon :app:testDebugUnitTest --info --stacktrace
+      - name: Verify debug build
+        working-directory: apps/android
+        run: gradle --no-daemon :app:assembleDebug
       - name: Commit wiring
         run: |
           git config user.name "github-actions[bot]"
