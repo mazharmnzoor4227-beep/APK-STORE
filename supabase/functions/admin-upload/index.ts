@@ -3,6 +3,7 @@ import { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand, Delete
 import { getSignedUrl } from 'npm:@aws-sdk/s3-request-presigner@3.901.0';
 import { parseApkFile, parseApkUrl } from 'npm:simple-apk-parser@0.1.2';
 import { createHash } from 'node:crypto';
+import { iconExtractionProblem, isPublishableIconUrl } from './icon-policy.mjs';
 
 const origin = 'https://apk-store-mazhar.mazharmanzoor4117.chatgpt.site';
 const headers = { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Headers': 'authorization, apikey, content-type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Vary': 'Origin' };
@@ -96,18 +97,23 @@ Deno.serve(async (request) => {
       const certificates = parsed.signatures.filter((s: { found: boolean; certificate?: { sha256?: string } }) => s.found && s.certificate?.sha256).map((s: { certificate: { sha256: string } }) => s.certificate.sha256.toLowerCase());
       if (!parsed.packageName || !Number.isSafeInteger(parsed.versionCode) || parsed.versionCode <= 0 || !certificates.length || new Set(certificates).size !== 1)
         return json({ error: 'APK package, version or signer could not be verified' }, 422);
+      const iconBlob = parsed.iconBlob;
+      const iconProblem = iconExtractionProblem(iconBlob);
+      if (iconProblem || !iconBlob) return json({ error: iconProblem || 'APK launcher icon could not be extracted' }, 422);
       const download = await fetch(signedUrl);
       if (!download.ok || !download.body) throw new Error('APK could not be read for checksum');
       const hash = createHash('sha256'); let bytes = 0;
       for await (const chunk of download.body) { bytes += chunk.byteLength; if (bytes > maxApkSize) throw new Error('APK exceeds size limit'); hash.update(chunk); }
       if (bytes !== Number(candidate.byte_size)) return json({ error: 'APK size changed after upload' }, 409);
       const metadata = parsed as typeof parsed & { minSdkVersion?: number; targetSdkVersion?: number; minSdk?: number; targetSdk?: number; permissions?: string[]; abis?: string[] };
-      const inspection = { packageId: parsed.packageName, versionCode: parsed.versionCode, versionName: parsed.versionName || String(parsed.versionCode), certificateSha256: certificates[0], apkSha256: hash.digest('hex'), appName: String(parsed.appName || parsed.packageName).slice(0, 100), minSdk: metadata.minSdkVersion || metadata.minSdk || null, targetSdk: metadata.targetSdkVersion || metadata.targetSdk || null, permissions: Array.isArray(metadata.permissions) ? metadata.permissions.slice(0, 300) : [], abis: Array.isArray(metadata.abis) ? metadata.abis.slice(0, 20) : [] };
-      if (parsed.iconBlob && parsed.iconBlob.size <= 1048576 && ['image/png','image/jpeg','image/webp'].includes(parsed.iconBlob.type)) {
-        const iconKey = `${id}.${parsed.iconBlob.type.split('/')[1] === 'jpeg' ? 'jpg' : parsed.iconBlob.type.split('/')[1]}`;
-        const { error } = await db.storage.from('app-icons').upload(iconKey, parsed.iconBlob, { contentType: parsed.iconBlob.type, upsert: true });
-        if (!error) Object.assign(inspection, { iconUrl: db.storage.from('app-icons').getPublicUrl(iconKey).data.publicUrl });
-      }
+      const inspection: Record<string, unknown> = { packageId: parsed.packageName, versionCode: parsed.versionCode, versionName: parsed.versionName || String(parsed.versionCode), certificateSha256: certificates[0], apkSha256: hash.digest('hex'), appName: String(parsed.appName || parsed.packageName).slice(0, 100), minSdk: metadata.minSdkVersion || metadata.minSdk || null, targetSdk: metadata.targetSdkVersion || metadata.targetSdk || null, permissions: Array.isArray(metadata.permissions) ? metadata.permissions.slice(0, 300) : [], abis: Array.isArray(metadata.abis) ? metadata.abis.slice(0, 20) : [] };
+      const iconType = iconBlob.type;
+      const iconKey = `${id}.${iconType.split('/')[1] === 'jpeg' ? 'jpg' : iconType.split('/')[1]}`;
+      const { error: iconError } = await db.storage.from('app-icons').upload(iconKey, iconBlob, { contentType: iconType, upsert: true });
+      if (iconError) return json({ error: 'APK launcher icon could not be stored: ' + iconError.message }, 502);
+      const iconUrl = db.storage.from('app-icons').getPublicUrl(iconKey).data.publicUrl;
+      if (!isPublishableIconUrl(iconUrl)) return json({ error: 'APK launcher icon URL is invalid after storage' }, 502);
+      inspection.iconUrl = iconUrl;
       const { error } = await db.from('upload_candidates').update({ status: 'inspected', inspection, error: null }).eq('id', id).eq('owner_id', user.id).eq('status', 'uploaded');
       if (error) throw error;
       return json({ inspection });
@@ -139,6 +145,7 @@ Deno.serve(async (request) => {
       if (typeof input.id !== 'string' || !/^[0-9a-f-]{36}$/.test(input.id)) return json({ error: 'Invalid upload' }, 400);
       const { data: candidate } = await db.from('upload_candidates').select('inspection,status').eq('id', input.id).eq('owner_id', user.id).maybeSingle();
       if (candidate?.status !== 'inspected') return json({ error: 'Inspect the APK first' }, 409);
+      if (!isPublishableIconUrl(candidate.inspection?.iconUrl)) return json({ error: 'APK inspection has no valid launcher icon. Re-inspect the APK or upload a replacement icon before publishing.' }, 409);
       const title = String(input.title || '').trim().slice(0, 100);
       const category = String(input.category || 'Tools').trim().slice(0, 60);
       const description = String(input.description || '').trim().slice(0, 2000);
@@ -149,8 +156,7 @@ Deno.serve(async (request) => {
       const fdroidUrl = input.fdroidUrl !== undefined ? validUrl(input.fdroidUrl) : undefined;
       const { data: appId, error } = await db.rpc('publish_candidate', { p_candidate_id: input.id, p_actor_id: user.id, p_slug: slug, p_title: title, p_category: category, p_description: description, p_release_notes: releaseNotes });
       if (error) throw error;
-      const extras: Record<string, unknown> = { short_description: String(input.shortDescription || '').trim().slice(0, 80), is_recommended: input.recommended === true };
-      if (candidate.inspection.iconUrl) extras.icon_url = candidate.inspection.iconUrl;
+      const extras: Record<string, unknown> = { short_description: String(input.shortDescription || '').trim().slice(0, 80), is_recommended: input.recommended === true, icon_url: candidate.inspection.iconUrl };
       if (Number.isInteger(candidate.inspection.minSdk) && candidate.inspection.minSdk > 0) extras.min_sdk = candidate.inspection.minSdk;
       if (input.license !== undefined) extras.license = String(input.license).trim().slice(0, 80);
       if (input.priceType !== undefined && ['Free','In-app purchases','In-app purchases or Paid'].includes(input.priceType)) extras.price_type = input.priceType;
