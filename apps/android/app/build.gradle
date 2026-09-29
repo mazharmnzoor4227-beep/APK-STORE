@@ -12,8 +12,8 @@ android {
         buildConfigField 'String', 'SUPABASE_URL', '"https://qfbfxencwsgryoczkdyj.supabase.co"'
         // Publishable keys are public client credentials; RLS controls catalog access.
         buildConfigField 'String', 'SUPABASE_KEY', '"' + (project.findProperty('supabasePublishableKey') ?: 'sb_publishable_RiOpxFwFfj3dRt45AVn3LA_T4C0kAoJ') + '"'
-        // Public SHA-256 fingerprint only. The private release keystore never belongs in source control.
-        buildConfigField 'String', 'APK_STORE_SIGNER_SHA256', '"' + (project.findProperty('apkStoreSignerSha256') ?: '') + '"'
+        // Public permanent release-certificate fingerprint. The private keystore never belongs in source control.
+        buildConfigField 'String', 'APK_STORE_SIGNER_SHA256', '"' + (project.findProperty('apkStoreSignerSha256') ?: '4c8a4d67022c354b62db264461e0d4f9cc16f6ea3c0cbce204fb7a9f7708ac60') + '"'
     }
     buildFeatures { buildConfig true }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
