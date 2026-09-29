@@ -1,7 +1,7 @@
 -- First-party APK STORE crash reporting. Public clients have no direct table access.
 create table if not exists public.crash_issues (
   fingerprint text primary key check (fingerprint ~ '^[0-9a-f]{64}$'),
-  package_id text not null,
+  package_id text not null check (package_id = 'com.apkstore.client'),
   title text not null check (char_length(title) between 1 and 180),
   exception_class text not null check (char_length(exception_class) between 1 and 180),
   status text not null default 'open' check (status in ('open','resolved','ignored')),
@@ -9,27 +9,113 @@ create table if not exists public.crash_issues (
   last_seen_at timestamptz not null,
   event_count bigint not null default 1 check (event_count > 0),
   latest_version_code bigint not null check (latest_version_code > 0),
-  latest_version_name text not null check (char_length(latest_version_name) <= 64),
+  latest_version_name text not null check (char_length(latest_version_name) between 1 and 64),
   updated_at timestamptz not null default now()
 );
+
 create table if not exists public.crash_events (
   id uuid primary key default gen_random_uuid(),
   fingerprint text not null references public.crash_issues(fingerprint) on delete restrict,
-  package_id text not null,
+  package_id text not null check (package_id = 'com.apkstore.client'),
   version_code bigint not null check (version_code > 0),
-  version_name text not null check (char_length(version_name) <= 64),
+  version_name text not null check (char_length(version_name) between 1 and 64),
   android_sdk integer not null check (android_sdk between 26 and 100),
   device_manufacturer text not null check (char_length(device_manufacturer) <= 80),
   device_model text not null check (char_length(device_model) <= 120),
-  exception_class text not null check (char_length(exception_class) <= 180),
+  exception_class text not null check (char_length(exception_class) between 1 and 180),
   message text not null default '' check (char_length(message) <= 1000),
-  stack_trace text not null check (char_length(stack_trace) <= 16000),
+  stack_trace text not null check (char_length(stack_trace) between 1 and 16000),
   occurred_at timestamptz not null,
   received_at timestamptz not null default now()
 );
+
+create table if not exists public.crash_rate_limits (
+  rate_key text not null check (rate_key ~ '^[0-9a-f]{64}$'),
+  window_started_at timestamptz not null,
+  request_count integer not null default 1 check (request_count > 0),
+  primary key (rate_key, window_started_at)
+);
+
 create index if not exists crash_issues_status_last_seen_idx on public.crash_issues(status,last_seen_at desc);
 create index if not exists crash_events_fingerprint_received_idx on public.crash_events(fingerprint,received_at desc);
+create index if not exists crash_events_version_received_idx on public.crash_events(version_code,received_at desc);
+create index if not exists crash_rate_limits_window_idx on public.crash_rate_limits(window_started_at);
+
 alter table public.crash_issues enable row level security;
 alter table public.crash_events enable row level security;
-revoke all on public.crash_issues from anon, authenticated;
-revoke all on public.crash_events from anon, authenticated;
+alter table public.crash_rate_limits enable row level security;
+revoke all on public.crash_issues from public, anon, authenticated;
+revoke all on public.crash_events from public, anon, authenticated;
+revoke all on public.crash_rate_limits from public, anon, authenticated;
+
+create or replace function public.record_crash_report(
+  p_rate_key text,
+  p_fingerprint text,
+  p_package_id text,
+  p_version_code bigint,
+  p_version_name text,
+  p_android_sdk integer,
+  p_device_manufacturer text,
+  p_device_model text,
+  p_exception_class text,
+  p_message text,
+  p_stack_trace text,
+  p_occurred_at timestamptz
+) returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_window timestamptz := date_trunc('hour', now());
+  v_count integer;
+  v_event_id uuid;
+begin
+  if p_rate_key !~ '^[0-9a-f]{64}$' then raise exception 'Invalid rate key'; end if;
+  if p_fingerprint !~ '^[0-9a-f]{64}$' then raise exception 'Invalid fingerprint'; end if;
+  if p_package_id <> 'com.apkstore.client' then raise exception 'Invalid package'; end if;
+  if p_version_code <= 0 or char_length(p_version_name) not between 1 and 64 then raise exception 'Invalid version'; end if;
+  if p_android_sdk not between 26 and 100 then raise exception 'Invalid Android version'; end if;
+  if char_length(p_device_manufacturer) > 80 or char_length(p_device_model) > 120 then raise exception 'Invalid device metadata'; end if;
+  if char_length(p_exception_class) not between 1 and 180 or char_length(p_message) > 1000 or char_length(p_stack_trace) not between 1 and 16000 then raise exception 'Invalid exception metadata'; end if;
+  if p_occurred_at > now() + interval '5 minutes' or p_occurred_at < now() - interval '90 days' then raise exception 'Invalid crash timestamp'; end if;
+
+  insert into public.crash_rate_limits(rate_key,window_started_at,request_count)
+  values (p_rate_key,v_window,1)
+  on conflict (rate_key,window_started_at)
+  do update set request_count = public.crash_rate_limits.request_count + 1
+  returning request_count into v_count;
+  if v_count > 20 then raise exception 'Crash report rate limit exceeded'; end if;
+
+  if random() < 0.01 then
+    delete from public.crash_rate_limits where window_started_at < now() - interval '24 hours';
+  end if;
+
+  insert into public.crash_issues(
+    fingerprint,package_id,title,exception_class,status,first_seen_at,last_seen_at,
+    event_count,latest_version_code,latest_version_name,updated_at
+  ) values (
+    p_fingerprint,p_package_id,p_exception_class,p_exception_class,'open',p_occurred_at,p_occurred_at,
+    1,p_version_code,p_version_name,now()
+  )
+  on conflict (fingerprint) do update set
+    first_seen_at = least(public.crash_issues.first_seen_at, excluded.first_seen_at),
+    last_seen_at = greatest(public.crash_issues.last_seen_at, excluded.last_seen_at),
+    event_count = public.crash_issues.event_count + 1,
+    latest_version_name = case when excluded.latest_version_code >= public.crash_issues.latest_version_code then excluded.latest_version_name else public.crash_issues.latest_version_name end,
+    latest_version_code = greatest(public.crash_issues.latest_version_code, excluded.latest_version_code),
+    updated_at = now();
+
+  insert into public.crash_events(
+    fingerprint,package_id,version_code,version_name,android_sdk,device_manufacturer,
+    device_model,exception_class,message,stack_trace,occurred_at
+  ) values (
+    p_fingerprint,p_package_id,p_version_code,p_version_name,p_android_sdk,p_device_manufacturer,
+    p_device_model,p_exception_class,p_message,p_stack_trace,p_occurred_at
+  ) returning id into v_event_id;
+
+  return v_event_id;
+end $$;
+
+revoke all on function public.record_crash_report(text,text,text,bigint,text,integer,text,text,text,text,text,timestamptz) from public, anon, authenticated;
+grant execute on function public.record_crash_report(text,text,text,bigint,text,integer,text,text,text,text,text,timestamptz) to service_role;
