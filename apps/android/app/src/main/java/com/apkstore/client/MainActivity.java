@@ -1323,7 +1323,7 @@ public class MainActivity extends Activity {
         if (!app.optString("category").isEmpty()) detailChip(chipRow, app.optString("category"));
         if (!size.isEmpty()) detailChip(chipRow, size);
         int minSdk = app.optInt("min_sdk", 0);
-        if (minSdk > 0) detailChip(chipRow, "Android " + minSdk + "+");
+        if (minSdk > 0) detailChip(chipRow, AndroidVersionLabel.forMinSdk(minSdk));
         String license = app.optString("license");
         if (!license.isEmpty()) detailChip(chipRow, license);
         chipScroll.addView(chipRow); page.addView(chipScroll);
