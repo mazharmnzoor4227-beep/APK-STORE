@@ -1175,13 +1175,68 @@ public class MainActivity extends Activity {
         page.addView(text("APK STORE", 28, ink(), true)); space(page, 8);
         page.addView(text("Independent Android apps, published after owner approval.", 15, muted(), false));
         space(page, 10);
-        page.addView(text("Version " + BuildConfig.VERSION_NAME, 13, muted(), false));
-        space(page, 26);
+        page.addView(text("Version " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")", 13, muted(), false));
+        page.addView(text("Package: " + StoreIdentity.PACKAGE_ID, 12, muted(), false));
+        space(page, 18);
+        informationLink(page, "Check for updates", "Check the trusted APK STORE release", this::checkStoreUpdate);
+        space(page, 14);
         informationLink(page, "Privacy Policy", "How this app handles data", () -> showLegal("Privacy Policy", privacyPolicy()));
         informationLink(page, "Terms of Use", "Downloads and use of the store", () -> showLegal("Terms of Use", termsOfUse()));
         informationLink(page, "Project and contact", "Open the GitHub repository", () -> openLink("https://github.com/mazharmnzoor4227-beep/APK-STORE"));
         informationLink(page, "Supabase privacy", "Hosting provider's notice", () -> openLink("https://supabase.com/privacy"));
     }
+    private void checkStoreUpdate() {
+        final LinearLayout page = informationPage("APK STORE update", this::showAbout);
+        page.addView(text("Checking for updates…", 16, muted(), false));
+        worker.execute(() -> {
+            JSONObject store = null;
+            for (int i = 0; i < catalog.length(); i++) {
+                JSONObject candidate = catalog.optJSONObject(i);
+                if (candidate != null && StoreIdentity.isStoreListing(candidate.optString("package_id"), candidate.optString("slug"))) {
+                    store = candidate; break;
+                }
+            }
+            final JSONObject app = store;
+            runOnUiThread(() -> {
+                page.removeAllViews();
+                if (app == null) {
+                    page.addView(text("APK STORE update information is unavailable. Refresh the catalog and try again.", 15, ink(), false));
+                    return;
+                }
+                JSONObject release = app.optJSONObject("release");
+                if (release == null) {
+                    page.addView(text("APK STORE release metadata is unavailable.", 15, ink(), false));
+                    return;
+                }
+                long remote = release.optLong("version_code", -1);
+                if (!StoreUpdatePolicy.isUpdateAvailable(BuildConfig.VERSION_CODE, remote)) {
+                    page.addView(text("You're up to date", 22, ink(), true));
+                    space(page, 8);
+                    page.addView(text("Version " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")", 14, muted(), false));
+                    return;
+                }
+                String validation = StoreUpdatePolicy.validateMetadata(
+                        app.optString("package_id"), app.optString("slug"), BuildConfig.VERSION_CODE, remote,
+                        release.optString("apk_sha256"), release.optLong("byte_size"),
+                        release.optString("certificate_sha256"), BuildConfig.APK_STORE_SIGNER_SHA256);
+                if (validation != null) {
+                    page.addView(text("Update blocked", 22, ink(), true)); space(page, 8);
+                    page.addView(text(validation, 14, muted(), false));
+                    return;
+                }
+                page.addView(text("Update available", 22, ink(), true)); space(page, 8);
+                page.addView(text("Version " + release.optString("version_name") + " (" + remote + ")", 14, muted(), false));
+                String notes = release.optString("release_notes", release.optString("changelog", ""));
+                if (!notes.isBlank()) { space(page, 12); page.addView(text(notes, 14, ink(), false)); }
+                space(page, 18);
+                informationLink(page, "Download update", "Verified before Android asks to install", () -> {
+                    detailApp = app;
+                    startDownload(app);
+                });
+            });
+        });
+    }
+
     private void openLink(String url) {
         startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
     }
@@ -1210,7 +1265,9 @@ public class MainActivity extends Activity {
                 + "The app requests internet access to load the catalog and download approved APKs into app-specific storage through Android Download Manager. "
                 + "It checks installed app package IDs and version codes on your device to show available updates; that inventory is not sent to the catalog service. "
                 + "Search text is filtered on your device. Your theme, favorites, recent searches and download history are stored on your device. "
-                + "The app does not ask you to create an account and does not include advertising or analytics SDKs.\n\n"
+                + "The app does not ask you to create an account and does not include advertising or analytics SDKs. "
+                + "If APK STORE crashes, it may save a bounded technical diagnostic report in app-private storage and send it after the next launch to help the owner fix stability problems. "
+                + "Crash diagnostics are limited to app/package version, Android version, device manufacturer/model, exception details, stack trace and crash time; they are not intended to contain contacts, files, media, clipboard, precise location, advertising IDs, account data, messages or browsing history.\n\n"
                 + "Service requests\n"
                 + "When your device contacts the catalog or download service, the hosting provider may process technical request data such as an IP address, time and requested URL in its service logs. "
                 + "APK downloads may be served through Supabase Storage or the publisher's trusted release host. See the providers' privacy notices for their practices.\n\n"
