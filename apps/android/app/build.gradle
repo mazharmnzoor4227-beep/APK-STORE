@@ -18,6 +18,7 @@ android {
         versionCode 14
         versionName '1.1.6'
         buildConfigField 'String', 'SUPABASE_URL', '"https://qfbfxencwsgryoczkdyj.supabase.co"'
+        buildConfigField 'String', 'SITE_URL', '"' + (project.findProperty('siteUrl') ?: 'https://apk-store-mazhar.mazharmanzoor4117.chatgpt.site') + '"'
         // Publishable keys are public client credentials; RLS controls catalog access.
         buildConfigField 'String', 'SUPABASE_KEY', '"' + (project.findProperty('supabasePublishableKey') ?: 'sb_publishable_RiOpxFwFfj3dRt45AVn3LA_T4C0kAoJ') + '"'
     }
