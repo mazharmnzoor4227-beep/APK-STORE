@@ -16,6 +16,14 @@ test('owner hub exposes the required management destinations', async ({ page }) 
   await expect(page.getByRole('link', { name: 'Settings' })).toBeVisible();
 });
 
+test('owner management destinations are real pages', async ({ page }) => {
+  for (const [path, heading] of [['/admin/trash', 'Trash'], ['/admin/queue', 'Queue'], ['/admin/settings', 'Settings']] as const) {
+    const response = await page.goto(path);
+    expect(response?.status()).toBe(200);
+    await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+  }
+});
+
 test('admin pages send baseline browser security headers', async ({ page }) => {
   const response = await page.goto('/admin/login');
   expect(response).not.toBeNull();
