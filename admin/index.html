@@ -373,7 +373,7 @@ let anonKey = localStorage.getItem("sb_anon") || "";
 let token = sessionStorage.getItem("sb_token") || "";
 let userEmail = sessionStorage.getItem("sb_email") || "";
 let APPS = [], QUEUE = [], CRASHES = [];
-let currentApp = null, candidateId = null, inspection = null, appFilter = "";
+let currentApp = null, candidateId = null, inspection = null, appFilter = "", reuploadTarget = null;
 
 /* ---------- helpers ---------- */
 function toast(m){ const t=document.getElementById("toast"); t.textContent=m; t.classList.add("show");
@@ -465,7 +465,10 @@ async function loadCrashes(quiet){
 }
 
 /* ---------- apps ---------- */
-function filterApps(f){ appFilter=f; document.getElementById("appSearch").value=""; renderApps(); }
+function filterApps(f){ appFilter=(appFilter===f)?"":f; document.getElementById("appSearch").value=""; renderApps();
+  const map={published:"stPub",hidden:"stHid"};
+  document.getElementById("stPub").parentElement.style.outline=appFilter==="published"?"2px solid var(--acc)":"";
+  document.getElementById("stHid").parentElement.style.outline=appFilter==="hidden"?"2px solid var(--acc)":""; }
 function renderApps(){
   const q=document.getElementById("appSearch").value.toLowerCase();
   const list=APPS.filter(a=>!a.deleted_at)
@@ -530,8 +533,20 @@ async function saveEdit(){
     await loadApps(); openAppDetail(currentApp); toast("Saved ✓"); }
   catch(e){ toast("Save failed: "+e.message); }
 }
-function reupload(){ switchTab("upload",document.querySelectorAll(".nav-item")[0]);
-  toast("Choose the new APK for "+(getApp(currentApp)||{}).title); }
+function reupload(){
+  const a=getApp(currentApp); if(!a) return;
+  reuploadTarget=a.id;
+  switchTab("upload",document.querySelectorAll(".nav-item")[0]);
+  resetUploadKeepTarget();
+  toast("Choose the new APK for "+a.title+" (same package + signer)");
+}
+function resetUploadKeepTarget(){
+  candidateId=null; inspection=null;
+  document.getElementById("apkFile").value="";
+  document.getElementById("upProgCard").classList.add("hidden");
+  document.getElementById("upProg").style.width="0";
+  setStep(0);
+}
 async function deleteApp(){
   const a=getApp(currentApp); if(!a) return;
   if(!confirm("Move "+a.title+" to Trash?")) return;
@@ -591,28 +606,33 @@ async function startUpload(file){
     });
     bar.style.width="100%"; txt.textContent="Finalizing…";
     await api("complete","POST",{id:candidateId});
-    inspectCandidate(candidateId,true);
+    inspectCandidate(candidateId);
   }catch(e){ txt.textContent="Failed: "+e.message; toast("Upload failed: "+e.message); }
 }
-async function inspectCandidate(id,fromUpload){
-  candidateId=id; setStep(1);
-  if(fromUpload) switchTab("upload",document.querySelectorAll(".nav-item")[0]);
-  else { try{ await api("inspect","POST",{id}); }catch(e){} }
+async function inspectCandidate(id){
+  candidateId=id;
+  switchTab("upload",document.querySelectorAll(".nav-item")[0]);
+  setStep(1);
   try{
-    const j=fromUpload?await api("inspect","POST",{id}):null;
-    inspection=j?j.inspection:null;
-    if(!inspection){ const l=await api("list"); const c=l.candidates.find(x=>x.id===id); inspection=c&&c.inspection; }
-    if(!inspection||!inspection.packageId) throw new Error("Inspection failed");
+    const j=await api("inspect","POST",{id});
+    inspection=j.inspection;
+    if(!inspection||!inspection.packageId) throw new Error("APK could not be verified");
     const i=inspection;
+    const target=reuploadTarget?getApp(reuploadTarget):null;
+    if(target&&(target.package_id||"").toLowerCase()!==String(i.packageId).toLowerCase())
+      throw new Error("Package mismatch: this APK is "+i.packageId+", but "+target.title+" is "+target.package_id);
     document.getElementById("inspCard").innerHTML=
-      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;"><span class="pill green">Verified ✓</span></div>'+
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;"><span class="pill green">Verified ✓</span>'+
+      (target?'<span class="pill blue">Updating: '+esc(target.title)+'</span>':"")+'</div>'+
       '<div class="meta" style="line-height:1.9;">Package: <b style="color:var(--txt)">'+esc(i.packageId)+'</b><br>'+
       'Version: <b style="color:var(--txt)">'+esc(i.versionName)+' ('+i.versionCode+')</b><br>'+
       'App name: <b style="color:var(--txt)">'+esc(i.appName)+'</b><br>'+
       (i.minSdk?'Min SDK: <b style="color:var(--txt)">'+i.minSdk+'</b><br>':"")+
       'Signer: <span style="font-family:monospace;font-size:10px;">'+esc((i.certificateSha256||"").slice(0,24))+'…</span></div>';
-    document.getElementById("rvTitle").value=i.appName||"";
-    document.getElementById("rvCat").value="Tools";
+    document.getElementById("rvTitle").value=target?target.title:(i.appName||"");
+    document.getElementById("rvCat").value=target?(target.category||"Tools"):"Tools";
+    document.getElementById("rvShort").value=target?(target.short_description||""):"";
+    document.getElementById("rvDesc").value=target?(target.description||""):"";
     setStep(2);
   }catch(e){ toast("Inspect failed: "+e.message); setStep(0); }
 }
@@ -621,12 +641,14 @@ async function publishCandidate(){
   const title=document.getElementById("rvTitle").value.trim();
   if(!title) return toast("Enter a title");
   try{
+    const target=reuploadTarget?getApp(reuploadTarget):null;
     const j=await api("publish","POST",{ id:candidateId, rightsConfirmed:true, title,
       category:document.getElementById("rvCat").value.trim()||"Tools",
       shortDescription:document.getElementById("rvShort").value.trim(),
       description:document.getElementById("rvDesc").value.trim(),
-      releaseNotes:document.getElementById("rvNotes").value.trim() });
-    document.getElementById("pubDoneTxt").textContent=title+" is live.";
+      releaseNotes:document.getElementById("rvNotes").value.trim(),
+      targetAppId:target?target.id:null });
+    document.getElementById("pubDoneTxt").textContent=title+(target?" updated to the new version.":" is live.");
     setStep(3); loadApps(); loadQueue();
   }catch(e){ toast("Publish failed: "+e.message); }
 }
@@ -635,7 +657,7 @@ async function discardCandidate(){ if(!candidateId) return resetUpload();
   try{ await api("discard","POST",{id:candidateId}); }catch(e){}
   resetUpload(); loadQueue();
 }
-function resetUpload(){ candidateId=null; inspection=null;
+function resetUpload(){ candidateId=null; inspection=null; reuploadTarget=null;
   document.getElementById("apkFile").value="";
   document.getElementById("upProgCard").classList.add("hidden");
   document.getElementById("upProg").style.width="0";

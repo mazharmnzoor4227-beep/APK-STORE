@@ -144,17 +144,23 @@ Deno.serve(async (request) => {
       const input = await request.json();
       if (input.rightsConfirmed !== true) return json({ error: 'Confirm you have the right to distribute this app' }, 400);
       if (typeof input.id !== 'string' || !/^[0-9a-f-]{36}$/.test(input.id)) return json({ error: 'Invalid upload' }, 400);
+      const targetAppId = typeof input.targetAppId === 'string' && /^[0-9a-f-]{36}$/.test(input.targetAppId) ? input.targetAppId : null;
       const { data: candidate } = await db.from('upload_candidates').select('inspection,status').eq('id', input.id).eq('owner_id', user.id).maybeSingle();
       if (candidate?.status !== 'inspected') return json({ error: 'Inspect the APK first' }, 409);
       const title = String(input.title || '').trim().slice(0, 100);
       const category = String(input.category || 'Tools').trim().slice(0, 60);
       const description = String(input.description || '').trim().slice(0, 2000);
       const releaseNotes = String(input.releaseNotes || '').trim().slice(0, 1000);
-      const slug = String(input.slug || candidate.inspection.packageId.replaceAll('.', '-')).toLowerCase();
+      let slug = String(input.slug || candidate.inspection.packageId.replaceAll('.', '-')).toLowerCase();
+      if (targetAppId) {
+        const { data: target } = await db.from('apps').select('slug').eq('id', targetAppId).maybeSingle();
+        if (!target) return json({ error: 'Target app not found' }, 404);
+        slug = target.slug;
+      }
       if (!title || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return json({ error: 'Enter a valid app name' }, 400);
       const sourceUrl = input.sourceUrl !== undefined ? validUrl(input.sourceUrl) : undefined;
       const fdroidUrl = input.fdroidUrl !== undefined ? validUrl(input.fdroidUrl) : undefined;
-      const { data: appId, error } = await db.rpc('publish_candidate', { p_candidate_id: input.id, p_actor_id: user.id, p_slug: slug, p_title: title, p_category: category, p_description: description, p_release_notes: releaseNotes });
+      const { data: appId, error } = await db.rpc('publish_candidate', { p_candidate_id: input.id, p_actor_id: user.id, p_slug: slug, p_title: title, p_category: category, p_description: description, p_release_notes: releaseNotes, p_target_app_id: targetAppId });
       if (error) throw error;
       const extras: Record<string, unknown> = { short_description: String(input.shortDescription || '').trim().slice(0, 80), is_recommended: input.recommended === true };
       if (candidate.inspection.iconUrl) extras.icon_url = candidate.inspection.iconUrl;
