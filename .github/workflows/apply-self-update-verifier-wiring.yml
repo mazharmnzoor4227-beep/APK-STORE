@@ -5,6 +5,7 @@ on:
     paths: ['.github/workflows/apply-self-update-verifier-wiring.yml']
 permissions:
   contents: write
+# Re-run after verifier compile fix; remove this one-off workflow before merge.
 jobs:
   apply:
     runs-on: ubuntu-latest
