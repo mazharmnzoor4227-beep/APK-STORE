@@ -6,9 +6,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const ownerId = await requireOwner(request);
     const { id } = await params;
     const db = adminDatabase();
-    const { data: candidate } = await db.from('upload_candidates').select('id,object_key,status').eq('id', id).eq('owner_id', ownerId).eq('status', 'uploaded').single();
+    const { data: candidate } = await db.from('upload_candidates').select('id,status').eq('id', id).eq('owner_id', ownerId).eq('status', 'uploaded').single();
     if (!candidate) return Response.json({ error: 'Upload is not ready for inspection' }, { status: 409 });
-    const queued = await dispatchInspection(candidate.id, candidate.object_key);
+    const queued = await dispatchInspection(candidate.id);
     if (!queued) return Response.json({ error: 'Inspection service is not configured yet' }, { status: 503 });
     await db.from('upload_candidates').update({ error: null }).eq('id', id).eq('owner_id', ownerId);
     return Response.json({ inspection: 'queued' }, { status: 202 });
