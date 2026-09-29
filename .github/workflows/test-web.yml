@@ -42,4 +42,4 @@ jobs:
           SUPABASE_PUBLISHABLE_KEY: sb_publishable_test
           SUPABASE_SERVICE_ROLE_KEY: test-service-role
           ADMIN_EMAIL: owner@example.com
-        run: npx playwright test --project=chromium
+        run: npx playwright test
