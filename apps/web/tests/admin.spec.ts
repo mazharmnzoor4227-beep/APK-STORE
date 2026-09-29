@@ -1,0 +1,27 @@
+import { test, expect } from '@playwright/test';
+
+test('owner login uses email and password rather than magic-link OTP', async ({ page }) => {
+  await page.goto('/admin/login');
+  await expect(page.getByLabel('Owner email')).toBeVisible();
+  await expect(page.getByLabel('Password')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
+  await expect(page.getByText('Send sign-in link')).toHaveCount(0);
+});
+
+test('owner hub exposes the required management destinations', async ({ page }) => {
+  await page.goto('/admin/apps/new');
+  await expect(page.getByRole('link', { name: 'Crash reports' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Trash' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Queue' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Settings' })).toBeVisible();
+});
+
+test('admin pages send baseline browser security headers', async ({ page }) => {
+  const response = await page.goto('/admin/login');
+  expect(response).not.toBeNull();
+  const headers = response!.headers();
+  expect(headers['x-content-type-options']).toBe('nosniff');
+  expect(headers['x-frame-options']).toBe('DENY');
+  expect(headers['referrer-policy']).toBe('strict-origin-when-cross-origin');
+  expect(headers['content-security-policy']).toContain("frame-ancestors 'none'");
+});
