@@ -57,7 +57,6 @@ import java.util.concurrent.Executors;
 import androidx.work.WorkManager;
 import androidx.work.PeriodicWorkRequest;
 import androidx.work.ExistingPeriodicWorkPolicy;
-import androidx.work.Configuration;
 import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends Activity {
@@ -132,7 +131,6 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        setupCrashReporting();
         settingsStore = new SettingsStore(this);
         String theme = settingsStore.theme();
         light = "light".equals(theme) || ("system".equals(theme) &&
@@ -163,48 +161,11 @@ public class MainActivity extends Activity {
         if (catalog.length() > 0) load();
         scheduleUpdates();
     }
-    /** Catches uncaught crashes and reports them to the crash-report Edge Function. Never crashes the app itself. */
-    private void setupCrashReporting() {
-        Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
-        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
-            try { reportCrash(throwable); } catch (Exception ignored) { }
-            if (previous != null) previous.uncaughtException(thread, throwable);
-            else android.os.Process.killProcess(android.os.Process.myPid());
-        });
-    }
-    private void reportCrash(Throwable throwable) {
-        new Thread(() -> {
-            try {
-                StringBuilder stack = new StringBuilder();
-                for (StackTraceElement el : throwable.getStackTrace()) stack.append(el.toString()).append('\n');
-                org.json.JSONObject payload = new org.json.JSONObject();
-                payload.put("app_version", BuildConfig.VERSION_NAME);
-                payload.put("version_code", BuildConfig.VERSION_CODE);
-                payload.put("android_version", android.os.Build.VERSION.RELEASE);
-                payload.put("device_model", android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL);
-                payload.put("message", String.valueOf(throwable.getMessage()));
-                payload.put("stack", stack.toString());
-                payload.put("screen", detailApp != null ? "detail" : "main");
-                java.net.HttpURLConnection c = (java.net.HttpURLConnection)
-                        new java.net.URL(BuildConfig.SUPABASE_URL + "/functions/v1/crash-report").openConnection();
-                c.setRequestMethod("POST");
-                c.setConnectTimeout(10000); c.setReadTimeout(10000);
-                c.setRequestProperty("Content-Type", "application/json");
-                c.setDoOutput(true);
-                c.getOutputStream().write(payload.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                c.getResponseCode(); // fire and forget
-            } catch (Exception ignored) { }
-        }).start();
-    }
     private void scheduleUpdates() {
-        // Background update checks must never crash the app. Manual WorkManager
-        // init is required because this build does not merge the WorkManager
-        // ContentProvider into the manifest.
+        // WorkManager availability must never crash the foreground app.
         try {
-            if (!WorkManager.isInitialized()) {
-                WorkManager.initialize(this, new Configuration.Builder().build());
-            }
-            int hours = settingsStore.updateHours();
+            if (!CrashReporter.ensureWorkManager(this)) return;
+            int hours = WorkPolicy.normalizeUpdateHours(settingsStore.updateHours());
             PeriodicWorkRequest request = new PeriodicWorkRequest.Builder(UpdateCheckWorker.class, hours, TimeUnit.HOURS).build();
             WorkManager.getInstance(this).enqueueUniquePeriodicWork("catalog-update-check", ExistingPeriodicWorkPolicy.UPDATE, request);
         } catch (Throwable ignored) { }
