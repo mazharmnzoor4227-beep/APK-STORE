@@ -129,6 +129,9 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        // Crash reporting first: a later crash in onCreate must still be captured.
+        // Never throws, never blocks startup.
+        try { CrashReporter.install(this); } catch (Throwable ignored) { }
         settingsStore = new SettingsStore(this);
         String theme = settingsStore.theme();
         light = "light".equals(theme) || ("system".equals(theme) &&
@@ -160,9 +163,19 @@ public class MainActivity extends Activity {
         scheduleUpdates();
     }
     private void scheduleUpdates() {
-        int hours = settingsStore.updateHours();
-        PeriodicWorkRequest request = new PeriodicWorkRequest.Builder(UpdateCheckWorker.class, hours, TimeUnit.HOURS).build();
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork("catalog-update-check", ExistingPeriodicWorkPolicy.UPDATE, request);
+        // Background update checks must never crash the app: WorkManager auto-init
+        // can fail on some devices/builds, so fall back to manual init and swallow everything.
+        try {
+            try {
+                if (!WorkManager.isInitialized()) {
+                    WorkManager.initialize(this, new androidx.work.Configuration.Builder().build());
+                }
+            } catch (Throwable ignored) { }
+            int hours = settingsStore.updateHours();
+            if (hours < 1) hours = 12;
+            PeriodicWorkRequest request = new PeriodicWorkRequest.Builder(UpdateCheckWorker.class, hours, TimeUnit.HOURS).build();
+            WorkManager.getInstance(this).enqueueUniquePeriodicWork("catalog-update-check", ExistingPeriodicWorkPolicy.UPDATE, request);
+        } catch (Throwable ignored) { }
     }
     @Override protected void onResume() {
         super.onResume();
@@ -229,7 +242,10 @@ public class MainActivity extends Activity {
         int codepoint = MaterialSymbols.codepoint(key);
         TextView view = text(codepoint == 0 ? key : new String(Character.toChars(codepoint)), size, color, false);
         if (codepoint != 0) {
-            if (symbolTypeface == null) symbolTypeface = Typeface.createFromAsset(getAssets(), "material_symbols_rounded.ttf");
+            if (symbolTypeface == null) {
+                try { symbolTypeface = Typeface.createFromAsset(getAssets(), "material_symbols_rounded.ttf"); }
+                catch (Throwable ignored) { symbolTypeface = Typeface.DEFAULT; }
+            }
             view.setTypeface(symbolTypeface);
         }
         view.setGravity(Gravity.CENTER);
@@ -311,6 +327,8 @@ public class MainActivity extends Activity {
         detailApp = null;
         legalPage = false;
         tab = selected;
+        try { CrashReporter.setScreen(selected == APPS ? "apps" : selected == SEARCH ? "search" : selected == UPDATES ? "updates" : "favorites"); }
+        catch (Throwable ignored) { }
         getWindow().setStatusBarColor(bg());
         getWindow().setNavigationBarColor(bg());
         getWindow().getDecorView().setSystemUiVisibility(light ? View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR : 0);
@@ -1240,6 +1258,7 @@ public class MainActivity extends Activity {
     private void showDetail(JSONObject app) {
         consumeInstallResult(app.optString("slug"));
         detailApp = app;
+        try { CrashReporter.setScreen("detail"); } catch (Throwable ignored) { }
         LinearLayout root = vertical(); root.setBackgroundColor(bg());
         applySafeArea(root); setContentView(root); root.requestApplyInsets();
         LinearLayout top = new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL);
