@@ -6,6 +6,7 @@ export async function GET(request: Request) {
     const db = adminDatabase();
     const { data, error } = await db.from('apps')
       .select('id,slug,title,package_id,category,description,icon_url,visibility,current_release_id,updated_at')
+      .is('deleted_at', null)
       .order('updated_at', { ascending: false }).limit(200);
     if (error) throw error;
     const ids = (data ?? []).map(app => app.current_release_id).filter((id): id is string => !!id);
