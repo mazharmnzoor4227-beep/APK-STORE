@@ -4,8 +4,11 @@ import { getSignedUrl } from 'npm:@aws-sdk/s3-request-presigner@3.901.0';
 import { parseApkFile, parseApkUrl } from 'npm:simple-apk-parser@0.1.2';
 import { createHash } from 'node:crypto';
 
-const origin = 'https://apk-store-mazhar.mazharmanzoor4117.chatgpt.site';
-const headers = { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Headers': 'authorization, apikey, content-type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Vary': 'Origin' };
+const allowedOrigins = [
+  'https://apk-store-mazhar.mazharmanzoor4117.chatgpt.site',
+  'https://mazharmnzoor4227-beep.github.io',
+];
+const headers = { 'Access-Control-Allow-Origin': allowedOrigins[0], 'Access-Control-Allow-Headers': 'authorization, apikey, content-type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Vary': 'Origin' };
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
 const auth = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { auth: { persistSession: false } });
 const ownerEmail = 'mazharmanzoor4117@gmail.com';
@@ -14,11 +17,15 @@ const smallLimit = 50 * 1024 * 1024;
 const r2Bucket = Deno.env.get('R2_BUCKET');
 const r2 = Deno.env.get('R2_ACCOUNT_ID') && Deno.env.get('R2_ACCESS_KEY_ID') && Deno.env.get('R2_SECRET_ACCESS_KEY') && r2Bucket
   ? new S3Client({ region: 'auto', endpoint: `https://${Deno.env.get('R2_ACCOUNT_ID')}.r2.cloudflarestorage.com`, credentials: { accessKeyId: Deno.env.get('R2_ACCESS_KEY_ID')!, secretAccessKey: Deno.env.get('R2_SECRET_ACCESS_KEY')! } }) : null;
-function json(value: unknown, status = 200) { return Response.json(value, { status, headers }); }
+let activeHeaders: Record<string, string> = headers;
+function json(value: unknown, status = 200) { return Response.json(value, { status, headers: activeHeaders }); }
 
 Deno.serve(async (request) => {
-  if (request.headers.get('origin') !== origin) return json({ error: 'Origin not allowed' }, 403);
-  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
+  const reqOrigin = request.headers.get('origin') || '';
+  const corsHeaders = { ...headers, 'Access-Control-Allow-Origin': allowedOrigins.includes(reqOrigin) ? reqOrigin : allowedOrigins[0] };
+  activeHeaders = corsHeaders;
+  if (!allowedOrigins.includes(reqOrigin)) return json({ error: 'Origin not allowed' }, 403);
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders });
   const token = request.headers.get('authorization')?.match(/^Bearer (.+)$/)?.[1];
   if (!token) return json({ error: 'Sign in required' }, 401);
   const { data: { user }, error: userError } = await auth.auth.getUser(token);
@@ -137,17 +144,23 @@ Deno.serve(async (request) => {
       const input = await request.json();
       if (input.rightsConfirmed !== true) return json({ error: 'Confirm you have the right to distribute this app' }, 400);
       if (typeof input.id !== 'string' || !/^[0-9a-f-]{36}$/.test(input.id)) return json({ error: 'Invalid upload' }, 400);
+      const targetAppId = typeof input.targetAppId === 'string' && /^[0-9a-f-]{36}$/.test(input.targetAppId) ? input.targetAppId : null;
       const { data: candidate } = await db.from('upload_candidates').select('inspection,status').eq('id', input.id).eq('owner_id', user.id).maybeSingle();
       if (candidate?.status !== 'inspected') return json({ error: 'Inspect the APK first' }, 409);
       const title = String(input.title || '').trim().slice(0, 100);
       const category = String(input.category || 'Tools').trim().slice(0, 60);
       const description = String(input.description || '').trim().slice(0, 2000);
       const releaseNotes = String(input.releaseNotes || '').trim().slice(0, 1000);
-      const slug = String(input.slug || candidate.inspection.packageId.replaceAll('.', '-')).toLowerCase();
+      let slug = String(input.slug || candidate.inspection.packageId.replaceAll('.', '-')).toLowerCase();
+      if (targetAppId) {
+        const { data: target } = await db.from('apps').select('slug').eq('id', targetAppId).maybeSingle();
+        if (!target) return json({ error: 'Target app not found' }, 404);
+        slug = target.slug;
+      }
       if (!title || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return json({ error: 'Enter a valid app name' }, 400);
       const sourceUrl = input.sourceUrl !== undefined ? validUrl(input.sourceUrl) : undefined;
       const fdroidUrl = input.fdroidUrl !== undefined ? validUrl(input.fdroidUrl) : undefined;
-      const { data: appId, error } = await db.rpc('publish_candidate', { p_candidate_id: input.id, p_actor_id: user.id, p_slug: slug, p_title: title, p_category: category, p_description: description, p_release_notes: releaseNotes });
+      const { data: appId, error } = await db.rpc('publish_candidate', { p_candidate_id: input.id, p_actor_id: user.id, p_slug: slug, p_title: title, p_category: category, p_description: description, p_release_notes: releaseNotes, p_target_app_id: targetAppId });
       if (error) throw error;
       const extras: Record<string, unknown> = { short_description: String(input.shortDescription || '').trim().slice(0, 80), is_recommended: input.recommended === true };
       if (candidate.inspection.iconUrl) extras.icon_url = candidate.inspection.iconUrl;
@@ -276,6 +289,20 @@ Deno.serve(async (request) => {
       const { error } = await db.rpc('purge_deleted_app', { p_app_id: id, p_actor_id: user.id, p_expected_title: title });
       if (error) throw error;
       return json({ status: 'purged', removedApks: keys.size });
+    }
+    if (request.method === 'GET' && route === 'crashes') {
+      const { data, error } = await db.from('crash_reports')
+        .select('id,app_version,version_code,android_version,device_model,message,stack,screen,device_id,created_at')
+        .order('created_at', { ascending: false }).limit(200);
+      if (error) throw error;
+      return json({ crashes: data || [] });
+    }
+    if (request.method === 'POST' && route === 'resolve-crash') {
+      const { id } = await request.json();
+      if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) return json({ error: 'Invalid crash' }, 400);
+      const { error } = await db.from('crash_reports').delete().eq('id', id);
+      if (error) throw error;
+      return json({ status: 'resolved' });
     }
     return json({ error: 'Not found' }, 404);
   } catch (error) {
