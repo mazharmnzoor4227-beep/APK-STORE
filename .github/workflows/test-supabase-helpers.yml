@@ -1,0 +1,19 @@
+name: Test Supabase helpers
+on:
+  push:
+    branches: [fix/full-audit-20260929, main]
+    paths:
+      - 'supabase/functions/**/*.mjs'
+      - '.github/workflows/test-supabase-helpers.yml'
+  workflow_dispatch:
+
+jobs:
+  node-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test function helpers
+        run: node --test supabase/functions/**/*.test.mjs
