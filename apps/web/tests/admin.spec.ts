@@ -37,6 +37,13 @@ test('owner management pages expose real controls', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
 });
 
+test('APK upload advertises 300 MB, drag-drop and cancel support', async ({ page }) => {
+  await page.goto('/admin/apps/new');
+  await expect(page.getByText(/Drop an APK here/i)).toBeVisible();
+  await expect(page.getByText(/300 MB/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Cancel upload' })).toBeVisible();
+});
+
 test('admin pages send baseline browser security headers', async ({ page }) => {
   const response = await page.goto('/admin/login');
   expect(response).not.toBeNull();
