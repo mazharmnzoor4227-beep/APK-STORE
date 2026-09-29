@@ -1,0 +1,170 @@
+name: Patch APK STORE self-update v1.1.8
+on:
+  push:
+    branches: [fix/self-update-flow-v118]
+    paths: ['.github/workflows/patch-self-update-v118-temp.yml']
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/self-update-flow-v118
+      - name: Apply focused self-update fix
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('apps/android/app/src/main/java/com/apkstore/client/MainActivity.java')
+          s = p.read_text()
+
+          def rep(old, new, label):
+              global s
+              if old not in s:
+                  raise SystemExit(f'marker not found: {label}')
+              s = s.replace(old, new, 1)
+
+          rep(
+          '''    private Runnable installResultPoll;\n    private final HashMap<String, Integer> downloadProgress = new HashMap<>();''',
+          '''    private Runnable installResultPoll;\n    private JSONObject selfUpdateApp;\n    private LinearLayout selfUpdatePage;\n    private TextView selfUpdateStatus, selfUpdateProgress;\n    private ProgressRing selfUpdateRing;\n    private android.widget.Button selfUpdateButton;\n    private Runnable selfUpdateUiPoll;\n    private final HashMap<String, Integer> downloadProgress = new HashMap<>();''',
+          'fields')
+
+          rep(
+          '''        history = new DownloadStore(this);\n        JSONArray attempts = history.attempts();''',
+          '''        history = new DownloadStore(this);\n        try {\n            String savedSelfUpdate = getSharedPreferences("self_update", MODE_PRIVATE).getString("target", null);\n            if (savedSelfUpdate != null && !savedSelfUpdate.isEmpty()) selfUpdateApp = new JSONObject(savedSelfUpdate);\n        } catch (Exception ignored) { }\n        JSONArray attempts = history.attempts();''',
+          'restore target')
+
+          rep(
+          '''            if (detailApp != null) consumeInstallResult(detailApp.optString("slug"));\n            if (detailApp != null) refreshDetail();''',
+          '''            if (detailApp != null) consumeInstallResult(detailApp.optString("slug"));\n            if (selfUpdateApp != null) {\n                consumeInstallResult(selfUpdateApp.optString("slug"));\n                updateSelfUpdateUi();\n            }\n            if (detailApp != null) refreshDetail();''',
+          'resume self result')
+
+          rep(
+          '''                String endpoint = BuildConfig.SUPABASE_URL + "/rest/v1/apps?select=slug,title,current_release_id&slug=eq.apk-store-client&visibility=eq.published&limit=1";''',
+          '''                String endpoint = BuildConfig.SUPABASE_URL + "/rest/v1/apps?select=slug,title,package_id,current_release_id&slug=eq.apk-store-client&visibility=eq.published&limit=1";''',
+          'self app select')
+
+          rep(
+          '''                String rep = BuildConfig.SUPABASE_URL + "/rest/v1/releases?select=version_code,version_name,release_notes,byte_size&id=eq." + releaseId + "&limit=1";''',
+          '''                String rep = BuildConfig.SUPABASE_URL + "/rest/v1/releases?select=id,version_code,version_name,release_notes,changelog,apk_sha256,byte_size,certificate_sha256,min_sdk&id=eq." + releaseId + "&status=eq.published&limit=1";''',
+          'self release select')
+
+          rep(
+          '''                org.json.JSONObject rel = rrows.getJSONObject(0);\n                long latest = rel.optLong("version_code");''',
+          '''                org.json.JSONObject rel = rrows.getJSONObject(0);\n                self.put("package_id", getPackageName());\n                self.put("release", rel);\n                selfUpdateApp = self;\n                getSharedPreferences("self_update", MODE_PRIVATE).edit().putString("target", self.toString()).apply();\n                long latest = rel.optLong("version_code");''',
+          'retain fresh release')
+
+          old = '''                        android.widget.Button update = new android.widget.Button(this);\n                        update.setText("Update now");\n                        update.setOnClickListener(v -> {\n                            // Reuse the catalog download flow: integrity + cert checks included.\n                            for (int i = 0; i < catalog.length(); i++) {\n                                org.json.JSONObject app = catalog.optJSONObject(i);\n                                if (app != null && "apk-store-client".equals(app.optString("slug"))) { startDownload(app); showTab(APPS); return; }\n                            }\n                            android.widget.Toast.makeText(this, "Release found, but catalog needs refresh. Pull to refresh, then retry.", android.widget.Toast.LENGTH_LONG).show();\n                        });\n                        page.addView(update);'''
+          new = '''                        selfUpdatePage = page;\n                        selfUpdateRing = new ProgressRing();\n                        selfUpdateRing.setVisibility(View.GONE);\n                        page.addView(selfUpdateRing, new LinearLayout.LayoutParams(dp(64), dp(64)));\n                        selfUpdateStatus = text("Ready to update", 14, muted(), false);\n                        page.addView(selfUpdateStatus);\n                        selfUpdateProgress = text("", 13, green(), true);\n                        page.addView(selfUpdateProgress);\n                        selfUpdateButton = new android.widget.Button(this);\n                        selfUpdateButton.setText("Update now");\n                        selfUpdateButton.setOnClickListener(v -> startSelfUpdate(self));\n                        page.addView(selfUpdateButton);\n                        updateSelfUpdateUi();'''
+          rep(old, new, 'update button')
+
+          marker = '''    private void informationLink(LinearLayout page, String title, String subtitle, Runnable open) {'''
+          methods = r'''    private void startSelfUpdate(JSONObject self) {
+        selfUpdateApp = self;
+        getSharedPreferences("self_update", MODE_PRIVATE).edit().putString("target", self.toString()).apply();
+        String slug = self.optString("slug");
+        if (completedDownloads.containsKey(slug)) {
+            if (selfUpdateStatus != null) selfUpdateStatus.setText("Installing update…");
+            openDownloaded(slug);
+        } else if (!downloads.containsKey(slug)) {
+            startDownload(self);
+        }
+        updateSelfUpdateUi();
+        pollSelfUpdateUi();
+    }
+
+    private JSONObject appForDownload(String slug) {
+        if (selfUpdateApp != null && slug.equals(selfUpdateApp.optString("slug"))) return selfUpdateApp;
+        for (int i = 0; i < catalog.length(); i++) {
+            JSONObject app = catalog.optJSONObject(i);
+            if (app != null && slug.equals(app.optString("slug"))) return app;
+        }
+        return null;
+    }
+
+    private void pollSelfUpdateUi() {
+        if (selfUpdateUiPoll != null) handler.removeCallbacks(selfUpdateUiPoll);
+        selfUpdateUiPoll = new Runnable() {
+            @Override public void run() {
+                if (selfUpdateApp == null || selfUpdatePage == null) { selfUpdateUiPoll = null; return; }
+                updateSelfUpdateUi();
+                String slug = selfUpdateApp.optString("slug");
+                if (downloads.containsKey(slug) || completedDownloads.containsKey(slug)) handler.postDelayed(this, 400);
+                else selfUpdateUiPoll = null;
+            }
+        };
+        handler.post(selfUpdateUiPoll);
+    }
+
+    private void updateSelfUpdateUi() {
+        if (selfUpdateApp == null || selfUpdateStatus == null) return;
+        String slug = selfUpdateApp.optString("slug");
+        JSONObject release = selfUpdateApp.optJSONObject("release");
+        long target = release == null ? Long.MAX_VALUE : release.optLong("version_code", Long.MAX_VALUE);
+        long installed = installedVersion(getPackageName());
+        if (installed >= target) {
+            selfUpdateStatus.setText("Update installed");
+            if (selfUpdateProgress != null) selfUpdateProgress.setText("Version " + BuildConfig.VERSION_NAME);
+            if (selfUpdateRing != null) selfUpdateRing.setVisibility(View.GONE);
+            if (selfUpdateButton != null) { selfUpdateButton.setText("Up to date"); selfUpdateButton.setEnabled(false); }
+            getSharedPreferences("self_update", MODE_PRIVATE).edit().remove("target").apply();
+            return;
+        }
+        if (downloads.containsKey(slug)) {
+            int progress = downloadProgress.getOrDefault(slug, 0);
+            selfUpdateStatus.setText("Downloading update…");
+            if (selfUpdateProgress != null) selfUpdateProgress.setText(progress + "%  " + downloadSizes.getOrDefault(slug, ""));
+            if (selfUpdateRing != null) { selfUpdateRing.setVisibility(View.VISIBLE); selfUpdateRing.setProgress(progress); }
+            if (selfUpdateButton != null) { selfUpdateButton.setText("Downloading update"); selfUpdateButton.setEnabled(false); }
+            return;
+        }
+        if (completedDownloads.containsKey(slug)) {
+            selfUpdateStatus.setText("Installing update…");
+            if (selfUpdateProgress != null) selfUpdateProgress.setText("Android will ask you to confirm installation");
+            if (selfUpdateRing != null) { selfUpdateRing.setVisibility(View.VISIBLE); selfUpdateRing.setProgress(100); }
+            if (selfUpdateButton != null) { selfUpdateButton.setText("Installing update"); selfUpdateButton.setEnabled(false); }
+            return;
+        }
+        String error = downloadErrors.get(slug);
+        if (error != null && !error.isEmpty()) {
+            selfUpdateStatus.setText(error);
+            if (selfUpdateRing != null) selfUpdateRing.setVisibility(View.GONE);
+            if (selfUpdateProgress != null) selfUpdateProgress.setText("");
+            if (selfUpdateButton != null) { selfUpdateButton.setText("Retry update"); selfUpdateButton.setEnabled(true); }
+        }
+    }
+
+'''
+          rep(marker, methods + marker, 'self update helpers')
+
+          old = '''        JSONObject app = null;\n        for (int i = 0; i < catalog.length(); i++) {\n            JSONObject candidate = catalog.optJSONObject(i);\n            if (candidate != null && slug.equals(candidate.optString("slug"))) { app = candidate; break; }\n        }\n        if (app == null) { downloadErrors.put(slug, "Listing unavailable. Refresh the catalog."); refreshDetail(); return; }'''
+          new = '''        JSONObject app = appForDownload(slug);\n        if (app == null) { downloadErrors.put(slug, "Release metadata unavailable. Check for updates again."); refreshDetail(); updateSelfUpdateUi(); return; }'''
+          rep(old, new, 'openDownloaded lookup')
+
+          old = '''                    JSONObject current = null;\n                    for (int i = 0; i < catalog.length(); i++) {\n                        JSONObject candidate = catalog.optJSONObject(i);\n                        if (candidate != null && slug.equals(candidate.optString("slug"))) { current = candidate; break; }\n                    }\n                    JSONObject release = current == null ? null : current.optJSONObject("release");'''
+          new = '''                    JSONObject current = appForDownload(slug);\n                    JSONObject release = current == null ? null : current.optJSONObject("release");'''
+          rep(old, new, 'poll lookup')
+
+          old = '''                if (detailApp == null || !slug.equals(detailApp.optString("slug"))) return;'''
+          new = '''                boolean detailMatches = detailApp != null && slug.equals(detailApp.optString("slug"));\n                boolean selfMatches = selfUpdateApp != null && slug.equals(selfUpdateApp.optString("slug"));\n                if (!detailMatches && !selfMatches) return;'''
+          rep(old, new, 'install result guard')
+
+          rep(
+          '''                    consumeInstallResult(slug);\n                    refreshDetail();\n                    installResultPoll = null;''',
+          '''                    consumeInstallResult(slug);\n                    refreshDetail();\n                    updateSelfUpdateUi();\n                    installResultPoll = null;''',
+          'install result ui')
+
+          rep(
+          '''        if (installResultPoll != null) handler.removeCallbacks(installResultPoll);\n        worker.shutdownNow(); super.onDestroy();''',
+          '''        if (installResultPoll != null) handler.removeCallbacks(installResultPoll);\n        if (selfUpdateUiPoll != null) handler.removeCallbacks(selfUpdateUiPoll);\n        worker.shutdownNow(); super.onDestroy();''',
+          'destroy self poll')
+
+          p.write_text(s)
+          PY
+          git config user.name "apk-store-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add apps/android/app/src/main/java/com/apkstore/client/MainActivity.java
+          git diff --cached --check
+          git commit -m "fix: make self-update independent from public catalog"
+          git push origin HEAD:fix/self-update-flow-v118
