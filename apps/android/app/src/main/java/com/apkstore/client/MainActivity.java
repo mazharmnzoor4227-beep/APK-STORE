@@ -1848,6 +1848,7 @@ public class MainActivity extends Activity {
         Long id = stopActiveDownload(slug, true);
         history.record(slug, slug, "Cancelled", "", id == null ? -1 : id, "", 0);
         downloadErrors.remove(slug);
+        startNextQueuedUpdate();
         refreshDetail(); updateSelfUpdateUi();
     }
     private void failDownload(String slug, String message) {
