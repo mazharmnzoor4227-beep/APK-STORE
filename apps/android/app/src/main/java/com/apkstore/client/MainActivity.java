@@ -91,6 +91,7 @@ public class MainActivity extends Activity {
     private int updateQueueTotal = 0;
     private JSONObject detailApp;
     private TextView detailPrimary, detailSecondary, detailPercent, detailStatus;
+    private Runnable detailBack;
     private ProgressRing detailRing;
     private FrameLayout detailIconContainer;
     private String pendingInstallSlug;
@@ -632,6 +633,17 @@ public class MainActivity extends Activity {
             return -1;
         }
     }
+    /** Appends a green ✓ badge to a list row when the app is installed on this device. */
+    private void addInstalledTick(LinearLayout row, JSONObject app) {
+        if (installedVersion(app.optString("package_id")) < 0) return;
+        TextView tick = text("✓", 15, green(), true);
+        tick.setGravity(Gravity.CENTER);
+        tick.setBackground(shape(raised(), 13));
+        int s = dp(28);
+        tick.setMinWidth(s); tick.setMinHeight(s);
+        tick.setContentDescription("Installed on this device");
+        row.addView(tick);
+    }
     private boolean updateAvailable(JSONObject app) {
         String packageId = app.optString("package_id");
         long installed = installedVersion(packageId);
@@ -854,47 +866,78 @@ public class MainActivity extends Activity {
     }
     private void showDownloads() {
         LinearLayout page = informationPage("Downloads", () -> showTab(tab));
+        boolean any = false;
+        java.util.List<String> active = new java.util.ArrayList<>(downloads.keySet());
+        java.util.List<String> ready = new java.util.ArrayList<>(completedDownloads.keySet());
+        if (!active.isEmpty()) {
+            any = true;
+            page.addView(text("Downloading", 15, ink(), true));
+            space(page, 8);
+            for (String slug : active) {
+                JSONObject app = appForDownload(slug);
+                if (app == null) continue;
+                page.addView(downloadAppRow(app, "Downloading… " + downloadProgress.getOrDefault(slug, 0) + "%"));
+                space(page, 4);
+            }
+            space(page, 12);
+        }
+        if (!ready.isEmpty()) {
+            any = true;
+            page.addView(text("Downloaded", 15, ink(), true));
+            space(page, 8);
+            for (String slug : ready) {
+                JSONObject app = appForDownload(slug);
+                if (app == null) continue;
+                page.addView(downloadAppRow(app, "Ready to install"));
+                space(page, 4);
+            }
+            space(page, 12);
+        }
         JSONArray attempts = new JSONArray();
         JSONArray recorded = history.attempts();
         for (int i = 0; i < recorded.length(); i++) {
             JSONObject attempt = recorded.optJSONObject(i);
             if (attempt != null && !"Cancelled".equals(attempt.optString("status"))) attempts.put(attempt);
         }
-        if (attempts.length() == 0) {
-            page.addView(text("No downloads yet", 16, muted(), false)); return;
-        }
-        TextView clear = text("Clear history", 14, green(), true);
-        clear.setMinHeight(dp(48)); clear.setOnClickListener(v -> { history.clear(); showDownloads(); });
-        page.addView(clear);
-        for (int i = 0; i < attempts.length(); i++) {
-            JSONObject attempt = attempts.optJSONObject(i);
-            if (attempt == null) continue;
-            String slug = attempt.optString("slug");
-            LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
-            for (int j = 0; j < catalog.length(); j++) {
-                JSONObject app = catalog.optJSONObject(j);
-                if (app != null && slug.equals(app.optString("slug"))) {
-                    row.addView(icon(app, 48), new LinearLayout.LayoutParams(dp(48), dp(48))); break;
-                }
+        if (attempts.length() > 0) {
+            any = true;
+            page.addView(text("History", 15, ink(), true));
+            space(page, 4);
+            TextView clear = text("Clear history", 14, green(), true);
+            clear.setMinHeight(dp(48)); clear.setOnClickListener(v -> { history.clear(); showDownloads(); });
+            page.addView(clear);
+            for (int i = 0; i < attempts.length(); i++) {
+                JSONObject attempt = attempts.optJSONObject(i);
+                if (attempt == null) continue;
+                String slug = attempt.optString("slug");
+                LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
+                JSONObject app = appForDownload(slug);
+                if (app != null) row.addView(icon(app, 48), new LinearLayout.LayoutParams(dp(48), dp(48)));
+                LinearLayout labels = vertical(); labels.setPadding(dp(12), 0, 0, 0);
+                labels.addView(text(attempt.optString("title"), 16, ink(), true));
+                String status = attempt.optString("status");
+                if ("Downloading".equals(status)) status += " " + downloadProgress.getOrDefault(slug, attempt.optInt("progress")) + "%";
+                labels.addView(text(status + " · " + android.text.format.DateFormat.format("dd MMM yyyy", attempt.optLong("time")), 12, muted(), false));
+                if (!attempt.optString("error").isEmpty()) labels.addView(text(attempt.optString("error"), 12, muted(), false));
+                row.addView(labels); row.setMinimumHeight(dp(72));
+                page.addView(row);
             }
-            LinearLayout labels = vertical(); labels.setPadding(dp(12), 0, 0, 0);
-            labels.addView(text(attempt.optString("title"), 16, ink(), true));
-            String status = attempt.optString("status");
-            if ("Downloading".equals(status)) status += " " + downloadProgress.getOrDefault(slug, attempt.optInt("progress")) + "%";
-            labels.addView(text(status + " · " + android.text.format.DateFormat.format("dd MMM yyyy", attempt.optLong("time")), 12, muted(), false));
-            if (!attempt.optString("error").isEmpty()) labels.addView(text(attempt.optString("error"), 12, muted(), false));
-            row.addView(labels); row.setMinimumHeight(dp(72));
-            if ("Failed".equals(attempt.optString("status"))) {
-                row.setContentDescription(attempt.optString("title") + ", " + attempt.optString("status") + ", tap to retry");
-                row.setOnClickListener(v -> {
-                    for (int j = 0; j < catalog.length(); j++) {
-                        JSONObject app = catalog.optJSONObject(j);
-                        if (app != null && slug.equals(app.optString("slug"))) { startDownload(app); showDownloads(); break; }
-                    }
-                });
-            }
-            page.addView(row);
         }
+        if (!any) page.addView(text("No downloads yet", 16, muted(), false));
+    }
+    /** App row for the Downloads manager: icon + name + status, tap opens the detail page. */
+    private LinearLayout downloadAppRow(JSONObject app, String status) {
+        LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
+        row.addView(icon(app, 48), new LinearLayout.LayoutParams(dp(48), dp(48)));
+        LinearLayout labels = vertical(); labels.setPadding(dp(12), 0, 0, 0);
+        TextView title = text(app.optString("title"), 16, ink(), true); title.setSingleLine(true);
+        labels.addView(title);
+        labels.addView(text(status, 12, muted(), false));
+        row.addView(labels, weight());
+        addInstalledTick(row, app);
+        row.setMinimumHeight(dp(72));
+        row.setOnClickListener(v -> showDetail(app));
+        return row;
     }
     private void sectionTitle(String title, Runnable more) {
         LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
@@ -946,6 +989,7 @@ public class MainActivity extends Activity {
                         " · " + String.format(java.util.Locale.ROOT, "%.1f MB", release.optLong("byte_size") / 1048576.0));
                 copy.addView(text(meta, 12, muted(), false));
                 row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
+                addInstalledTick(row, app);
                 row.setMinimumHeight(dp(72)); row.setOnClickListener(v -> showDetail(app)); group.addView(row);
             }
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(260), -2);
@@ -1101,6 +1145,7 @@ public class MainActivity extends Activity {
             TextView subtitle = text(updateAvailable(app) ? "UPDATE AVAILABLE" : app.optString("category") + "  ·  APK", 11, updateAvailable(app) ? green() : muted(), false);
             copy.addView(subtitle);
             row.addView(copy, weight());
+            addInstalledTick(row, app);
             row.addView(text(updateAvailable(app) ? "Update ›" : "›", updateAvailable(app) ? 13 : 22, green(), updateAvailable(app)));
             row.setOnClickListener(v -> showDetail(app));
             body.addView(row); space(body, 12);
@@ -1189,6 +1234,7 @@ public class MainActivity extends Activity {
             String meta = release == null ? "" : release.optString("version_name") + " · " +
                     String.format(java.util.Locale.ROOT, "%.1f MB", release.optLong("byte_size") / 1048576.0);
             info.addView(text(meta, 12, muted(), false)); row.addView(info, weight());
+            addInstalledTick(row, app);
             row.setOnClickListener(v -> showDetail(app)); rows.addView(row);
         }
         if (matched == 0) rows.addView(text("No matching apps. Try another filter or search term.", 15, muted(), false));
@@ -1323,7 +1369,7 @@ public class MainActivity extends Activity {
                 item.addView(icon(app, 44), new LinearLayout.LayoutParams(dp(44), dp(44)));
                 TextView label = text(app.optString("title"), 16, ink(), true);
                 label.setPadding(dp(12), 0, 0, 0); item.addView(label);
-                item.setOnClickListener(v -> showDetail(app));
+                item.setOnClickListener(v -> showDetail(app, this::showMyApps));
                 page.addView(item); count++;
             }
         }
@@ -1742,14 +1788,18 @@ public class MainActivity extends Activity {
                 + "Questions about APK STORE can be raised through github.com/mazharmnzoor4227-beep/APK-STORE.";
     }
     private void showDetail(JSONObject app) {
+        showDetail(app, () -> showTab(tab));
+    }
+    private void showDetail(JSONObject app, Runnable backTo) {
         consumeInstallResult(app.optString("slug"));
         detailApp = app;
+        detailBack = backTo;
         LinearLayout root = vertical(); root.setBackgroundColor(bg());
         applySafeArea(root); setContentView(root); root.requestApplyInsets();
         LinearLayout top = new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL);
         TextView back = action("arrow_back", "Back to Apps");
         back.setPadding(dp(16), dp(16), dp(16), dp(16));
-        back.setOnClickListener(v -> { detailApp = null; showTab(tab); }); top.addView(back, new LinearLayout.LayoutParams(dp(64), dp(52)));
+        back.setOnClickListener(v -> { detailApp = null; if (detailBack != null) detailBack.run(); else showTab(tab); }); top.addView(back, new LinearLayout.LayoutParams(dp(64), dp(52)));
         top.addView(new View(this), new LinearLayout.LayoutParams(0, dp(52), 1));
         TextView heart = action("favorite", "Toggle favorite");
         heart.setTextColor(isFavorite(app) ? green() : ink());
@@ -1766,17 +1816,26 @@ public class MainActivity extends Activity {
         });
         top.addView(share, new LinearLayout.LayoutParams(dp(52), dp(52)));
         TextView more = action("more_vert", "More app options");
-        more.setOnClickListener(v -> new AlertDialog.Builder(this).setItems(new String[]{"Blacklist", "Ignore updates", "Open on GitHub"}, (dialog, which) -> {
-            if (which == 2) {
-                String url = app.optString("source_url");
-                if (url.startsWith("https://github.com/")) openLink(url);
-            } else {
-                String key = which == 0 ? "blacklist" : "ignored";
-                java.util.Set<String> values = settingsStore.entries(key);
-                values.add(app.optString("slug")); settingsStore.setEntries(key, values);
-                if (which == 0) showTab(tab); else refreshDetail();
-            }
-        }).show());
+        more.setOnClickListener(v -> {
+            android.widget.PopupMenu menu = new android.widget.PopupMenu(this, more);
+            menu.getMenu().add(0, 0, 0, "Blacklist");
+            menu.getMenu().add(0, 1, 1, "Ignore updates");
+            menu.getMenu().add(0, 2, 2, "Open on GitHub");
+            menu.setOnMenuItemClickListener(item -> {
+                int which = item.getItemId();
+                if (which == 2) {
+                    String url = app.optString("source_url");
+                    if (url.startsWith("https://github.com/")) openLink(url);
+                } else {
+                    String key = which == 0 ? "blacklist" : "ignored";
+                    java.util.Set<String> values = settingsStore.entries(key);
+                    values.add(app.optString("slug")); settingsStore.setEntries(key, values);
+                    if (which == 0) showTab(tab); else refreshDetail();
+                }
+                return true;
+            });
+            menu.show();
+        });
         top.addView(more, new LinearLayout.LayoutParams(dp(52), dp(52)));
         root.addView(top);
         ScrollView scroll = new ScrollView(this); scroll.setVerticalScrollBarEnabled(false); root.addView(scroll);
@@ -1813,14 +1872,14 @@ public class MainActivity extends Activity {
             else startDownload(app);
             refreshDetail();
         });
-        LinearLayout.LayoutParams primaryLp = new LinearLayout.LayoutParams(0, -2, 1);
-        primaryLp.setMarginEnd(dp(12));
-        actions.addView(detailPrimary, primaryLp);
         detailSecondary = text("", 14, ink(), true);
         detailSecondary.setGravity(Gravity.CENTER); detailSecondary.setPadding(dp(12), dp(15), dp(12), dp(15));
         detailSecondary.setMinHeight(dp(54));
         detailSecondary.setBackground(outline(16, green()));
-        actions.addView(detailSecondary, new LinearLayout.LayoutParams(0, -2, 1));
+        LinearLayout.LayoutParams secondaryLp = new LinearLayout.LayoutParams(0, -2, 1);
+        secondaryLp.setMarginEnd(dp(12));
+        actions.addView(detailSecondary, secondaryLp);
+        actions.addView(detailPrimary, new LinearLayout.LayoutParams(0, -2, 1));
         page.addView(actions);
         TextView installNote = text("Android will ask you to confirm installation. Updates require the original signing certificate.", 12, muted(), false);
         installNote.setPadding(0, dp(8), 0, 0); page.addView(installNote);
@@ -2092,7 +2151,7 @@ public class MainActivity extends Activity {
         detailSecondary.setBackground(outline(16, green()));
         detailSecondary.setOnClickListener(v -> {
             if (running) cancelDownload(slug);
-            else startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + detailApp.optString("package_id"))));
+            else showUninstallSheet(detailApp);
         });
         if (installed && !running && !installing && !updateAvailable(detailApp)) {
             detailPrimary.setText("Open");
@@ -2109,6 +2168,56 @@ public class MainActivity extends Activity {
                 refreshDetail();
             });
         }
+    }
+    /** Bottom sheet asking for uninstall confirmation, matching the design reference. */
+    private void showUninstallSheet(JSONObject app) {
+        final String title = app.optString("title", "This app");
+        final String packageId = app.optString("package_id");
+        android.app.Dialog dialog = new android.app.Dialog(this);
+        LinearLayout panel = vertical();
+        panel.setPadding(dp(20), dp(16), dp(20), dp(24));
+        GradientDrawable panelBg = new GradientDrawable();
+        panelBg.setColor(surface());
+        float r = dp(20);
+        panelBg.setCornerRadii(new float[]{r, r, r, r, 0, 0, 0, 0});
+        panel.setBackground(panelBg);
+        View handle = new View(this);
+        LinearLayout.LayoutParams handleLp = new LinearLayout.LayoutParams(dp(40), dp(4));
+        handleLp.gravity = Gravity.CENTER_HORIZONTAL;
+        handle.setLayoutParams(handleLp);
+        handle.setBackground(shape(muted(), 2));
+        panel.addView(handle);
+        space(panel, 14);
+        panel.addView(text(title, 17, ink(), true));
+        space(panel, 6);
+        panel.addView(text("Do you want to uninstall this app?", 14, muted(), false));
+        space(panel, 20);
+        LinearLayout buttons = new LinearLayout(this);
+        buttons.setOrientation(LinearLayout.HORIZONTAL);
+        TextView cancel = text("Cancel", 15, ink(), true);
+        cancel.setGravity(Gravity.CENTER); cancel.setMinHeight(dp(52));
+        cancel.setBackground(outline(16, green()));
+        cancel.setOnClickListener(v -> dialog.dismiss());
+        TextView ok = text("OK", 15, bg(), true);
+        ok.setGravity(Gravity.CENTER); ok.setMinHeight(dp(52));
+        ok.setBackground(shape(green(), 16));
+        ok.setOnClickListener(v -> {
+            dialog.dismiss();
+            if (!packageId.isEmpty()) startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + packageId)));
+        });
+        LinearLayout.LayoutParams cancelLp = new LinearLayout.LayoutParams(0, -2, 1);
+        cancelLp.setMarginEnd(dp(12));
+        buttons.addView(cancel, cancelLp);
+        buttons.addView(ok, new LinearLayout.LayoutParams(0, -2, 1));
+        panel.addView(buttons);
+        dialog.setContentView(panel);
+        android.view.Window w = dialog.getWindow();
+        if (w != null) {
+            w.setLayout(-1, -2);
+            w.setGravity(Gravity.BOTTOM);
+            w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+        }
+        dialog.show();
     }
     /** Starts the next app in the Update All queue, one at a time. */
     private void startNextQueuedUpdate() {
@@ -2355,7 +2464,10 @@ public class MainActivity extends Activity {
         };
         handler.postDelayed(installResultPoll, 700);
     }
-    @Override public void onBackPressed() { if (legalPage) showAbout(); else showTab(APPS); }
+    @Override public void onBackPressed() {
+        if (detailApp != null) { detailApp = null; Runnable b = detailBack != null ? detailBack : () -> showTab(APPS); b.run(); }
+        else if (legalPage) showAbout(); else showTab(APPS);
+    }
     @Override protected void onDestroy() {
         if (pendingSearch != null) handler.removeCallbacks(pendingSearch);
         for (Runnable poll : downloadPolls.values()) handler.removeCallbacks(poll);
