@@ -636,9 +636,13 @@ public class MainActivity extends Activity {
     /** Appends a green ✓ badge to a list row when the app is installed on this device. */
     private void addInstalledTick(LinearLayout row, JSONObject app) {
         if (installedVersion(app.optString("package_id")) < 0) return;
-        TextView tick = text("✓", 15, green(), true);
+        TextView tick = text("✓", 14, 0xFF2196F3, true);
         tick.setGravity(Gravity.CENTER);
-        tick.setBackground(shape(raised(), 13));
+        GradientDrawable ring = new GradientDrawable();
+        ring.setShape(GradientDrawable.OVAL);
+        ring.setColor(Color.TRANSPARENT);
+        ring.setStroke(dp(2), 0xFF2196F3);
+        tick.setBackground(ring);
         int s = dp(28);
         tick.setMinWidth(s); tick.setMinHeight(s);
         tick.setContentDescription("Installed on this device");
@@ -2203,7 +2207,18 @@ public class MainActivity extends Activity {
         ok.setBackground(shape(green(), 16));
         ok.setOnClickListener(v -> {
             dialog.dismiss();
-            if (!packageId.isEmpty()) startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + packageId)));
+            final String pkg = packageId;
+            new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                if (pkg == null || pkg.isEmpty()) {
+                    android.widget.Toast.makeText(this, "Package ID missing", android.widget.Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                try {
+                    startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + pkg)));
+                } catch (Exception e) {
+                    android.widget.Toast.makeText(this, "Uninstall open nahi ho saka", android.widget.Toast.LENGTH_SHORT).show();
+                }
+            });
         });
         LinearLayout.LayoutParams cancelLp = new LinearLayout.LayoutParams(0, -2, 1);
         cancelLp.setMarginEnd(dp(12));
