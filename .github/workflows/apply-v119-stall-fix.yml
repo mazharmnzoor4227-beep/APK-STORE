@@ -52,3 +52,5 @@ jobs:
           git diff --cached --check
           git commit -m "fix: recover stalled downloads and release v1.1.9"
           git push origin HEAD:main
+
+      # This workflow is temporary and will be removed after the verified patch lands.
