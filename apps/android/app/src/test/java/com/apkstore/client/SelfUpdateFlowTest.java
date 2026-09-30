@@ -55,4 +55,26 @@ public class SelfUpdateFlowTest {
         assertTrue(java.contains("completedDownloads.remove(slug);"));
         assertTrue(java.contains("Retry update"));
     }
+
+    @Test public void stalledDownloadsAreDetectedRetriedAndCancelable() throws Exception {
+        String java = read(projectFile("src/main/java/com/apkstore/client/MainActivity.java"));
+        assertTrue("Track byte progress so a frozen DownloadManager request can be detected", java.contains("downloadLastBytes"));
+        assertTrue("Track the last time bytes advanced", java.contains("downloadLastProgressAt"));
+        assertTrue("Bound automatic retries instead of looping forever", java.contains("downloadStallRetries"));
+        assertTrue("A stalled request must be recovered through a dedicated path", java.contains("handleStalledDownload(slug)"));
+        assertTrue("Stall detection should wait 45 seconds before recovery", java.contains("now - lastAt > 45000"));
+        assertTrue("Manual cancellation must clear scheduled stall retry state", java.contains("downloadStallRetries.remove(slug);"));
+        assertTrue("Self-update UI must refresh while retry recovery happens", java.contains("refreshDetail(); updateSelfUpdateUi();"));
+    }
+
+    @Test public void v119ReleaseIdentityStaysInSyncWithCi() throws Exception {
+        String gradle = read(projectFile("build.gradle"));
+        Path workflow = Paths.get("..", "..", ".github", "workflows", "build-android.yml");
+        if (!Files.exists(workflow)) workflow = Paths.get(".github", "workflows", "build-android.yml");
+        String ci = read(workflow);
+        assertTrue(gradle.contains("versionCode 17"));
+        assertTrue(gradle.contains("versionName '1.1.9'"));
+        assertTrue(ci.contains("EXPECTED_VERSION_NAME: 1.1.9"));
+        assertTrue(ci.contains("EXPECTED_VERSION_CODE: '17'"));
+    }
 }
