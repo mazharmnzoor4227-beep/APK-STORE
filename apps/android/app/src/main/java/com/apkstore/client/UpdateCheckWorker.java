@@ -38,7 +38,7 @@ public final class UpdateCheckWorker extends Worker {
                 try {
                     if (connection.getResponseCode() != 200) return Result.retry();
                     try (InputStream stream = connection.getInputStream()) {
-                        JSONArray releases = new JSONArray(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
+                        JSONArray releases = new JSONArray(new String(Io.readAllBytes(stream), StandardCharsets.UTF_8));
                         if (releases.length() > 0 && UpdateLogic.available(installed,
                                 releases.getJSONObject(0).optLong("version_code"),
                                 context.getSharedPreferences("MainActivity", 0).getStringSet("ignored", java.util.Collections.emptySet()).contains(app.optString("slug")),
