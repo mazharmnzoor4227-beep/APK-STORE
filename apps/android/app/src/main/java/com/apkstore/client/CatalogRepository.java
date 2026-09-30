@@ -43,7 +43,7 @@ final class CatalogRepository {
                 if (connection.getResponseCode() != 200) throw new Exception("Catalog temporarily unavailable (" + connection.getResponseCode() + ").");
                 JSONArray page;
                 try (InputStream stream = connection.getInputStream()) {
-                    page = new JSONArray(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
+                    page = new JSONArray(new String(Io.readAllBytes(stream), StandardCharsets.UTF_8));
                 }
                 for (int i = 0; i < page.length(); i++) {
                     JSONObject app = page.optJSONObject(i);
