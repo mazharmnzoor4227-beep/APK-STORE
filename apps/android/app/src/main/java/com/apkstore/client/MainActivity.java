@@ -519,7 +519,7 @@ public class MainActivity extends Activity {
         try {
             if (connection.getResponseCode() != 200) throw new Exception("Release information temporarily unavailable.");
             try (InputStream stream = connection.getInputStream()) {
-                JSONArray releases = new JSONArray(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
+                JSONArray releases = new JSONArray(new String(Io.readAllBytes(stream), StandardCharsets.UTF_8));
                 for (int i = 0; i < releases.length(); i++) {
                     JSONObject release = releases.optJSONObject(i);
                     if (release != null && packages.containsKey(release.optString("id"))) {
@@ -1255,7 +1255,7 @@ public class MainActivity extends Activity {
                 if (c.getResponseCode() != 200) throw new Exception("Update check failed (" + c.getResponseCode() + ").");
                 String body;
                 try (java.io.InputStream in = c.getInputStream()) {
-                    body = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                    body = new String(Io.readAllBytes(in), java.nio.charset.StandardCharsets.UTF_8);
                 }
                 org.json.JSONArray rows = new org.json.JSONArray(body);
                 if (rows.length() == 0) throw new Exception("No APK STORE release is published yet.");
@@ -1269,7 +1269,7 @@ public class MainActivity extends Activity {
                 if (rc.getResponseCode() != 200) throw new Exception("Update check failed.");
                 String rbody;
                 try (java.io.InputStream in = rc.getInputStream()) {
-                    rbody = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                    rbody = new String(Io.readAllBytes(in), java.nio.charset.StandardCharsets.UTF_8);
                 }
                 org.json.JSONArray rrows = new org.json.JSONArray(rbody);
                 if (rrows.length() == 0) throw new Exception("Release details unavailable.");
