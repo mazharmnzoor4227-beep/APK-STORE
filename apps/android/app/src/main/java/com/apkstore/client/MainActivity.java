@@ -104,6 +104,10 @@ public class MainActivity extends Activity {
     private final HashMap<String, Integer> downloadProgress = new HashMap<>();
     private final HashMap<String, String> downloadSizes = new HashMap<>();
     private final HashMap<String, String> downloadErrors = new HashMap<>();
+    private final HashMap<String, Long> downloadLastBytes = new HashMap<>();
+    private final HashMap<String, Long> downloadLastProgressAt = new HashMap<>();
+    private final HashMap<String, Integer> downloadStallRetries = new HashMap<>();
+    private final HashMap<String, Runnable> downloadRetryTasks = new HashMap<>();
     private Typeface symbolTypeface;
     private final java.util.HashSet<String> previousHomeSlugs = new java.util.HashSet<>();
     private final long randomOrderSeed = new java.security.SecureRandom().nextLong();
@@ -1763,6 +1767,8 @@ public class MainActivity extends Activity {
     private void startDownload(JSONObject app) {
         String slug = app.optString("slug");
         if (!slug.matches("[a-z0-9]+(-[a-z0-9]+)*") || downloads.containsKey(slug)) return;
+        Runnable scheduledRetry = downloadRetryTasks.remove(slug);
+        if (scheduledRetry != null) handler.removeCallbacks(scheduledRetry);
         try {
             DownloadManager manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
             Uri url = Uri.parse(BuildConfig.SUPABASE_URL + "/functions/v1/download-apk?slug=" + Uri.encode(slug));
@@ -1780,6 +1786,8 @@ public class MainActivity extends Activity {
             history.record(slug, app.optString("title"), "Downloading", "", id, downloadPaths.get(slug), 0);
             downloadErrors.remove(slug); downloadProgress.put(slug, 0);
             downloads.put(slug, id);
+            downloadLastBytes.put(slug, -1L);
+            downloadLastProgressAt.put(slug, android.os.SystemClock.elapsedRealtime());
             pollDownload(slug); refreshDetail();
         } catch (Exception e) { downloadErrors.put(slug, "Download could not start: " + e.getMessage()); refreshDetail(); }
     }
@@ -1818,15 +1826,72 @@ public class MainActivity extends Activity {
             }
         });
     }
-    private void cancelDownload(String slug) {
+    private void clearStallState(String slug, boolean clearRetryCount) {
+        downloadLastBytes.remove(slug);
+        downloadLastProgressAt.remove(slug);
+        Runnable retry = downloadRetryTasks.remove(slug);
+        if (retry != null) handler.removeCallbacks(retry);
+        if (clearRetryCount) downloadStallRetries.remove(slug);
+    }
+    private Long stopActiveDownload(String slug, boolean clearRetryCount) {
         Long id = downloads.remove(slug);
         Runnable poll = downloadPolls.remove(slug);
         if (poll != null) handler.removeCallbacks(poll);
         if (id != null) ((DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE)).remove(id);
         downloadPaths.remove(slug);
-        history.record(slug, slug, "Cancelled", "", id == null ? -1 : id, "", 0);
-        downloadProgress.remove(slug); refreshDetail();
+        downloadProgress.remove(slug);
         downloadSizes.remove(slug);
+        clearStallState(slug, clearRetryCount);
+        return id;
+    }
+    private void cancelDownload(String slug) {
+        Long id = stopActiveDownload(slug, true);
+        history.record(slug, slug, "Cancelled", "", id == null ? -1 : id, "", 0);
+        downloadErrors.remove(slug);
+        refreshDetail(); updateSelfUpdateUi();
+    }
+    private void failDownload(String slug, String message) {
+        Long id = stopActiveDownload(slug, true);
+        downloadErrors.put(slug, message);
+        history.record(slug, slug, "Failed", message, id == null ? -1 : id, "", 0);
+        refreshDetail(); updateSelfUpdateUi();
+        startNextQueuedUpdate();
+    }
+    private void handleStalledDownload(String slug) {
+        int retries = downloadStallRetries.getOrDefault(slug, 0);
+        JSONObject app = appForDownload(slug);
+        Long id = stopActiveDownload(slug, false);
+        if (app == null) {
+            downloadStallRetries.remove(slug);
+            String message = "Download stalled and release metadata is unavailable. Check for updates again.";
+            downloadErrors.put(slug, message);
+            history.record(slug, slug, "Stalled", message, id == null ? -1 : id, "", 0);
+            refreshDetail(); updateSelfUpdateUi();
+            startNextQueuedUpdate();
+            return;
+        }
+        if (retries >= 3) {
+            downloadStallRetries.remove(slug);
+            String message = "Download stalled after 3 retries. Check your connection and tap Retry.";
+            downloadErrors.put(slug, message);
+            history.record(slug, slug, "Stalled", message, id == null ? -1 : id, "", 0);
+            refreshDetail(); updateSelfUpdateUi();
+            startNextQueuedUpdate();
+            return;
+        }
+        int attempt = retries + 1;
+        downloadStallRetries.put(slug, attempt);
+        downloadErrors.put(slug, "Download stalled — retrying " + attempt + "/3…");
+        refreshDetail(); updateSelfUpdateUi();
+        final JSONObject target = app;
+        Runnable retry = () -> {
+            downloadRetryTasks.remove(slug);
+            if (downloadStallRetries.getOrDefault(slug, 0) != attempt || downloads.containsKey(slug)) return;
+            downloadErrors.remove(slug);
+            startDownload(target);
+        };
+        downloadRetryTasks.put(slug, retry);
+        handler.postDelayed(retry, 2500);
     }
     private void pollDownload(String slug) {
         Runnable previous = downloadPolls.remove(slug);
@@ -1837,13 +1902,14 @@ public class MainActivity extends Activity {
                 if (id == null) return;
                 DownloadManager manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
                 try (Cursor cursor = manager.query(new DownloadManager.Query().setFilterById(id))) {
-                    if (cursor == null || !cursor.moveToFirst()) { cancelDownload(slug); return; }
+                    if (cursor == null || !cursor.moveToFirst()) { failDownload(slug, "Download disappeared. Tap Retry to try again."); return; }
                     int status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
                     if (status == DownloadManager.STATUS_SUCCESSFUL) {
                         downloads.remove(slug); downloadPolls.remove(slug);
                         completedDownloads.put(slug, id);
                         history.record(slug, slug, "Downloaded", "", id, downloadPaths.getOrDefault(slug, ""), 100);
                         downloadProgress.put(slug, 100);
+                        clearStallState(slug, true);
                         refreshDetail();
                         openDownloaded(slug);
                         startNextQueuedUpdate();
@@ -1851,18 +1917,32 @@ public class MainActivity extends Activity {
                     }
                     if (status == DownloadManager.STATUS_FAILED) {
                         int reason = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON));
-                        cancelDownload(slug); downloadErrors.put(slug, "Download failed (" + reason + "). Tap Install to retry.");
-                        history.record(slug, slug, "Failed", downloadErrors.get(slug), id, "", 0);
-                        refreshDetail();
-                        startNextQueuedUpdate();
+                        failDownload(slug, "Download failed (" + reason + "). Tap Retry to try again.");
                         return;
                     }
+                    int pauseReason = status == DownloadManager.STATUS_PAUSED
+                            ? cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON)) : 0;
                     if (status == DownloadManager.STATUS_PAUSED)
                         downloadErrors.put(slug, "Paused · waiting for network or retry");
-                    else if (status == DownloadManager.STATUS_RUNNING)
+                    else if (status == DownloadManager.STATUS_RUNNING || status == DownloadManager.STATUS_PENDING)
                         downloadErrors.remove(slug);
                     long done = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
                     long total = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
+                    long now = android.os.SystemClock.elapsedRealtime();
+                    Long lastBytes = downloadLastBytes.get(slug);
+                    Long lastAt = downloadLastProgressAt.get(slug);
+                    boolean retryableState = status == DownloadManager.STATUS_RUNNING || status == DownloadManager.STATUS_PENDING
+                            || (status == DownloadManager.STATUS_PAUSED
+                            && (pauseReason == DownloadManager.PAUSED_WAITING_TO_RETRY || pauseReason == DownloadManager.PAUSED_UNKNOWN));
+                    if (lastBytes == null || done > lastBytes) {
+                        downloadLastBytes.put(slug, done);
+                        downloadLastProgressAt.put(slug, now);
+                    } else if (!retryableState) {
+                        downloadLastProgressAt.put(slug, now);
+                    } else if (lastAt != null && now - lastAt > 45000L) {
+                        handleStalledDownload(slug);
+                        return;
+                    }
                     JSONObject current = appForDownload(slug);
                     JSONObject release = current == null ? null : current.optJSONObject("release");
                     long expected = release == null ? 0 : release.optLong("byte_size");
@@ -1874,7 +1954,7 @@ public class MainActivity extends Activity {
                     refreshDetail();
                     if (detailApp == null && body != null) render();
                     handler.postDelayed(this, 500);
-                } catch (Exception e) { cancelDownload(slug); downloadErrors.put(slug, "Download failed. Tap Install to retry."); refreshDetail(); }
+                } catch (Exception e) { failDownload(slug, "Download failed. Tap Retry to try again."); }
             }
         };
         downloadPolls.put(slug, poll);
@@ -1905,6 +1985,7 @@ public class MainActivity extends Activity {
     @Override protected void onDestroy() {
         if (pendingSearch != null) handler.removeCallbacks(pendingSearch);
         for (Runnable poll : downloadPolls.values()) handler.removeCallbacks(poll);
+        for (Runnable retry : downloadRetryTasks.values()) handler.removeCallbacks(retry);
         if (installResultPoll != null) handler.removeCallbacks(installResultPoll);
         if (selfUpdateUiPoll != null) handler.removeCallbacks(selfUpdateUiPoll);
         worker.shutdownNow(); super.onDestroy();
