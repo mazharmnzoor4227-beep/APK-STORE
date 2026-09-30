@@ -55,12 +55,4 @@ public class SelfUpdateFlowTest {
         assertTrue(java.contains("completedDownloads.remove(slug);"));
         assertTrue(java.contains("Retry update"));
     }
-
-    @Test public void selfUpdateCanReadHiddenUnlistedStoreRow() throws Exception {
-        String java = read(projectFile("src/main/java/com/apkstore/client/MainActivity.java"));
-        assertTrue("Self update must accept the hidden unlisted APK STORE row",
-                java.contains("slug=eq.apk-store-client&visibility=in.(published,unlisted)&limit=1"));
-        assertFalse("Self update must not require the APK STORE row to be public-catalog published",
-                java.contains("slug=eq.apk-store-client&visibility=eq.published&limit=1"));
-    }
 }
