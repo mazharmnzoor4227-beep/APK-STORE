@@ -1,0 +1,26 @@
+name: Dispatch signed verification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/dispatch-signed-verification.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch signed release build without publishing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' '{"ref":"main","inputs":{"publish":"false","release_notes":"Signed release path verification only; do not publish."}}' \
+            | gh api --method POST "repos/$REPO/actions/workflows/build-android.yml/dispatches" --input -
+          echo "DISPATCH_OK"
