@@ -12,20 +12,6 @@ diff --git a/apps/android/app/build.gradle b/apps/android/app/build.gradle
          buildConfigField 'String', 'SUPABASE_URL', '"https://qfbfxencwsgryoczkdyj.supabase.co"'
          buildConfigField 'String', 'SITE_URL', '"' + (project.findProperty('siteUrl') ?: 'https://mazharmnzoor4227-beep.github.io/APK-STORE/') + '"'
          // Supabase publishable keys are intentionally public client credentials; RLS controls access.
-diff --git a/.github/workflows/build-android.yml b/.github/workflows/build-android.yml
---- a/.github/workflows/build-android.yml
-+++ b/.github/workflows/build-android.yml
-@@ -20,8 +20,8 @@ jobs:
-       APKSTORE_KEY_ALIAS: ${{ secrets.APKSTORE_KEY_ALIAS }}
-       APKSTORE_KEY_PASSWORD: ${{ secrets.APKSTORE_KEY_PASSWORD }}
-       EXPECTED_PACKAGE: com.apkstore.client
--      EXPECTED_VERSION_NAME: 1.1.8
--      EXPECTED_VERSION_CODE: '16'
-+      EXPECTED_VERSION_NAME: 1.1.9
-+      EXPECTED_VERSION_CODE: '17'
-       EXPECTED_MIN_SDK: '26'
-       EXPECTED_TARGET_SDK: '35'
-       EXPECTED_SIGNER_SHA256: cd5fff73675c8c783db51a3300cc06845763215d2c7b03a64ae7f9b589360585
 diff --git a/apps/android/app/src/main/java/com/apkstore/client/MainActivity.java b/apps/android/app/src/main/java/com/apkstore/client/MainActivity.java
 --- a/apps/android/app/src/main/java/com/apkstore/client/MainActivity.java
 +++ b/apps/android/app/src/main/java/com/apkstore/client/MainActivity.java
