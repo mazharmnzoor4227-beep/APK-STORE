@@ -68,7 +68,7 @@ public class SelfUpdateFlowTest {
     }
 
     @Test public void v119ReleaseIdentityStaysInSyncWithCi() throws Exception {
-        String gradle = read(projectFile("build.gradle"));
+        String gradle = read(Paths.get("app", "build.gradle"));
         Path workflow = Paths.get("..", "..", ".github", "workflows", "build-android.yml");
         if (!Files.exists(workflow)) workflow = Paths.get(".github", "workflows", "build-android.yml");
         String ci = read(workflow);
