@@ -17,6 +17,16 @@ public class SelfUpdateFlowTest {
         return Paths.get("app").resolve(relative);
     }
 
+    private Path findUp(String... segments) {
+        Path dir = Paths.get("").toAbsolutePath();
+        for (int depth = 0; depth < 8 && dir != null; depth++, dir = dir.getParent()) {
+            Path candidate = dir;
+            for (String segment : segments) candidate = candidate.resolve(segment);
+            if (Files.exists(candidate)) return candidate;
+        }
+        throw new IllegalStateException("Repository file not found: " + String.join("/", segments));
+    }
+
     private String read(Path path) throws Exception {
         return new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
     }
@@ -68,10 +78,8 @@ public class SelfUpdateFlowTest {
     }
 
     @Test public void v119ReleaseIdentityStaysInSyncWithCi() throws Exception {
-        String gradle = read(Paths.get("app", "build.gradle"));
-        Path workflow = Paths.get("..", "..", ".github", "workflows", "build-android.yml");
-        if (!Files.exists(workflow)) workflow = Paths.get(".github", "workflows", "build-android.yml");
-        String ci = read(workflow);
+        String gradle = read(findUp("apps", "android", "app", "build.gradle"));
+        String ci = read(findUp(".github", "workflows", "build-android.yml"));
         assertTrue(gradle.contains("versionCode 17"));
         assertTrue(gradle.contains("versionName '1.1.9'"));
         assertTrue(ci.contains("EXPECTED_VERSION_NAME: 1.1.9"));
