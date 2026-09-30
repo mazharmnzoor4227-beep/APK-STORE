@@ -47,6 +47,6 @@ public class IconLoadingPolicyTest {
         assertTrue("Adaptive icon XML must exist", Files.isRegularFile(adaptive));
         String xml = read(adaptive);
         assertTrue("Adaptive launcher must use the supplied APK STORE artwork",
-                xml.contains("@drawable/apk_store_foreground"));
+                xml.contains("@drawable/ic_launcher_foreground"));
     }
 }
