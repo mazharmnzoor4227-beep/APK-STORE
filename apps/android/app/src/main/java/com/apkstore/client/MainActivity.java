@@ -749,7 +749,7 @@ public class MainActivity extends Activity {
                 }
             } else {
                 clip = null;
-                boolean installing = "Waiting for Android installation confirmation".equals(downloadErrors.get(slug));
+                boolean installing = INSTALLING_MARKER.equals(downloadErrors.get(slug));
                 background.setColor(installing ? raised() : green());
                 label.setText(installing ? "Installing…" : ready ? "Install" : "Update");
                 label.setTextColor(installing ? muted() : bg());
@@ -2072,6 +2072,7 @@ public class MainActivity extends Activity {
         boolean running = downloads.containsKey(slug);
         boolean ready = completedDownloads.containsKey(slug);
         boolean installed = installedVersion(detailApp.optString("package_id")) >= 0;
+        boolean installing = ready && INSTALLING_MARKER.equals(downloadErrors.get(slug));
         detailRing.setVisibility(running ? View.VISIBLE : View.GONE);
         detailRing.setProgress(downloadProgress.getOrDefault(slug, 0));
         if (detailIconContainer != null) detailIconContainer.setBackground(shape(surface(), running ? 52 : 16));
@@ -2081,10 +2082,10 @@ public class MainActivity extends Activity {
                 running ? downloadSizes.getOrDefault(slug, "Preparing download…") :
                         ready ? "Downloaded · Android will confirm installation" : ""));
         detailStatus.setVisibility(detailStatus.getText().length() == 0 ? View.GONE : View.VISIBLE);
-        detailPrimary.setText(running ? "Open" : ready ? "Install" : updateAvailable(detailApp) ? "Update" : "Install");
-        detailPrimary.setEnabled(!running);
-        detailPrimary.setBackground(shape(running ? raised() : green(), 16));
-        detailPrimary.setTextColor(running ? muted() : bg());
+        detailPrimary.setText(running ? "Open" : installing ? "Installing…" : ready ? "Install" : updateAvailable(detailApp) ? "Update" : "Install");
+        detailPrimary.setEnabled(!running && !installing);
+        detailPrimary.setBackground(shape(running || installing ? raised() : green(), 16));
+        detailPrimary.setTextColor(running || installing ? muted() : bg());
         detailSecondary.setVisibility(running || installed ? View.VISIBLE : View.GONE);
         detailSecondary.setText(running ? "Cancel" : "Uninstall");
         detailSecondary.setEnabled(true);
@@ -2093,7 +2094,7 @@ public class MainActivity extends Activity {
             if (running) cancelDownload(slug);
             else startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + detailApp.optString("package_id"))));
         });
-        if (installed && !running && !updateAvailable(detailApp)) {
+        if (installed && !running && !installing && !updateAvailable(detailApp)) {
             detailPrimary.setText("Open");
             detailPrimary.setOnClickListener(v -> {
                 Intent launch = getPackageManager().getLaunchIntentForPackage(detailApp.optString("package_id"));
@@ -2145,6 +2146,8 @@ public class MainActivity extends Activity {
             pollDownload(slug); refreshDetail();
         } catch (Exception e) { downloadErrors.put(slug, "Download could not start: " + e.getMessage()); refreshDetail(); }
     }
+    private static final String INSTALLING_MARKER = "Waiting for Android installation confirmation";
+
     private void openDownloaded(String slug) {
         Long id = completedDownloads.get(slug);
         if (id == null) return;
@@ -2153,12 +2156,20 @@ public class MainActivity extends Activity {
             startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getPackageName())));
             return;
         }
+        // Guard: an install session is already in flight for this app — ignore duplicate taps.
+        // Without this, a second tap commits a second PackageInstaller session and Android shows
+        // the install confirmation dialog twice.
+        if (INSTALLING_MARKER.equals(downloadErrors.get(slug))) return;
         JSONObject app = appForDownload(slug);
         if (app == null) { downloadErrors.put(slug, "Release metadata unavailable. Check for updates again."); refreshDetail(); updateSelfUpdateUi(); return; }
         JSONObject release = app.optJSONObject("release");
         if (release == null) { downloadErrors.put(slug, "Release metadata unavailable. Refresh the catalog."); refreshDetail(); return; }
         String path = downloadPaths.get(slug);
         if (path == null) { downloadErrors.put(slug, "APK file is missing. Download again."); refreshDetail(); return; }
+        // Mark synchronously on the UI thread (before the worker starts) so even a rapid
+        // second tap sees the in-flight install and is ignored. Cleared by consumeInstallResult.
+        downloadErrors.put(slug, INSTALLING_MARKER);
+        refreshDetail(); refreshUpdateButtons(); updateSelfUpdateUi();
         final JSONObject target = app;
         worker.execute(() -> {
             try {
@@ -2167,8 +2178,7 @@ public class MainActivity extends Activity {
                 ApkIntegrity.verifyPackage(this, apk, target.optString("package_id"), release.optString("certificate_sha256"));
                 InstallCoordinator.install(this, apk, slug, target.optString("package_id"));
                 runOnUiThread(() -> {
-                    downloadErrors.put(slug, "Waiting for Android installation confirmation");
-                    refreshDetail(); watchInstallResult(slug);
+                    refreshDetail(); refreshUpdateButtons(); updateSelfUpdateUi(); watchInstallResult(slug);
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
@@ -2335,7 +2345,12 @@ public class MainActivity extends Activity {
                     installResultPoll = null;
                 } else if (android.os.SystemClock.uptimeMillis() < deadline) {
                     handler.postDelayed(this, 700);
-                } else installResultPoll = null;
+                } else {
+                    // Install sessions always resolve eventually (success/failure/cancel).
+                    // Keep watching at a low frequency so a late result still updates the UI
+                    // instead of leaving the button stuck on "Installing…".
+                    handler.postDelayed(this, 5000);
+                }
             }
         };
         handler.postDelayed(installResultPoll, 700);
