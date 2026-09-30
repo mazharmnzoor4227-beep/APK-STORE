@@ -77,12 +77,21 @@ public class SelfUpdateFlowTest {
         assertTrue("Self-update UI must refresh while retry recovery happens", java.contains("refreshDetail(); updateSelfUpdateUi();"));
     }
 
-    @Test public void v119ReleaseIdentityStaysInSyncWithCi() throws Exception {
-        String gradle = read(findUp("apps", "android", "app", "build.gradle"));
+    @Test public void releaseIdentityIsDerivedFromGradleInCi() throws Exception {
         String ci = read(findUp(".github", "workflows", "build-android.yml"));
-        assertTrue(gradle.contains("versionCode 17"));
-        assertTrue(gradle.contains("versionName '1.1.9'"));
-        assertTrue(ci.contains("EXPECTED_VERSION_NAME: 1.1.9"));
-        assertTrue(ci.contains("EXPECTED_VERSION_CODE: '17'"));
+        assertTrue("CI must read the release version from the Android build file",
+                ci.contains("GRADLE_FILE=\"apps/android/app/build.gradle\""));
+        assertTrue("CI must derive versionName instead of pinning one release",
+                ci.contains("EXPECTED_VERSION_NAME=\"$(sed -nE"));
+        assertTrue("CI must derive versionCode instead of pinning one release",
+                ci.contains("EXPECTED_VERSION_CODE=\"$(sed -nE"));
+        assertTrue("Signed APK versionCode must be verified against the derived value",
+                ci.contains("versionCode='$EXPECTED_VERSION_CODE'"));
+        assertTrue("Signed APK versionName must be verified against the derived value",
+                ci.contains("versionName='$EXPECTED_VERSION_NAME'"));
+        assertFalse("CI must not be tied to the old v1.1.9 release",
+                ci.contains("EXPECTED_VERSION_NAME: 1.1.9"));
+        assertFalse("CI must not be tied to the old versionCode 17 release",
+                ci.contains("EXPECTED_VERSION_CODE: '17'"));
     }
 }
