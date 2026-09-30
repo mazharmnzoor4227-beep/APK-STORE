@@ -1,0 +1,19 @@
+name: One-shot publish APK STORE v1.1.10
+on:
+  push:
+    branches: [release-dispatch-v1-1-10]
+    paths: ['.github/workflows/one-shot-publish.yml']
+permissions:
+  actions: write
+  contents: read
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch verified signed publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' '{"ref":"main","inputs":{"publish":"true","release_notes":"APK STORE v1.1.10 — verified self-update release."}}' | gh api --method POST "repos/$REPO/actions/workflows/build-android.yml/dispatches" --input -
