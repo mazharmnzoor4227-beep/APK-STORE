@@ -219,9 +219,40 @@ public class MainActivity extends Activity {
                 releaseVersions.put(app.optString("package_id"), app.optJSONObject("release").optLong("version_code"));
         }
         showTab(APPS);
+        handleNotificationIntent(getIntent());
         for (String slug : new java.util.ArrayList<>(downloads.keySet())) pollDownload(slug);
         if (catalog.length() > 0) load();
         scheduleUpdates();
+    }
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleNotificationIntent(intent);
+    }
+    private void handleNotificationIntent(Intent intent) {
+        try {
+            if (intent != null && "updates".equals(intent.getStringExtra("open_tab"))) showTab(UPDATES);
+        } catch (Throwable ignored) { }
+    }
+    private void maybeAskNotificationPermission() {
+        try {
+            if (android.os.Build.VERSION.SDK_INT < 33) return;
+            if (!settingsStore.notificationsEnabled()) return;
+            if (settingsStore.notifAsked()) return;
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                    == PackageManager.PERMISSION_GRANTED) return;
+            settingsStore.setNotifAsked();
+            requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 2001);
+        } catch (Throwable ignored) { }
+    }
+    private void requestNotificationPermission() {
+        try {
+            if (android.os.Build.VERSION.SDK_INT < 33) return;
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                    == PackageManager.PERMISSION_GRANTED) return;
+            settingsStore.setNotifAsked();
+            requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 2001);
+        } catch (Throwable ignored) { }
     }
     private void scheduleUpdates() {
         // WorkManager availability must never crash the foreground app.
@@ -413,6 +444,7 @@ public class MainActivity extends Activity {
         detailApp = null;
         legalPage = false;
         tab = selected;
+        if (selected == UPDATES) maybeAskNotificationPermission();
         getWindow().setStatusBarColor(bg());
         getWindow().setNavigationBarColor(bg());
         getWindow().getDecorView().setSystemUiVisibility(light ? View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR : 0);
@@ -1333,6 +1365,16 @@ public class MainActivity extends Activity {
         }, false);
         settingsSection(body, "Updates");
         settingsCheckRow(settingsCard(body));
+        settingsSection(body, "Notifications");
+        LinearLayout notifCard = settingsCard(body);
+        boolean alertsOn = settingsStore.notificationsEnabled();
+        settingsRow(notifCard, "system_update", "Update alerts", alertsOn ? "On \u2022 Notify when updates arrive" : "Off",
+                () -> {
+                    boolean next = !settingsStore.notificationsEnabled();
+                    settingsStore.setNotificationsEnabled(next);
+                    if (next) requestNotificationPermission();
+                    showTab(SETTINGS);
+                }, false);
         settingsSection(body, "About");
         LinearLayout about = settingsCard(body);
         settingsRow(about, "info", "About", "Version, privacy, terms", this::showAbout, true);
