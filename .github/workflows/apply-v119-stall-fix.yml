@@ -35,8 +35,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git apply --check .github/ops/v119-stall-fix.patch
-          git apply .github/ops/v119-stall-fix.patch
+          git apply --check --recount .github/ops/v119-stall-fix.patch
+          git apply --recount .github/ops/v119-stall-fix.patch
 
       - name: Test and build
         working-directory: apps/android
