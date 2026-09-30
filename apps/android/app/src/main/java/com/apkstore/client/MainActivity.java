@@ -114,9 +114,29 @@ public class MainActivity extends Activity {
 
     private class ProgressRing extends View {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private int percent;
+        private float shownPercent;   // smoothly animated value that is actually drawn
+        private int targetPercent;
+        private ValueAnimator progressAnimator;
         ProgressRing() { super(MainActivity.this); }
-        void setProgress(int value) { percent = Math.max(0, Math.min(100, value)); invalidate(); }
+        void setProgress(int value) {
+            targetPercent = Math.max(0, Math.min(100, value));
+            if (targetPercent == 0) {
+                // Indeterminate spinner: snap back and let onDraw rotate smoothly.
+                if (progressAnimator != null) progressAnimator.cancel();
+                shownPercent = 0;
+                invalidate();
+                return;
+            }
+            if (progressAnimator != null) progressAnimator.cancel();
+            progressAnimator = ValueAnimator.ofFloat(shownPercent, targetPercent);
+            progressAnimator.setDuration(300);
+            progressAnimator.setInterpolator(new DecelerateInterpolator());
+            progressAnimator.addUpdateListener(a -> {
+                shownPercent = (float) a.getAnimatedValue();
+                invalidate();
+            });
+            progressAnimator.start();
+        }
         @Override protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
             float stroke = dp(4), inset = stroke / 2 + dp(2);
@@ -124,10 +144,37 @@ public class MainActivity extends Activity {
             paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(stroke); paint.setStrokeCap(Paint.Cap.ROUND);
             paint.setColor(raised()); canvas.drawOval(oval, paint);
             paint.setColor(green());
-            if (percent == 0 && getVisibility() == View.VISIBLE) {
-                canvas.drawArc(oval, (android.os.SystemClock.uptimeMillis() / 5) % 360 - 90, 85, false, paint);
-                postInvalidateDelayed(50);
-            } else canvas.drawArc(oval, -90, 360f * percent / 100f, false, paint);
+            if (targetPercent == 0 && getVisibility() == View.VISIBLE) {
+                // One smooth revolution every 1.2 s, synced to the display refresh.
+                float start = (android.os.SystemClock.uptimeMillis() % 1200) / 1200f * 360f - 90;
+                canvas.drawArc(oval, start, 100, false, paint);
+                postInvalidateOnAnimation();
+            } else canvas.drawArc(oval, -90, 360f * shownPercent / 100f, false, paint);
+        }
+        @Override protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (progressAnimator != null) progressAnimator.cancel();
+        }
+    }
+
+    /** Long horizontal indeterminate loading bar (Play Store style) for "checking" states. */
+    private class LinearLoadingBar extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final long born = android.os.SystemClock.uptimeMillis();
+        LinearLoadingBar() { super(MainActivity.this); }
+        @Override protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float w = getWidth(), h = getHeight(), r = h / 2f;
+            paint.setColor(raised());
+            canvas.drawRoundRect(0, 0, w, h, r, r, paint);
+            paint.setColor(green());
+            // A 32%-wide segment sweeps across once every 1.4 s with eased motion.
+            float t = ((android.os.SystemClock.uptimeMillis() - born) % 1400) / 1400f;
+            float eased = t < 0.5f ? 2 * t * t : 1 - (float) Math.pow(-2 * t + 2, 2) / 2;
+            float seg = w * 0.32f;
+            float x = -seg + eased * (w + seg);
+            canvas.drawRoundRect(x, 0, x + seg, h, r, r, paint);
+            if (getVisibility() == View.VISIBLE) postInvalidateOnAnimation();
         }
     }
 
@@ -261,6 +308,20 @@ public class MainActivity extends Activity {
         GradientDrawable d = new GradientDrawable();
         d.setColor(color); d.setCornerRadius(dp(radius));
         return d;
+    }
+    private GradientDrawable outline(int radius, int strokeColor) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(Color.TRANSPARENT); d.setCornerRadius(dp(radius));
+        d.setStroke(Math.max(2, dp(1)), strokeColor);
+        return d;
+    }
+    /** Subtle rounded ripple for tappable rows on a transparent background. */
+    private android.graphics.drawable.RippleDrawable rippleRow(int radius) {
+        android.content.res.ColorStateList c = android.content.res.ColorStateList.valueOf(
+                light ? Color.argb(46, 69, 82, 157) : Color.argb(70, 183, 196, 255));
+        GradientDrawable mask = new GradientDrawable();
+        mask.setColor(Color.WHITE); mask.setCornerRadius(dp(radius));
+        return new android.graphics.drawable.RippleDrawable(c, null, mask);
     }
     private LinearLayout vertical() {
         LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); return l;
@@ -1057,7 +1118,7 @@ public class MainActivity extends Activity {
             if ("Filter by category".equals(title))
                 row.addView(symbol(categoryIcon(choice), 24, ink()), new LinearLayout.LayoutParams(dp(40), dp(48)));
             row.addView(text(choice, 15, ink(), false), weight());
-            if (choice.equals(selected)) row.addView(text("✓", 19, green(), true));
+            if (choice.equals(selected)) row.addView(symbol("check", 19, green()));
             row.setOnClickListener(v -> { sheet.dismiss(); onChoose.accept(choice); }); list.addView(row);
         }
         scroll.addView(list); panel.addView(scroll, new LinearLayout.LayoutParams(-1, dp(Math.min(560, choices.length * 52))));
@@ -1075,16 +1136,23 @@ public class MainActivity extends Activity {
         LinearLayout panel = vertical();
         panel.setPadding(dp(20), dp(15), dp(20), dp(24));
         panel.setBackground(shape(surface(), 24));
-        TextView handle = text("━━━━", 19, muted(), false);
-        handle.setGravity(Gravity.CENTER);
-        handle.setContentDescription("Drag settings up or down; drag down to close");
-        handle.setMinHeight(dp(46));
-        panel.addView(handle);
-        space(panel, 12);
+        GradientDrawable pill = new GradientDrawable();
+        pill.setColor(muted()); pill.setCornerRadius(dp(2)); pill.setAlpha(120);
+        View pillView = new View(this);
+        FrameLayout.LayoutParams pillLp = new FrameLayout.LayoutParams(dp(40), dp(4), Gravity.CENTER);
+        pillView.setLayoutParams(pillLp);
+        pillView.setBackground(pill);
+        FrameLayout handleZone = new FrameLayout(this);
+        handleZone.setContentDescription("Drag settings up or down; drag down to close");
+        handleZone.addView(pillView);
+        panel.addView(handleZone, new LinearLayout.LayoutParams(-1, dp(32)));
+        space(panel, 6);
         panel.addView(text("APK STORE", 19, ink(), true));
         space(panel, 14);
         ScrollView menuScroll = new ScrollView(this);
         menuScroll.setFillViewport(false);
+        menuScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        menuScroll.setVerticalScrollBarEnabled(false);
         LinearLayout rows = vertical();
         sheetRow(rows, "▦", "Apps", () -> showTab(APPS), sheet);
         sheetRow(rows, "⌕", "Search", () -> showTab(SEARCH), sheet);
@@ -1097,8 +1165,10 @@ public class MainActivity extends Activity {
         sheetRow(rows, "♥", "Donate", () -> openLink("https://github.com/mazharmnzoor4227-beep/APK-STORE"), sheet);
         sheetRow(rows, "ⓘ", "About", this::showAbout, sheet);
         menuScroll.addView(rows);
-        int sheetHeight = Math.min(dp(440), getResources().getDisplayMetrics().heightPixels / 2);
-        panel.addView(menuScroll, new LinearLayout.LayoutParams(-1, Math.max(dp(170), sheetHeight - dp(135))));
+        // Wrap the content but never grow past ~62% of the screen: no dead space, no cramped scroll.
+        int maxMenuH = (int) (getResources().getDisplayMetrics().heightPixels * 0.62);
+        int needMenuH = 10 * dp(56) + dp(8);
+        panel.addView(menuScroll, new LinearLayout.LayoutParams(-1, Math.min(needMenuH, maxMenuH)));
         sheet.setContentView(panel);
         Window window = sheet.getWindow();
         if (window != null) {
@@ -1118,7 +1188,7 @@ public class MainActivity extends Activity {
                 panel.animate().translationY(0).setDuration(330).setInterpolator(new DecelerateInterpolator()).start();
             });
         }
-        handle.setOnTouchListener(new View.OnTouchListener() {
+        handleZone.setOnTouchListener(new View.OnTouchListener() {
             float startY;
             @Override public boolean onTouch(View view, MotionEvent event) {
                 if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
@@ -1199,10 +1269,12 @@ public class MainActivity extends Activity {
     private void sheetRow(LinearLayout panel, String glyph, String title, Runnable onClick, Dialog sheet) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(56));
+        row.setBackground(rippleRow(14));
+        row.setPadding(dp(12), dp(4), dp(12), dp(4));
         TextView icon = action(glyph, title);
-        row.addView(icon, new LinearLayout.LayoutParams(dp(43), dp(48)));
+        row.addView(icon, new LinearLayout.LayoutParams(dp(44), dp(48)));
         row.addView(text(title, 16, ink(), false), weight());
-        row.setPadding(dp(10), dp(12), dp(10), dp(12));
         row.setOnClickListener(v -> {
             sheet.dismiss();
             onClick.run();
@@ -1245,6 +1317,9 @@ public class MainActivity extends Activity {
         LinearLayout page = informationPage("App update", this::showAbout);
         TextView status = text("Checking for updates…", 15, muted(), false);
         page.addView(status); space(page, 16);
+        LinearLoadingBar checkingBar = new LinearLoadingBar();
+        page.addView(checkingBar, new LinearLayout.LayoutParams(-1, dp(4)));
+        space(page, 8);
         worker.execute(() -> {
             try {
                 String endpoint = BuildConfig.SUPABASE_URL + "/rest/v1/apps?select=slug,title,package_id,current_release_id&slug=eq.apk-store-client&visibility=eq.published&limit=1";
@@ -1311,6 +1386,7 @@ public class MainActivity extends Activity {
                 });
             } catch (Exception e) {
                 runOnUiThread(() -> {
+                    page.removeView(checkingBar);
                     status.setText("Couldn't check for updates: " + e.getMessage());
                     android.widget.Button retry = new android.widget.Button(this);
                     retry.setText("Retry");
@@ -1510,7 +1586,8 @@ public class MainActivity extends Activity {
         LinearLayout actions = new LinearLayout(this); actions.setGravity(Gravity.CENTER_VERTICAL);
         detailPrimary = text("Install", 16, bg(), true);
         detailPrimary.setGravity(Gravity.CENTER); detailPrimary.setPadding(dp(14), dp(15), dp(14), dp(15));
-        detailPrimary.setBackground(shape(green(), 12));
+        detailPrimary.setMinHeight(dp(54));
+        detailPrimary.setBackground(shape(green(), 16));
         detailPrimary.setOnClickListener(v -> {
             String slug = app.optString("slug");
             if (downloads.containsKey(slug)) cancelDownload(slug);
@@ -1518,9 +1595,13 @@ public class MainActivity extends Activity {
             else startDownload(app);
             refreshDetail();
         });
-        actions.addView(detailPrimary, new LinearLayout.LayoutParams(0, -2, 1));
+        LinearLayout.LayoutParams primaryLp = new LinearLayout.LayoutParams(0, -2, 1);
+        primaryLp.setMarginEnd(dp(12));
+        actions.addView(detailPrimary, primaryLp);
         detailSecondary = text("", 14, ink(), true);
         detailSecondary.setGravity(Gravity.CENTER); detailSecondary.setPadding(dp(12), dp(15), dp(12), dp(15));
+        detailSecondary.setMinHeight(dp(54));
+        detailSecondary.setBackground(outline(16, green()));
         actions.addView(detailSecondary, new LinearLayout.LayoutParams(0, -2, 1));
         page.addView(actions);
         TextView installNote = text("Android will ask you to confirm installation. Updates require the original signing certificate.", 12, muted(), false);
@@ -1633,13 +1714,19 @@ public class MainActivity extends Activity {
     private ImageView remoteImage(String url) {
         ImageView image = new ImageView(this); image.setScaleType(ImageView.ScaleType.FIT_CENTER);
         image.setBackground(shape(surface(), 12));
+        loadRemoteImage(url, image);
+        return image;
+    }
+    /** Fetches (and caches) a remote image into the given view; ignores stale results after a retarget. */
+    private void loadRemoteImage(String url, ImageView image) {
+        image.setTag(url);
         iconWorker.execute(() -> {
             try {
                 String filename = java.util.UUID.nameUUIDFromBytes(url.getBytes(StandardCharsets.UTF_8)) + ".webp";
                 File cached = new File(getCacheDir(), filename);
                 if (cached.isFile() && cached.length() > 0 && cached.length() <= 5_000_000) {
                     Bitmap bitmap = BitmapFactory.decodeFile(cached.getAbsolutePath());
-                    if (bitmap != null) { handler.post(() -> image.setImageBitmap(bitmap)); return; }
+                    if (bitmap != null) { handler.post(() -> { if (url.equals(image.getTag())) image.setImageBitmap(bitmap); }); return; }
                 }
                 HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
                 connection.setConnectTimeout(8000); connection.setReadTimeout(8000);
@@ -1654,64 +1741,111 @@ public class MainActivity extends Activity {
                     }
                 } catch (Exception error) { cached.delete(); throw error; }
                 bitmap = BitmapFactory.decodeFile(cached.getAbsolutePath());
-                if (bitmap != null) handler.post(() -> image.setImageBitmap(bitmap));
+                if (bitmap != null) handler.post(() -> { if (url.equals(image.getTag())) image.setImageBitmap(bitmap); });
                 connection.disconnect();
             } catch (Exception ignored) { }
         });
-        return image;
     }
     private void showScreenshot(JSONArray screenshots, int index) {
-        String url = screenshots.optString(index);
-        if (!trustedImage(url)) return;
-        Dialog viewer = new Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
-        ImageView image = remoteImage(url);
-        ScaleGestureDetector detector = new ScaleGestureDetector(this, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            @Override public boolean onScale(ScaleGestureDetector gesture) {
-                float scale = Math.max(1f, Math.min(4f, image.getScaleX() * gesture.getScaleFactor()));
-                image.setScaleX(scale); image.setScaleY(scale); return true;
-            }
-        });
-        android.view.GestureDetector gestures = new android.view.GestureDetector(this,
-                new android.view.GestureDetector.SimpleOnGestureListener() {
-                    @Override public boolean onDoubleTap(MotionEvent event) {
-                        float scale = image.getScaleX() > 1f ? 1f : 2f;
-                        image.animate().scaleX(scale).scaleY(scale).setDuration(180).start(); return true;
-                    }
-                    @Override public boolean onFling(MotionEvent first, MotionEvent last, float velocityX, float velocityY) {
-                        if (first == null || last == null || image.getScaleX() > 1.1f) return false;
-                        float dx = last.getX() - first.getX(), dy = last.getY() - first.getY();
-                        if (dy > dp(110) && Math.abs(dy) > Math.abs(dx)) { viewer.dismiss(); return true; }
-                        if (Math.abs(dx) > dp(90) && Math.abs(dx) > Math.abs(dy)) {
-                            int next = index + (dx < 0 ? 1 : -1);
-                            if (next >= 0 && next < screenshots.length()) { viewer.dismiss(); showScreenshot(screenshots, next); }
-                            return true;
-                        }
-                        return false;
-                    }
-                });
-        image.setOnTouchListener((view, event) -> {
-            detector.onTouchEvent(event); gestures.onTouchEvent(event); return true;
-        });
-        FrameLayout frame = new FrameLayout(this);
-        frame.addView(image, new FrameLayout.LayoutParams(-1, -1));
-        TextView close = action("×", "Close screenshot");
-        close.setOnClickListener(v -> viewer.dismiss());
-        frame.addView(close, new FrameLayout.LayoutParams(dp(56), dp(56), Gravity.TOP | Gravity.END));
-        TextView position = text((index + 1) + " / " + screenshots.length(), 14, Color.WHITE, true);
-        position.setPadding(dp(18), dp(15), dp(18), dp(15));
-        frame.addView(position, new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
-        if (index > 0) {
-            TextView previous = action("‹", "Previous screenshot");
-            previous.setOnClickListener(v -> { viewer.dismiss(); showScreenshot(screenshots, index - 1); });
-            frame.addView(previous, new FrameLayout.LayoutParams(dp(56), dp(80), Gravity.CENTER_VERTICAL | Gravity.START));
-        }
-        if (index + 1 < screenshots.length()) {
-            TextView next = action("›", "Next screenshot");
-            next.setOnClickListener(v -> { viewer.dismiss(); showScreenshot(screenshots, index + 1); });
-            frame.addView(next, new FrameLayout.LayoutParams(dp(56), dp(80), Gravity.CENTER_VERTICAL | Gravity.END));
-        }
-        viewer.setContentView(frame); viewer.show();
+        new ScreenshotViewer(screenshots, index).show();
     }
+
+    /** Fullscreen screenshot viewer: solid black stage, swipe/arrow navigation crossfades
+     *  inside one dialog (no background flash like dismiss-and-recreate). */
+    private class ScreenshotViewer {
+        private final JSONArray shots;
+        private int current;
+        private boolean firstShown;
+        private Dialog dialog;
+        private ImageView image;
+        private TextView position, prev, next;
+
+        ScreenshotViewer(JSONArray shots, int index) {
+            this.shots = shots;
+            this.current = Math.max(0, Math.min(index, shots.length() - 1));
+        }
+
+        void show() {
+            dialog = new Dialog(MainActivity.this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+            FrameLayout frame = new FrameLayout(MainActivity.this);
+            frame.setBackgroundColor(Color.BLACK);
+            image = new ImageView(MainActivity.this);
+            image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            image.setBackgroundColor(Color.BLACK);
+            image.setAlpha(0f);
+            frame.addView(image, new FrameLayout.LayoutParams(-1, -1));
+            ScaleGestureDetector detector = new ScaleGestureDetector(MainActivity.this,
+                    new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                        @Override public boolean onScale(ScaleGestureDetector gesture) {
+                            float scale = Math.max(1f, Math.min(4f, image.getScaleX() * gesture.getScaleFactor()));
+                            image.setScaleX(scale); image.setScaleY(scale); return true;
+                        }
+                    });
+            android.view.GestureDetector gestures = new android.view.GestureDetector(MainActivity.this,
+                    new android.view.GestureDetector.SimpleOnGestureListener() {
+                        @Override public boolean onDoubleTap(MotionEvent event) {
+                            float scale = image.getScaleX() > 1f ? 1f : 2f;
+                            image.animate().scaleX(scale).scaleY(scale).setDuration(180).start(); return true;
+                        }
+                        @Override public boolean onFling(MotionEvent first, MotionEvent last, float velocityX, float velocityY) {
+                            if (first == null || last == null || image.getScaleX() > 1.1f) return false;
+                            float dx = last.getX() - first.getX(), dy = last.getY() - first.getY();
+                            if (dy > dp(110) && Math.abs(dy) > Math.abs(dx)) { dialog.dismiss(); return true; }
+                            if (Math.abs(dx) > dp(90) && Math.abs(dx) > Math.abs(dy)) {
+                                goTo(current + (dx < 0 ? 1 : -1));
+                                return true;
+                            }
+                            return false;
+                        }
+                    });
+            image.setOnTouchListener((view, event) -> {
+                detector.onTouchEvent(event); gestures.onTouchEvent(event); return true;
+            });
+            TextView close = action("×", "Close screenshot");
+            close.setTextColor(Color.WHITE);
+            close.setOnClickListener(v -> dialog.dismiss());
+            frame.addView(close, new FrameLayout.LayoutParams(dp(56), dp(56), Gravity.TOP | Gravity.END));
+            position = text("", 14, Color.WHITE, true);
+            position.setPadding(dp(18), dp(15), dp(18), dp(15));
+            frame.addView(position, new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
+            prev = action("‹", "Previous screenshot");
+            prev.setTextColor(Color.WHITE);
+            prev.setOnClickListener(v -> goTo(current - 1));
+            frame.addView(prev, new FrameLayout.LayoutParams(dp(56), dp(80), Gravity.CENTER_VERTICAL | Gravity.START));
+            next = action("›", "Next screenshot");
+            next.setTextColor(Color.WHITE);
+            next.setOnClickListener(v -> goTo(current + 1));
+            frame.addView(next, new FrameLayout.LayoutParams(dp(56), dp(80), Gravity.CENTER_VERTICAL | Gravity.END));
+            dialog.setContentView(frame);
+            dialog.show();
+            goTo(current);
+        }
+
+        void goTo(int index) {
+            if (index < 0 || index >= shots.length()) return;
+            String url = shots.optString(index);
+            if (!trustedImage(url)) return;
+            current = index;
+            position.setText((current + 1) + " / " + shots.length());
+            prev.setVisibility(current > 0 ? View.VISIBLE : View.GONE);
+            next.setVisibility(current + 1 < shots.length() ? View.VISIBLE : View.GONE);
+            image.animate().cancel();
+            if (!firstShown) {
+                firstShown = true;
+                image.setScaleX(1f); image.setScaleY(1f);
+                loadRemoteImage(url, image);
+                image.animate().alpha(1f).setDuration(200).start();
+                return;
+            }
+            image.animate().alpha(0f).setDuration(110).withEndAction(() -> {
+                image.setImageDrawable(null);
+                image.setScaleX(1f); image.setScaleY(1f);
+                loadRemoteImage(url, image);
+                image.animate().alpha(1f).setDuration(160).start();
+            }).start();
+        }
+    }
+
     private void refreshDetail() {
         if (detailApp == null || detailPrimary == null) return;
         String slug = detailApp.optString("slug");
@@ -1729,12 +1863,12 @@ public class MainActivity extends Activity {
         detailStatus.setVisibility(detailStatus.getText().length() == 0 ? View.GONE : View.VISIBLE);
         detailPrimary.setText(running ? "Open" : ready ? "Install" : updateAvailable(detailApp) ? "Update" : "Install");
         detailPrimary.setEnabled(!running);
-        detailPrimary.setBackground(shape(running ? raised() : green(), 12));
+        detailPrimary.setBackground(shape(running ? raised() : green(), 16));
         detailPrimary.setTextColor(running ? muted() : bg());
         detailSecondary.setVisibility(running || installed ? View.VISIBLE : View.GONE);
         detailSecondary.setText(running ? "Cancel" : "Uninstall");
         detailSecondary.setEnabled(true);
-        detailSecondary.setBackground(shape(running ? surface() : bg(), 12));
+        detailSecondary.setBackground(outline(16, green()));
         detailSecondary.setOnClickListener(v -> {
             if (running) cancelDownload(slug);
             else startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + detailApp.optString("package_id"))));
