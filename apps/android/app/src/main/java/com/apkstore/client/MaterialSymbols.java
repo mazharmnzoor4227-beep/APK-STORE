@@ -60,6 +60,16 @@ final class MaterialSymbols {
             case "expand_more": return 0xe5cf;
             case "expand_less": return 0xe5ce;
             case "close": return 0xe5cd;
+            case "apps_custom": return 0xe000;
+            case "refresh": return 0xe5d5;
+            case "autorenew": return 0xe863;
+            case "schedule": return 0xe8b5;
+            case "help": return 0xe887;
+            case "delete": return 0xe872;
+            case "description": return 0xe873;
+            case "system_update": return 0xe62e;
+            case "check": return 0xe5ca;
+            case "privacy_tip": return 0xf0dc;
             default: return 0;
         }
     }
