@@ -278,11 +278,16 @@ public class MainActivity extends Activity {
     private void maybeAskNotificationPermission() {
         try {
             if (android.os.Build.VERSION.SDK_INT < 33) return;
-            if (settingsStore.notifAsked()) return;
             if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
                     == PackageManager.PERMISSION_GRANTED) return;
-            settingsStore.setNotifAsked();
-            requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 2001);
+            // If permission was denied before, ask again while the system will still
+            // show the dialog (never asked, or rationale should show). A permanent
+            // "don't ask again" is respected — it can be enabled in system settings.
+            if (!settingsStore.notifAsked()
+                    || shouldShowRequestPermissionRationale(android.Manifest.permission.POST_NOTIFICATIONS)) {
+                settingsStore.setNotifAsked();
+                requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 2001);
+            }
         } catch (Throwable ignored) { }
     }
     private void scheduleUpdates() {
