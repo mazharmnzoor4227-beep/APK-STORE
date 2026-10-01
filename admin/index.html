@@ -306,7 +306,7 @@ details.ovr[open] summary .chev{transform:rotate(90deg);}
         <div class="drop" onclick="document.getElementById('apkFile').click()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 16V4m0 0l-4 4m4-4l4 4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
           <b>Tap to choose APK</b>
-          <div class="meta">Up to 700 MB · .apk only</div>
+          <div class="meta">Up to 500 MB · .apk only</div>
           <div class="meta" style="margin-top:4px">Files over 50 MB need the R2 CORS rule in Cloudflare</div>
         </div>
         <input type="file" id="apkFile" accept=".apk" class="hidden">
@@ -698,6 +698,10 @@ function setStep(n){
   ["upStep0","upStep1","upStep2","upStep3"].forEach((id,i)=>
     document.getElementById(id).classList.toggle("hidden",i!==n));
 }
+/* Upload-failure detail: R2/Supabase return an XML/JSON error body (e.g. the
+   real <Code>). Surfacing it saves a blind-guess round-trip on the next failure. */
+function uploadErr(xhr){ let d=""; try{ d=String(xhr.responseText||"").replace(/\s+/g," ").slice(0,300); }catch(_){}
+  return new Error("Upload failed ("+xhr.status+")"+(d?": "+d:"")); }
 async function startUpload(file){
   if(!/\.apk$/i.test(file.name)) return toast("Select an .apk file");
   setStep(0);
@@ -714,7 +718,7 @@ async function startUpload(file){
       const xhr=new XMLHttpRequest();
       xhr.upload.onprogress=ev=>{ if(ev.lengthComputable){ const p=Math.round(ev.loaded/ev.total*100);
         bar.style.width=p+"%"; txt.textContent="Uploading… "+p+"%"; } };
-      xhr.onload=()=>xhr.status<300?res():rej(new Error("Upload failed ("+xhr.status+")"));
+      xhr.onload=()=>xhr.status<300?res():rej(uploadErr(xhr));
       xhr.onerror=()=>rej(new Error(bigFile?
         "Network error — large uploads need the R2 CORS rule (Cloudflare R2 → bucket → Settings → CORS)":
         "Network error"));
@@ -984,7 +988,7 @@ async function uploadShot(file){
   const s=await api("screenshot-start","POST",{byteSize:blob.size});
   await new Promise((res,rej)=>{
     const xhr=new XMLHttpRequest();
-    xhr.onload=()=>xhr.status<300?res():rej(new Error("Upload failed ("+xhr.status+")"));
+    xhr.onload=()=>xhr.status<300?res():rej(uploadErr(xhr));
     xhr.onerror=()=>rej(new Error("Network error"));
     xhr.open("PUT",s.signedUrl); xhr.setRequestHeader("Content-Type","image/webp"); xhr.send(blob);
   });
