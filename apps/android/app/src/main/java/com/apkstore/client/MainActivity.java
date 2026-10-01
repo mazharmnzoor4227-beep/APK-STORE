@@ -27,6 +27,7 @@ import android.util.LruCache;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.text.Editable;
+import android.text.InputType;
 import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
@@ -79,6 +80,9 @@ public class MainActivity extends Activity {
     private CatalogRepository repository;
     private DownloadStore history;
     private SettingsStore settingsStore;
+    private SessionStore sessionStore;
+    private SupabaseAuth supabaseAuth;
+    private AuthSession authSession;
     private final HashMap<String, Long> releaseVersions = new HashMap<>();
     private LinearLayout body;
     private EditText searchBox;
@@ -236,6 +240,7 @@ public class MainActivity extends Activity {
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         settingsStore = new SettingsStore(this);
+        initAuth();
         String theme = settingsStore.theme();
         light = "light".equals(theme) || ("system".equals(theme) &&
                 (getResources().getConfiguration().uiMode & 0x30) == 0x10);
@@ -1616,6 +1621,8 @@ public class MainActivity extends Activity {
     }
     private void renderSettingsPage() {
         space(body, 4);
+        settingsSection(body, "Account");
+        renderAccountRow(settingsCard(body));
         settingsSection(body, "Options");
         LinearLayout opts = settingsCard(body);
         String themeName = settingsStore.theme();
@@ -1631,6 +1638,241 @@ public class MainActivity extends Activity {
         LinearLayout about = settingsCard(body);
         settingsRow(about, "info", "About", "Version, privacy, terms", this::showAbout, true);
     }
+    // ---- Account / Auth ----
+    private void initAuth() {
+        sessionStore = new SessionStore(this);
+        supabaseAuth = new SupabaseAuth(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_KEY);
+        authSession = sessionStore.load();
+        maybeRefreshSession();
+    }
+
+    private void maybeRefreshSession() {
+        if (authSession == null || !authSession.isSignedIn()) return;
+        if (!authSession.needsRefresh(System.currentTimeMillis())) return;
+        final String refreshToken = authSession.refreshToken;
+        if (refreshToken.isEmpty()) { authSession = null; sessionStore.clear(); return; }
+        supabaseAuth.refresh(refreshToken, (session, error) -> {
+            if (session != null) {
+                authSession = session;
+                sessionStore.save(session);
+            } else {
+                authSession = null;
+                sessionStore.clear();
+            }
+            if (tab == SETTINGS) showTab(SETTINGS);
+        });
+    }
+
+    private void renderAccountRow(LinearLayout card) {
+        boolean signedIn = authSession != null && authSession.isSignedIn();
+        String email = signedIn ? authSession.email : "";
+        settingsRow(card, "person",
+                signedIn ? (email.isEmpty() ? "Account" : email) : "Sign in",
+                signedIn ? "Signed in · Tap to sign out" : "Sync favorites across devices",
+                () -> { if (signedIn) signOutDialog(); else authDialog(false); }, true);
+    }
+
+    private EditText authInput(String hint, int inputType) {
+        EditText f = new EditText(this);
+        f.setHint(hint);
+        f.setInputType(inputType);
+        f.setSingleLine(true);
+        f.setTextColor(ink());
+        f.setHintTextColor(muted());
+        f.setPadding(dp(14), dp(14), dp(14), dp(14));
+        f.setBackground(shape(raised(), 12));
+        return f;
+    }
+
+    private void showAuthError(TextView error, String msg) {
+        error.setText(msg == null ? "Something went wrong. Please try again." : msg);
+        error.setTextColor(light ? Color.rgb(176, 42, 42) : Color.rgb(255, 138, 138));
+        error.setVisibility(View.VISIBLE);
+    }
+
+    private void showAuthInfo(TextView error, String msg) {
+        error.setText(msg);
+        error.setTextColor(green());
+        error.setVisibility(View.VISIBLE);
+    }
+
+    private void authDialog(boolean startSignup) {
+        final boolean[] signupMode = {startSignup};
+        final AlertDialog[] dialogRef = new AlertDialog[1];
+
+        LinearLayout root = vertical();
+        root.setPadding(dp(4), dp(4), dp(4), dp(4));
+
+        TextView title = text(signupMode[0] ? "Create account" : "Welcome back", 20, ink(), true);
+        root.addView(title);
+        space(root, 8);
+
+        TextView error = text("", 13, ink(), false);
+        error.setVisibility(View.GONE);
+        root.addView(error);
+        space(root, 4);
+
+        EditText email = authInput("Email address",
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+        root.addView(email);
+        space(root, 10);
+
+        LinearLayout pwRow = new LinearLayout(this);
+        pwRow.setGravity(Gravity.CENTER_VERTICAL);
+        EditText password = authInput("Password",
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        pwRow.addView(password, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView showToggle = text("Show", 14, green(), true);
+        showToggle.setPadding(dp(12), dp(12), dp(4), dp(12));
+        final boolean[] showing = {false};
+        showToggle.setOnClickListener(v -> {
+            showing[0] = !showing[0];
+            int sel = password.getSelectionEnd();
+            password.setInputType(InputType.TYPE_CLASS_TEXT | (showing[0]
+                    ? InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                    : InputType.TYPE_TEXT_VARIATION_PASSWORD));
+            password.setSelection(Math.max(0, sel));
+            showToggle.setText(showing[0] ? "Hide" : "Show");
+        });
+        pwRow.addView(showToggle);
+        root.addView(pwRow);
+
+        TextView hint = text(AuthPolicy.signupPasswordHint(), 12, muted(), false);
+        hint.setVisibility(signupMode[0] ? View.VISIBLE : View.GONE);
+        root.addView(hint);
+        space(root, 14);
+
+        TextView primary = text(signupMode[0] ? "Create account" : "Sign in", 16,
+                light ? Color.WHITE : Color.rgb(28, 28, 34), true);
+        primary.setGravity(Gravity.CENTER);
+        primary.setPadding(dp(16), dp(14), dp(16), dp(14));
+        primary.setBackground(shape(green(), 14));
+        root.addView(primary, new LinearLayout.LayoutParams(-1, -2));
+        space(root, 6);
+
+        LinearLayout links = new LinearLayout(this);
+        links.setGravity(Gravity.CENTER_VERTICAL);
+        TextView modeToggle = text(signupMode[0] ? "Have an account? Sign in" : "New here? Create account",
+                14, green(), true);
+        links.addView(modeToggle, weight());
+        TextView forgot = text("Forgot password?", 14, green(), true);
+        links.addView(forgot);
+        root.addView(links);
+
+        Runnable refreshMode = () -> {
+            title.setText(signupMode[0] ? "Create account" : "Welcome back");
+            primary.setText(signupMode[0] ? "Create account" : "Sign in");
+            hint.setVisibility(signupMode[0] ? View.VISIBLE : View.GONE);
+            modeToggle.setText(signupMode[0] ? "Have an account? Sign in" : "New here? Create account");
+            error.setVisibility(View.GONE);
+        };
+        modeToggle.setOnClickListener(v -> tap(modeToggle, () -> {
+            signupMode[0] = !signupMode[0];
+            refreshMode.run();
+        }));
+        forgot.setOnClickListener(v -> tap(forgot, () -> {
+            String em = email.getText().toString().trim();
+            String emailErr = AuthPolicy.emailError(em);
+            if (emailErr != null) { showAuthError(error, emailErr); return; }
+            forgot.setEnabled(false);
+            supabaseAuth.resetPassword(em, (ok, err) -> {
+                forgot.setEnabled(true);
+                if (ok) showAuthInfo(error, "Reset link sent — check your email (and spam folder).");
+                else showAuthError(error, err);
+            });
+        }));
+
+        primary.setOnClickListener(v -> tap(primary, () -> {
+            error.setVisibility(View.GONE);
+            String em = email.getText().toString().trim();
+            String pw = password.getText().toString();
+            String emailErr = AuthPolicy.emailError(em);
+            if (emailErr != null) { showAuthError(error, emailErr); return; }
+            String pwErr = signupMode[0] ? AuthPolicy.signupPasswordError(pw) : AuthPolicy.loginPasswordError(pw);
+            if (pwErr != null) { showAuthError(error, pwErr); return; }
+            primary.setEnabled(false);
+            primary.setAlpha(0.6f);
+            SupabaseAuth.AuthCallback cb = (session, err) -> {
+                primary.setEnabled(true);
+                primary.setAlpha(1f);
+                if (session != null) {
+                    authSession = session;
+                    sessionStore.save(session);
+                    dialogRef[0].dismiss();
+                    showTab(SETTINGS);
+                } else if ("CONFIRM_EMAIL".equals(err)) {
+                    showAuthInfo(error, "Account created. Open the confirmation link in your email (check spam), then sign in.");
+                } else {
+                    showAuthError(error, err);
+                }
+            };
+            if (signupMode[0]) supabaseAuth.signUp(em, pw, cb);
+            else supabaseAuth.signIn(em, pw, cb);
+        }));
+
+        if (!BuildConfig.GOOGLE_WEB_CLIENT_ID.isEmpty()) {
+            space(root, 6);
+            TextView divider = text("or", 13, muted(), false);
+            divider.setGravity(Gravity.CENTER);
+            root.addView(divider);
+            space(root, 6);
+            TextView google = text("Continue with Google", 16, ink(), true);
+            google.setGravity(Gravity.CENTER);
+            google.setPadding(dp(16), dp(14), dp(16), dp(14));
+            google.setBackground(outline(14, muted()));
+            root.addView(google, new LinearLayout.LayoutParams(-1, -2));
+            google.setOnClickListener(v -> tap(google, () -> {
+                error.setVisibility(View.GONE);
+                google.setEnabled(false);
+                google.setAlpha(0.6f);
+                GoogleSignInHelper.signIn(this, BuildConfig.GOOGLE_WEB_CLIENT_ID, (idToken, gerr) ->
+                        runOnUiThread(() -> {
+                            if (idToken == null) {
+                                google.setEnabled(true);
+                                google.setAlpha(1f);
+                                showAuthError(error, gerr);
+                                return;
+                            }
+                            supabaseAuth.signInWithGoogle(idToken, (session, serr) -> {
+                                google.setEnabled(true);
+                                google.setAlpha(1f);
+                                if (session != null) {
+                                    authSession = session;
+                                    sessionStore.save(session);
+                                    dialogRef[0].dismiss();
+                                    showTab(SETTINGS);
+                                } else {
+                                    showAuthError(error, serr);
+                                }
+                            });
+                        }));
+            }));
+        }
+
+        dialogRef[0] = new AlertDialog.Builder(this)
+                .setView(root)
+                .setNegativeButton("Close", null)
+                .create();
+        dialogRef[0].show();
+    }
+
+    private void signOutDialog() {
+        String who = (authSession != null && !authSession.email.isEmpty()) ? authSession.email : "your account";
+        new AlertDialog.Builder(this)
+                .setTitle("Sign out")
+                .setMessage("Sign out of " + who + " on this device?")
+                .setPositiveButton("Sign out", (d, w) -> {
+                    String token = authSession != null ? authSession.accessToken : "";
+                    supabaseAuth.signOut(token, (ok, err) -> {
+                        authSession = null;
+                        sessionStore.clear();
+                        showTab(SETTINGS);
+                    });
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
     private void settingsSection(LinearLayout parent, String title) {
         TextView t = text(title, 13, muted(), true);
         t.setPadding(dp(4), dp(4), dp(4), dp(10));
