@@ -21,19 +21,13 @@ public class UninstallFlowTest {
         return new String(Files.readAllBytes(projectFile(relative)), StandardCharsets.UTF_8);
     }
 
-    @Test public void uninstallLaunchesAndroidConfirmationWhenUserActionIsRequired() throws Exception {
-        String receiver = read("src/main/java/com/apkstore/client/UninstallResultReceiver.java");
-        assertTrue("PackageInstaller uninstall must handle the pending-user-action callback",
-                receiver.contains("PackageInstaller.STATUS_PENDING_USER_ACTION"));
-        assertTrue("Pending uninstall must launch Android's confirmation intent",
-                receiver.contains("Intent.EXTRA_INTENT") && receiver.contains("context.startActivity(approval)"));
-    }
-
-    @Test public void uninstallStatusReceiverAllowsAndroidToFillResultExtras() throws Exception {
+    @Test public void uninstallUsesAndroidSystemDeleteConfirmation() throws Exception {
         String activity = read("src/main/java/com/apkstore/client/MainActivity.java");
-        assertTrue("PackageInstaller status receiver must be mutable so Android can supply status/user-action extras",
-                activity.contains("PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_MUTABLE"));
-        assertFalse("The uninstall status receiver must not be immutable",
-                activity.contains("PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_IMMUTABLE"));
+        String manifest = read("src/main/AndroidManifest.xml");
+
+        assertTrue("Uninstall must delegate to Android's ACTION_DELETE confirmation UI",
+                activity.contains("startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse(\"package:\" + pkg)))"));
+        assertFalse("REQUEST_DELETE_PACKAGES must stay absent so the PackageInstaller attempt cannot swallow the public ACTION_DELETE flow",
+                manifest.contains("android.permission.REQUEST_DELETE_PACKAGES"));
     }
 }
