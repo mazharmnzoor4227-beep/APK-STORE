@@ -580,7 +580,7 @@ function renderAuth(note){
   +gbtn+'<div class="ordiv"><span>or</span></div>'
   +'<label>Email</label><input id="aEmail" type="email" placeholder="you@example.com" autocomplete="email">'
   +'<label>Password</label>'+pwField('<input id="aPass" type="password" placeholder="Min. 6 characters" autocomplete="new-password" onkeydown="if(event.key===\'Enter\')authSignup()">')
-  +'<div class="pwhint">Mazboot password likhein: pehla harf bara (A\u2013Z), beech mein ek khaas nishan (# @ ! waghera), aur number zaroor shamil karein.</div>'
+  +'<div class="pwhint">Use a strong password: start with a capital letter (A\u2013Z), include a special character (# @ ! etc.), and add a number.</div>'
   +'<div class="aerr" id="aErr"></div><div class="aok" id="aOk"></div>'
   +'<button class="abtn" id="aGo" onclick="authSignup()">Sign up</button>'
   +'<div class="aswitch">Already have an account? <a onclick="openAuth(\'login\')">Log in</a></div>';
@@ -601,14 +601,14 @@ function renderAuth(note){
  const em=$("aEmail"); if(em) setTimeout(function(){ em.focus(); },50);
 }
 function aErrMsg(e){ const m=String((e&&e.message)||e||"Something went wrong");
- if(/email not confirmed/i.test(m)) return "Email abhi confirm nahi hui \u2014 apne inbox (ya spam folder) mein confirmation link par click karein, phir login karein.";
- if(/invalid login credentials|invalid.*password/i.test(m)) return "Email ya password ghalat hai.";
- if(/already registered|already exists|user already/i.test(m)) return "Is email se account pehle se bana hai \u2014 login karein.";
- if(/password.*short|weak password|at least 6/i.test(m)) return "Password kam az kam 6 characters ka ho.";
- if(/invalid email|email.*invalid/i.test(m)) return "Sahih email address likhein.";
- if(/rate limit|too many requests|over.*limit/i.test(m)) return "Bohat zyada koshishen \u2014 thodi der baad try karein.";
- if(/provider.*not enabled|unsupported provider|validation failed.*provider/i.test(m)) return "Google sign-in abhi setup nahi hua \u2014 email se account banayein.";
- if(/redirect.*not allowed|redirect_uri/i.test(m)) return "Setup mein redirect URL missing hai \u2014 admin se rabta karein.";
+ if(/email not confirmed/i.test(m)) return "Email not confirmed yet \u2014 click the confirmation link in your inbox (or spam folder), then log in.";
+ if(/invalid login credentials|invalid.*password/i.test(m)) return "Incorrect email or password.";
+ if(/already registered|already exists|user already/i.test(m)) return "An account with this email already exists \u2014 please log in.";
+ if(/password.*short|weak password|at least 6/i.test(m)) return "Password must be at least 6 characters long.";
+ if(/invalid email|email.*invalid/i.test(m)) return "Please enter a valid email address.";
+ if(/rate limit|too many requests|over.*limit/i.test(m)) return "Too many attempts \u2014 please try again in a little while.";
+ if(/provider.*not enabled|unsupported provider|validation failed.*provider/i.test(m)) return "Google sign-in is not set up yet \u2014 please create an account with email.";
+ if(/redirect.*not allowed|redirect_uri/i.test(m)) return "Redirect URL is missing in setup \u2014 please contact support.";
  return m; }
 function showAErr(t){ const e=$("aErr"); if(e){ e.textContent=t; e.style.display="block"; } }
 function showAOk(t){ const e=$("aOk"); if(e){ e.textContent=t; e.style.display="block"; } }
@@ -627,31 +627,31 @@ function togglePw(btn){
  try{ inp.focus(); }catch(e){}
 }
 function strongPw(pw){
- if(pw.length<6) return "Password kam az kam 6 characters ka ho.";
- if(!/^[A-Z]/.test(pw)) return "Password ka pehla harf bara (capital A\u2013Z) hona chahiye.";
- if(!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(pw)) return "Password mein ek khaas nishan zaroor ho (# @ ! ? waghera).";
- if(!/\d/.test(pw)) return "Password mein kam az kam ek number zaroor ho.";
+ if(pw.length<6) return "Password must be at least 6 characters long.";
+ if(!/^[A-Z]/.test(pw)) return "Password must start with a capital letter (A\u2013Z).";
+ if(!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(pw)) return "Password must include a special character (# @ ! ? etc.).";
+ if(!/\d/.test(pw)) return "Password must include at least one number.";
  return null;
 }
 async function authSignup(){
- if(!sbAuth) return showAErr("Auth service load nahi hui \u2014 page refresh karein.");
+ if(!sbAuth) return showAErr("Auth service failed to load \u2014 please refresh the page.");
  const em=$("aEmail").value.trim(), pw=$("aPass").value;
- if(!validEmail(em)) return showAErr("Sahih email address likhein.");
+ if(!validEmail(em)) return showAErr("Please enter a valid email address.");
  const pwErr=strongPw(pw); if(pwErr) return showAErr(pwErr);
  const b=$("aGo"); b.disabled=true; b.textContent="Creating\u2026";
  try{
   const r=await sbAuth.auth.signUp({email:em,password:pw,options:{emailRedirectTo:pageUrl()}});
   if(r.error) throw r.error;
   if(r.data.session){ closeAuth(); }
-  else showAOk("Account ban gaya! Email mein confirmation link bheja hai \u2014 us par click karke phir login karein.");
+  else showAOk("Account created! We sent a confirmation link to your email \u2014 click it, then log in.");
  }catch(e){ showAErr(aErrMsg(e)); }
  b.disabled=false; b.textContent="Sign up";
 }
 async function authLogin(){
- if(!sbAuth) return showAErr("Auth service load nahi hui \u2014 page refresh karein.");
+ if(!sbAuth) return showAErr("Auth service failed to load \u2014 please refresh the page.");
  const em=$("aEmail").value.trim(), pw=$("aPass").value;
- if(!validEmail(em)) return showAErr("Sahih email address likhein.");
- if(!pw) return showAErr("Password likhein.");
+ if(!validEmail(em)) return showAErr("Please enter a valid email address.");
+ if(!pw) return showAErr("Please enter your password.");
  const b=$("aGo"); b.disabled=true; b.textContent="Logging in\u2026";
  try{
   const r=await sbAuth.auth.signInWithPassword({email:em,password:pw});
@@ -662,30 +662,30 @@ async function authLogin(){
 }
 async function authLogout(){ try{ if(sbAuth) await sbAuth.auth.signOut(); }catch(e){} setUser(null); closeAcctMenu(); if(route==="favs") go("home"); }
 async function authGoogle(){
- if(!GOOGLE_ENABLED) return showAErr("Google sign-in jald aa raha hai \u2014 abhi email se account banayein.");
- if(!sbAuth) return showAErr("Auth service load nahi hui \u2014 page refresh karein.");
+ if(!GOOGLE_ENABLED) return showAErr("Google sign-in is coming soon \u2014 please use email for now.");
+ if(!sbAuth) return showAErr("Auth service failed to load \u2014 please refresh the page.");
  try{
   const r=await sbAuth.auth.signInWithOAuth({provider:"google",options:{redirectTo:pageUrl()}});
   if(r.error) throw r.error;
  }catch(e){ showAErr(aErrMsg(e)); }
 }
 async function authForgot(){
- if(!sbAuth) return showAErr("Auth service load nahi hui \u2014 page refresh karein.");
+ if(!sbAuth) return showAErr("Auth service failed to load \u2014 please refresh the page.");
  const em=$("aEmail").value.trim();
- if(!validEmail(em)) return showAErr("Sahih email address likhein.");
+ if(!validEmail(em)) return showAErr("Please enter a valid email address.");
  const b=$("aGo"); b.disabled=true; b.textContent="Sending\u2026";
  try{
   const r=await sbAuth.auth.resetPasswordForEmail(em,{redirectTo:pageUrl()});
   if(r.error) throw r.error;
   try{ localStorage.setItem("as_recovery","1"); }catch(e){}
-  showAOk("Reset link bhej diya \u2014 apna email check karein.");
+  showAOk("Reset link sent \u2014 please check your email.");
  }catch(e){ showAErr(aErrMsg(e)); }
  b.disabled=false; b.textContent="Send reset link";
 }
 async function authNewPass(){
- if(!sbAuth) return showAErr("Auth service load nahi hui \u2014 page refresh karein.");
+ if(!sbAuth) return showAErr("Auth service failed to load \u2014 please refresh the page.");
  const pw=$("aPass").value;
- if(pw.length<6) return showAErr("Password kam az kam 6 characters ka ho.");
+ if(pw.length<6) return showAErr("Password must be at least 6 characters long.");
  const b=$("aGo"); b.disabled=true; b.textContent="Saving\u2026";
  try{
   const r=await sbAuth.auth.updateUser({password:pw});
@@ -697,7 +697,7 @@ async function authNewPass(){
 }
 /* ---------- Favorites (local + per-account cloud sync) ---------- */
 async function toggleFav(slug){
- if(!AUTH_USER){ openAuth("login","Favorites save karne ke liye login karein."); return; }
+ if(!AUTH_USER){ openAuth("login","Please log in to save favorites."); return; }
  const s=getFavs(), has=s.has(slug);
  if(has) s.delete(slug); else s.add(slug);
  saveFavs(s); render();
@@ -721,7 +721,7 @@ async function syncFavsFromCloud(){
 }
 function vFavs(){
  let h='<div class="ud-crumb"><a href="#" onclick="go(\'home\');return false">Home</a> / Favorites</div><h1 class="pg-h1">My Favorites</h1>';
- if(!AUTH_USER) return h+'<div class="empty"><b>Login required</b><br>Favorites sync karne ke liye login karein.<br><br><button class="btn-p" onclick="openAuth(\'login\')">Log in</button></div>';
+ if(!AUTH_USER) return h+'<div class="empty"><b>Login required</b><br>Please log in to sync your favorites.<br><br><button class="btn-p" onclick="openAuth(\'login\')">Log in</button></div>';
  const list=APPS.filter(function(a){ return isFav(a.slug); });
  if(!list.length) return h+'<div class="empty"><b>No favorites yet</b><br>App page par \u2665 dabayein.</div>';
  return h+'<p class="pg-sub">'+list.length+' saved \u00b7 '+(FAV_CLOUD==="ok"?"synced to your account":"saved on this device")+'</p><div class="grid">'
