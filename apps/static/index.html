@@ -393,7 +393,7 @@ async function loadCatalog(){ try{
   const feat=APPS.find(a=>a.featured)||APPS[0]; if(feat) FEATURED_ID=feat.id;
   buildCATS(); CATALOG_STATE=APPS.length?"ready":"empty";
  }catch(e){ CATALOG_STATE="error"; CATALOG_ERR=(e&&e.message)||"Failed to load catalog"; }
- render(); }
+ maybeShowInstallBanner(); render(); }
 let CATS=["All"];
 /* Featured app slot — production: read from Supabase site_settings.featured_app_id,
    editable from the admin panel ("Set as featured"). Preview uses this constant. */
@@ -418,7 +418,7 @@ function toggleSearch(){ const f=$("hSearch"); const open=!f.classList.contains(
   if(open){ const i=$("q"); i.focus(); } }
 
 /* banner + modal */
-setTimeout(()=>{ if(!localStorage.getItem("as_banner")&&APPS.some(a=>a.slug==="apk-store-client")) $("installBanner").classList.add("show"); },1500);
+setTimeout(maybeShowInstallBanner,1500);
 function dismissBanner(){ $("installBanner").classList.remove("show"); localStorage.setItem("as_banner","1"); }
 let CUR_SHOTS=[],CUR_SHOT=0;
 function openShot(i){ if(!CUR_SHOTS.length) return; CUR_SHOT=((i%CUR_SHOTS.length)+CUR_SHOTS.length)%CUR_SHOTS.length; showShot(); $("shotBox").classList.add("show"); document.body.style.overflow="hidden"; }
@@ -435,7 +435,9 @@ function openInstallModal(){ const c=APPS.find(a=>a.slug==="apk-store-client");
  else if(btn){ btn.textContent="Download APK"; }
  $("installModal").classList.add("show"); $("imMain").classList.remove("hidden"); $("imDl").classList.add("hidden"); }
 function closeInstallModal(){ $("installModal").classList.remove("show"); }
-function startAppDownload(){ location.href=CLIENT_DL; }
+function startAppDownload(){ try{localStorage.setItem("as_app_dl","1");}catch(e){} var b=$("installBanner"); if(b) b.classList.remove("show"); location.href=CLIENT_DL; }
+function dismissBanner(){ var b=$("installBanner"); if(b) b.classList.remove("show"); try{localStorage.setItem("as_banner","1");}catch(e){} }
+function maybeShowInstallBanner(){ try{ if(localStorage.getItem("as_banner")||localStorage.getItem("as_app_dl")) return; }catch(e){} if(APPS.some(function(a){return a.slug==="apk-store-client";})) $("installBanner").classList.add("show"); }
 
 /* nav */
 function openDrawer(){ $("drawer").classList.add("show"); $("scrim").classList.add("show"); }
