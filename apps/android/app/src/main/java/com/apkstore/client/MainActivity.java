@@ -235,6 +235,7 @@ public class MainActivity extends Activity {
     private int green() { return light ? Color.rgb(69, 82, 157) : Color.rgb(183, 196, 255); }
     private int ink() { return light ? Color.rgb(28, 28, 34) : Color.rgb(230, 225, 229); }
     private int muted() { return light ? Color.rgb(97, 97, 108) : Color.rgb(169, 165, 173); }
+    private int danger() { return light ? Color.rgb(176, 42, 42) : Color.rgb(255, 138, 138); }
     private int dp(int n) { return Math.round(n * getResources().getDisplayMetrics().density); }
 
     @Override public void onCreate(Bundle state) {
@@ -1710,8 +1711,8 @@ public class MainActivity extends Activity {
         if (refreshToken.isEmpty()) { authSession = null; sessionStore.clear(); return; }
         supabaseAuth.refresh(refreshToken, (session, error) -> {
             if (session != null) {
-                authSession = session;
-                sessionStore.save(session);
+                authSession = session.withProvider(authSession.provider);
+                sessionStore.save(authSession);
             } else {
                 authSession = null;
                 sessionStore.clear();
@@ -1725,8 +1726,8 @@ public class MainActivity extends Activity {
         String email = signedIn ? authSession.email : "";
         settingsRow(card, "person",
                 signedIn ? (email.isEmpty() ? "Account" : email) : "Sign in",
-                signedIn ? "Signed in · Tap to sign out" : "Sync favorites across devices",
-                () -> { if (signedIn) signOutDialog(); else authDialog(false); }, true);
+                signedIn ? "Signed in · Tap to manage" : "Sync favorites across devices",
+                () -> { if (signedIn) showAccount(); else authDialog(false); }, true);
     }
 
     private EditText authInput(String hint, int inputType) {
@@ -1753,6 +1754,30 @@ public class MainActivity extends Activity {
         error.setVisibility(View.VISIBLE);
     }
 
+    /** Password field with an in-field Show/Hide toggle; the wrapper is added to parent. */
+    private EditText passwordField(LinearLayout parent, String hint) {
+        FrameLayout wrap = new FrameLayout(this);
+        EditText field = authInput(hint,
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        field.setPadding(dp(14), dp(14), dp(78), dp(14));
+        wrap.addView(field, new FrameLayout.LayoutParams(-1, -2));
+        TextView showToggle = text("Show", 14, green(), true);
+        showToggle.setPadding(dp(12), dp(14), dp(14), dp(14));
+        final boolean[] showing = {false};
+        showToggle.setOnClickListener(v -> {
+            showing[0] = !showing[0];
+            int sel = field.getSelectionEnd();
+            field.setInputType(InputType.TYPE_CLASS_TEXT | (showing[0]
+                    ? InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                    : InputType.TYPE_TEXT_VARIATION_PASSWORD));
+            field.setSelection(Math.max(0, sel));
+            showToggle.setText(showing[0] ? "Hide" : "Show");
+        });
+        wrap.addView(showToggle, new FrameLayout.LayoutParams(-2, -1, Gravity.END | Gravity.CENTER_VERTICAL));
+        parent.addView(wrap);
+        return field;
+    }
+
     private void authDialog(boolean startSignup) { authDialog(startSignup, () -> showTab(SETTINGS)); }
 
     private void authDialog(boolean startSignup, Runnable onDone) {
@@ -1774,7 +1799,7 @@ public class MainActivity extends Activity {
         LinearLayout titles = vertical(); titles.setPadding(dp(14), 0, dp(8), 0);
         TextView title = text(signupMode[0] ? "Create account" : "Welcome back", 20, ink(), true);
         titles.addView(title);
-        TextView subtitle = text(signupMode[0] ? "Create your free account" : "Sign in to sync your favorites", 13, muted(), false);
+        TextView subtitle = text(signupMode[0] ? "Create your free account" : "Login to sync your favorites", 13, muted(), false);
         titles.addView(subtitle);
         head.addView(titles, weight());
         TextView close = action("cancel", "Close");
@@ -1799,32 +1824,21 @@ public class MainActivity extends Activity {
         space(panel, 10);
 
         // Password field with in-field Show/Hide toggle
-        FrameLayout pwWrap = new FrameLayout(this);
-        EditText password = authInput("Password",
-                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        password.setPadding(dp(14), dp(14), dp(78), dp(14));
-        pwWrap.addView(password, new FrameLayout.LayoutParams(-1, -2));
-        TextView showToggle = text("Show", 14, green(), true);
-        showToggle.setPadding(dp(12), dp(14), dp(14), dp(14));
-        final boolean[] showing = {false};
-        showToggle.setOnClickListener(v -> {
-            showing[0] = !showing[0];
-            int sel = password.getSelectionEnd();
-            password.setInputType(InputType.TYPE_CLASS_TEXT | (showing[0]
-                    ? InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-                    : InputType.TYPE_TEXT_VARIATION_PASSWORD));
-            password.setSelection(Math.max(0, sel));
-            showToggle.setText(showing[0] ? "Hide" : "Show");
-        });
-        pwWrap.addView(showToggle, new FrameLayout.LayoutParams(-2, -1, Gravity.END | Gravity.CENTER_VERTICAL));
-        panel.addView(pwWrap);
+        EditText password = passwordField(panel, "Password");
+        space(panel, 10);
+        // Confirm password (signup mode only)
+        LinearLayout confirmSection = vertical();
+        EditText confirm = passwordField(confirmSection, "Confirm password");
+        space(confirmSection, 10);
+        confirmSection.setVisibility(signupMode[0] ? View.VISIBLE : View.GONE);
+        panel.addView(confirmSection);
 
         TextView hint = text(AuthPolicy.signupPasswordHint(), 12, muted(), false);
         hint.setVisibility(signupMode[0] ? View.VISIBLE : View.GONE);
         panel.addView(hint);
         space(panel, 14);
 
-        TextView primary = text(signupMode[0] ? "Create account" : "Sign in", 16,
+        TextView primary = text(signupMode[0] ? "Create account" : "Login", 16,
                 light ? Color.WHITE : Color.rgb(20, 22, 18), true);
         primary.setGravity(Gravity.CENTER);
         primary.setPadding(dp(16), dp(15), dp(16), dp(15));
@@ -1834,7 +1848,7 @@ public class MainActivity extends Activity {
 
         LinearLayout links = new LinearLayout(this);
         links.setGravity(Gravity.CENTER_VERTICAL);
-        TextView modeToggle = text(signupMode[0] ? "Sign in" : "Create account",
+        TextView modeToggle = text(signupMode[0] ? "Login" : "Create account",
                 14, green(), true);
         links.addView(modeToggle, weight());
         TextView forgot = text("Forgot password?", 14, green(), true);
@@ -1844,10 +1858,11 @@ public class MainActivity extends Activity {
 
         Runnable refreshMode = () -> {
             title.setText(signupMode[0] ? "Create account" : "Welcome back");
-            subtitle.setText(signupMode[0] ? "Create your free account" : "Sign in to sync your favorites");
-            primary.setText(signupMode[0] ? "Create account" : "Sign in");
+            subtitle.setText(signupMode[0] ? "Create your free account" : "Login to sync your favorites");
+            primary.setText(signupMode[0] ? "Create account" : "Login");
             hint.setVisibility(signupMode[0] ? View.VISIBLE : View.GONE);
-            modeToggle.setText(signupMode[0] ? "Sign in" : "Create account");
+            confirmSection.setVisibility(signupMode[0] ? View.VISIBLE : View.GONE);
+            modeToggle.setText(signupMode[0] ? "Login" : "Create account");
             error.setVisibility(View.GONE);
         };
         modeToggle.setOnClickListener(v -> tap(modeToggle, () -> {
@@ -1874,18 +1889,22 @@ public class MainActivity extends Activity {
             if (emailErr != null) { showAuthError(error, emailErr); return; }
             String pwErr = signupMode[0] ? AuthPolicy.signupPasswordError(pw) : AuthPolicy.loginPasswordError(pw);
             if (pwErr != null) { showAuthError(error, pwErr); return; }
+            if (signupMode[0] && !pw.equals(confirm.getText().toString())) {
+                showAuthError(error, "Passwords don't match.");
+                return;
+            }
             primary.setEnabled(false);
             primary.setAlpha(0.6f);
             SupabaseAuth.AuthCallback cb = (session, err) -> {
                 primary.setEnabled(true);
                 primary.setAlpha(1f);
                 if (session != null) {
-                    authSession = session;
-                    sessionStore.save(session);
+                    authSession = session.withProvider("email");
+                    sessionStore.save(authSession);
                     dialogRef[0].dismiss();
                     onDone.run();
                 } else if ("CONFIRM_EMAIL".equals(err)) {
-                    showAuthInfo(error, "Account created. Open the confirmation link in your email (check spam), then sign in.");
+                    showAuthInfo(error, "Account created. Open the confirmation link in your email (check spam), then log in.");
                 } else {
                     showAuthError(error, err);
                 }
@@ -1936,8 +1955,8 @@ public class MainActivity extends Activity {
                                 google.setEnabled(true);
                                 google.setAlpha(1f);
                                 if (session != null) {
-                                    authSession = session;
-                                    sessionStore.save(session);
+                                    authSession = session.withProvider("google");
+                                    sessionStore.save(authSession);
                                     dialogRef[0].dismiss();
                                     onDone.run();
                                 } else {
@@ -1964,21 +1983,127 @@ public class MainActivity extends Activity {
 
     private void signOutDialog() { signOutDialog(() -> showTab(SETTINGS)); }
 
+    /** Themed sign-out confirmation, matching the auth dialog style. */
     private void signOutDialog(Runnable onDone) {
-        String who = (authSession != null && !authSession.email.isEmpty()) ? authSession.email : "your account";
-        new AlertDialog.Builder(this)
-                .setTitle("Sign out")
-                .setMessage("Sign out of " + who + " on this device?")
-                .setPositiveButton("Sign out", (d, w) -> {
-                    String token = authSession != null ? authSession.accessToken : "";
-                    supabaseAuth.signOut(token, (ok, err) -> {
-                        authSession = null;
-                        sessionStore.clear();
-                        onDone.run();
-                    });
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
+        String who = (authSession != null && authSession.email != null && !authSession.email.isEmpty())
+                ? authSession.email : "your account";
+        String initial = "your account".equals(who) ? "A"
+                : who.substring(0, 1).toUpperCase(java.util.Locale.ROOT);
+        final Dialog[] dialogRef = new Dialog[1];
+        LinearLayout panel = vertical();
+        panel.setBackground(shape(surface(), 24));
+        panel.setPadding(dp(24), dp(24), dp(24), dp(20));
+        panel.setGravity(Gravity.CENTER_HORIZONTAL);
+        TextView avatar = text(initial, 24, light ? Color.WHITE : Color.rgb(20, 22, 18), true);
+        avatar.setGravity(Gravity.CENTER);
+        avatar.setBackground(shape(green(), dp(30)));
+        panel.addView(avatar, new LinearLayout.LayoutParams(dp(60), dp(60)));
+        space(panel, 14);
+        TextView title = text("Sign out?", 19, ink(), true);
+        title.setGravity(Gravity.CENTER);
+        panel.addView(title);
+        space(panel, 8);
+        TextView msg = text("Sign out of " + who + " on this device?", 14, muted(), false);
+        msg.setGravity(Gravity.CENTER);
+        panel.addView(msg);
+        space(panel, 20);
+        LinearLayout btns = new LinearLayout(this);
+        btns.setOrientation(LinearLayout.HORIZONTAL);
+        TextView cancel = text("Cancel", 15, ink(), true);
+        cancel.setGravity(Gravity.CENTER);
+        cancel.setPadding(0, dp(13), 0, dp(13));
+        cancel.setBackground(outline(16, muted()));
+        TextView out = text("Sign out", 15, Color.WHITE, true);
+        out.setGravity(Gravity.CENTER);
+        out.setPadding(0, dp(13), 0, dp(13));
+        GradientDrawable outBg = new GradientDrawable();
+        outBg.setCornerRadius(dp(16));
+        outBg.setColor(Color.rgb(176, 42, 42));
+        out.setBackground(outBg);
+        btns.addView(cancel, new LinearLayout.LayoutParams(0, -2, 1));
+        View bs = new View(this);
+        btns.addView(bs, new LinearLayout.LayoutParams(dp(10), dp(1)));
+        btns.addView(out, new LinearLayout.LayoutParams(0, -2, 1));
+        panel.addView(btns, new LinearLayout.LayoutParams(-1, -2));
+        cancel.setOnClickListener(v -> tap(cancel, () -> dialogRef[0].dismiss()));
+        out.setOnClickListener(v -> tap(out, () -> {
+            out.setEnabled(false);
+            String token = authSession != null ? authSession.accessToken : "";
+            supabaseAuth.signOut(token, (ok, err) -> runOnUiThread(() -> {
+                authSession = null;
+                sessionStore.clear();
+                dialogRef[0].dismiss();
+                onDone.run();
+            }));
+        }));
+        Dialog d = new Dialog(this);
+        d.setContentView(panel);
+        Window window = d.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawableResource(android.R.color.transparent);
+            android.view.WindowManager.LayoutParams attrs = window.getAttributes();
+            attrs.width = -1; attrs.height = -2;
+            attrs.gravity = Gravity.CENTER;
+            window.setAttributes(attrs);
+        }
+        dialogRef[0] = d;
+        d.show();
+    }
+
+    /** Full Account page (Play Store style): profile header, details, and a managed Sign out row. */
+    private void showAccount() {
+        boolean signedIn = authSession != null && authSession.isSignedIn();
+        if (!signedIn) { authDialog(false); return; }
+        String email = authSession.email == null ? "" : authSession.email;
+        String provider = authSession.provider == null ? "" : authSession.provider;
+        String method = "google".equals(provider) ? "Google" : ("email".equals(provider) ? "Email" : "—");
+        LinearLayout page = informationPage("Account", () -> showTab(tab));
+        LinearLayout head = vertical();
+        head.setBackground(shape(surface(), 20));
+        head.setPadding(dp(20), dp(20), dp(20), dp(20));
+        head.setGravity(Gravity.CENTER_HORIZONTAL);
+        String initial = email.isEmpty() ? "A" : email.substring(0, 1).toUpperCase(java.util.Locale.ROOT);
+        TextView avatar = text(initial, 30, light ? Color.WHITE : Color.rgb(20, 22, 18), true);
+        avatar.setGravity(Gravity.CENTER);
+        avatar.setBackground(shape(green(), dp(38)));
+        head.addView(avatar, new LinearLayout.LayoutParams(dp(76), dp(76)));
+        space(head, 12);
+        TextView em = text(email.isEmpty() ? "Account" : email, 17, ink(), true);
+        em.setGravity(Gravity.CENTER);
+        head.addView(em);
+        space(head, 4);
+        TextView sub = text("Signed in to APK STORE", 13, muted(), false);
+        sub.setGravity(Gravity.CENTER);
+        head.addView(sub);
+        space(head, 10);
+        TextView pill = text("✓ Synced", 12, green(), true);
+        GradientDrawable pillBg = new GradientDrawable();
+        pillBg.setCornerRadius(dp(20));
+        pillBg.setColor(raised());
+        pill.setBackground(pillBg);
+        pill.setPadding(dp(12), dp(6), dp(12), dp(6));
+        head.addView(pill);
+        page.addView(head);
+        space(page, 16);
+        settingsSection(page, "Account details");
+        LinearLayout card = settingsCard(page);
+        settingsRow(card, "mail", "Email", email.isEmpty() ? "—" : email, null, false);
+        settingsRow(card, "lock", "Sign-in method", method, null, false);
+        settingsSection(page, "Manage");
+        LinearLayout manage = settingsCard(page);
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(64));
+        row.setPadding(dp(10), dp(8), dp(10), dp(8));
+        TextView tile = symbol("logout", 24, danger());
+        tile.setBackground(shape(raised(), 14));
+        row.addView(tile, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        LinearLayout copy = vertical(); copy.setPadding(dp(12), 0, dp(8), 0);
+        copy.addView(text("Sign out", 16, danger(), true));
+        copy.addView(text("Sign out on this device", 13, muted(), false));
+        row.addView(copy, weight());
+        manage.addView(row);
+        row.setOnClickListener(v -> tap(row, () -> signOutDialog(() -> showTab(tab))));
     }
 
     private void settingsSection(LinearLayout parent, String title) {
@@ -2752,46 +2877,37 @@ public class MainActivity extends Activity {
         try {
             getPackageManager().getPackageInfo(pkg, 0);
         } catch (PackageManager.NameNotFoundException e) {
-            android.widget.Toast.makeText(this, "App installed nahi hai", android.widget.Toast.LENGTH_SHORT).show();
+            android.widget.Toast.makeText(this, "App is not installed", android.widget.Toast.LENGTH_SHORT).show();
             if (detailApp != null) refreshDetail();
             return;
         }
-        // Primary path: PackageInstaller.uninstall(). With REQUEST_DELETE_PACKAGES
-        // declared in the manifest this reliably raises Android's own official
-        // "Uninstall this app?" confirmation dialog (app name, OK/Cancel) on every
-        // device. ACTION_DELETE alone is silently a no-op on some OEMs, which is
-        // why the button appeared completely dead. The result (confirmed/cancelled)
-        // is reported by UninstallResultReceiver.
+        // Primary path: the public ACTION_DELETE flow — Android's own official
+        // uninstall confirmation (app name, OK/Cancel); the system performs the
+        // actual removal. This is the long-standing behavior.
+        try {
+            android.content.Intent uninstall = new android.content.Intent(
+                    Intent.ACTION_DELETE, Uri.parse("package:" + pkg));
+            if (uninstall.resolveActivity(getPackageManager()) != null) {
+                startActivity(uninstall);
+                return;
+            }
+        } catch (Exception e) {
+            // Fall through to the PackageInstaller path below.
+        }
+        // Fallback: PackageInstaller.uninstall() (needs REQUEST_DELETE_PACKAGES,
+        // declared in the manifest). The result is reported by UninstallResultReceiver.
         try {
             android.content.pm.PackageInstaller installer = getPackageManager().getPackageInstaller();
             // Explicit intent: the receiver is declared exported="false" with no
-            // intent-filter, so an implicit intent could never resolve and the
-            // "uninstall done/cancelled" toast never fired.
+            // intent-filter, so an implicit intent could never resolve.
             android.content.Intent callback = new android.content.Intent(this, UninstallResultReceiver.class)
                     .setAction(UninstallResultReceiver.ACTION)
                     .putExtra("pkg", pkg);
             android.app.PendingIntent pi = android.app.PendingIntent.getBroadcast(this, pkg.hashCode(), callback,
                     android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_MUTABLE);
             installer.uninstall(pkg, pi.getIntentSender());
-            return;
         } catch (Exception e) {
-            // Fall through to the public ACTION_DELETE flow below.
-        }
-        // Fallback: the public ACTION_DELETE flow (official system dialog on most devices).
-        try {
-            android.content.Intent uninstall = new android.content.Intent(
-                    Intent.ACTION_DELETE, Uri.parse("package:" + pkg));
-            if (uninstall.resolveActivity(getPackageManager()) != null) {
-                startActivity(uninstall);
-            } else {
-                android.widget.Toast.makeText(this, "System uninstaller nahi mila - App info khol raha hoon",
-                        android.widget.Toast.LENGTH_LONG).show();
-                startActivity(new android.content.Intent(
-                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                        Uri.parse("package:" + pkg)));
-            }
-        } catch (Exception e) {
-            android.widget.Toast.makeText(this, "Uninstall open nahi ho saka", android.widget.Toast.LENGTH_SHORT).show();
+            android.widget.Toast.makeText(this, "Couldn't open the uninstaller", android.widget.Toast.LENGTH_SHORT).show();
         }
     }
     /** Starts the next app in the Update All queue, one at a time. */
