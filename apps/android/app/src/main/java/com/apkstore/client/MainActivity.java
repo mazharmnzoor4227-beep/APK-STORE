@@ -2186,9 +2186,24 @@ public class MainActivity extends Activity {
             if (detailApp != null) refreshDetail();
             return;
         }
+        // Primary path: PackageInstaller API shows Android's official uninstall
+        // confirmation dialog (app name, OK/Cancel). Needs REQUEST_DELETE_PACKAGES.
+        try {
+            android.content.Intent result = new android.content.Intent(UninstallResultReceiver.ACTION);
+            result.setPackage(getPackageName());
+            result.putExtra("pkg", pkg);
+            android.app.PendingIntent pi = android.app.PendingIntent.getBroadcast(
+                    this, pkg.hashCode(), result,
+                    android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_IMMUTABLE);
+            getPackageManager().getPackageInstaller().uninstall(pkg, pi.getIntentSender());
+            return;
+        } catch (Exception e) {
+            android.util.Log.w("ApkStore", "PackageInstaller uninstall failed, trying ACTION_DELETE", e);
+        }
+        // Fallback: classic uninstall intent.
         try {
             startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + pkg)));
-        } catch (android.content.ActivityNotFoundException e) {
+        } catch (Exception e) {
             android.widget.Toast.makeText(this, "Uninstall open nahi ho saka", android.widget.Toast.LENGTH_SHORT).show();
         }
     }
