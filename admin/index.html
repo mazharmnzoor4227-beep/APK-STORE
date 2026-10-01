@@ -304,6 +304,7 @@ details.ovr[open] summary .chev{transform:rotate(90deg);}
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 16V4m0 0l-4 4m4-4l4 4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
           <b>Tap to choose APK</b>
           <div class="meta">Up to 300 MB · .apk only</div>
+          <div class="meta" style="margin-top:4px">Files over 50 MB need the R2 CORS rule in Cloudflare</div>
         </div>
         <input type="file" id="apkFile" accept=".apk" class="hidden">
         <div class="card hidden" id="upProgCard"><b id="upFileName">—</b>
@@ -672,12 +673,15 @@ async function startUpload(file){
     const s=await api("start","POST",{filename:file.name,byteSize:file.size});
     candidateId=s.id;
     txt.textContent="Uploading… 0%";
+    const bigFile=file.size>50*1024*1024; // >50 MB uploads go via R2 presigned URL
     await new Promise((res,rej)=>{
       const xhr=new XMLHttpRequest();
       xhr.upload.onprogress=ev=>{ if(ev.lengthComputable){ const p=Math.round(ev.loaded/ev.total*100);
         bar.style.width=p+"%"; txt.textContent="Uploading… "+p+"%"; } };
       xhr.onload=()=>xhr.status<300?res():rej(new Error("Upload failed ("+xhr.status+")"));
-      xhr.onerror=()=>rej(new Error("Network error"));
+      xhr.onerror=()=>rej(new Error(bigFile?
+        "Network error — large uploads need the R2 CORS rule (Cloudflare R2 → bucket → Settings → CORS)":
+        "Network error"));
       xhr.open("PUT",s.signedUrl); xhr.setRequestHeader("Content-Type","application/vnd.android.package-archive");
       xhr.send(file);
     });
