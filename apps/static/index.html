@@ -528,8 +528,10 @@ async function handleAuthRedirect(){
    try{
     var hp=new URLSearchParams((location.hash||"").replace(/^#\/?/,""));
     var at=hp.get("access_token"), rt=hp.get("refresh_token");
-    if(at&&rt){ await sbAuth.auth.setSession({access_token:at,refresh_token:rt}); }
-    try{ history.replaceState({route:route},"","#/"+encodeURIComponent(route)); }catch(e){}
+    if(at&&rt){
+     await sbAuth.auth.setSession({access_token:at,refresh_token:rt});
+     try{ history.replaceState({route:route},"","#/"+encodeURIComponent(route)); }catch(e){}
+    }
    }catch(ee){}
   }
  }catch(e){}
