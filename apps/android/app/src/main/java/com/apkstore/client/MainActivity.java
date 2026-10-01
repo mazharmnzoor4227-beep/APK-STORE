@@ -2516,7 +2516,7 @@ public class MainActivity extends Activity {
         int attempt = retries + 1;
         downloadStallRetries.put(slug, attempt);
         downloadErrors.put(slug, "Download stalled — retrying " + attempt + "/3…");
-        refreshDetail(); updateSelfUpdateUi();
+        refreshDetail(); updateSelfUpdateUi(); refreshUpdateButtons();
         final JSONObject target = app;
         Runnable retry = () -> {
             downloadRetryTasks.remove(slug);
