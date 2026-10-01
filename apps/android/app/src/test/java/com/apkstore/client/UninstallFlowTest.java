@@ -26,7 +26,9 @@ public class UninstallFlowTest {
         String manifest = read("src/main/AndroidManifest.xml");
 
         assertTrue("Uninstall must delegate to Android's ACTION_DELETE confirmation UI",
-                activity.contains("startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse(\"package:\" + pkg)))"));
+                activity.contains("Intent.ACTION_DELETE") && activity.contains("Uri.parse(\"package:\" + pkg)"));
+        assertTrue("Uninstall must verify the system uninstaller resolves before launching it",
+                activity.contains("resolveActivity(getPackageManager())"));
         assertFalse("REQUEST_DELETE_PACKAGES must stay absent so the PackageInstaller attempt cannot swallow the public ACTION_DELETE flow",
                 manifest.contains("android.permission.REQUEST_DELETE_PACKAGES"));
     }

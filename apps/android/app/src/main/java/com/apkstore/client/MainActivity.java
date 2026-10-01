@@ -2312,7 +2312,19 @@ public class MainActivity extends Activity {
         // (app name, OK/Cancel). No PackageInstaller attempt — it silently
         // swallows the request and the system dialog never appears.
         try {
-            startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + pkg)));
+            android.content.Intent uninstall = new android.content.Intent(
+                    Intent.ACTION_DELETE, Uri.parse("package:" + pkg));
+            if (uninstall.resolveActivity(getPackageManager()) != null) {
+                startActivity(uninstall);
+            } else {
+                // No system uninstaller on this device/ROM — fall back to the
+                // App info screen, where Android always offers Uninstall.
+                android.widget.Toast.makeText(this, "System uninstaller nahi mila — App info khol raha hoon",
+                        android.widget.Toast.LENGTH_LONG).show();
+                startActivity(new android.content.Intent(
+                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:" + pkg)));
+            }
         } catch (Exception e) {
             android.widget.Toast.makeText(this, "Uninstall open nahi ho saka", android.widget.Toast.LENGTH_SHORT).show();
         }
