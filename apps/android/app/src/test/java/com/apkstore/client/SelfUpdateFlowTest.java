@@ -72,7 +72,7 @@ public class SelfUpdateFlowTest {
         assertTrue("Track the last time bytes advanced", java.contains("downloadLastProgressAt"));
         assertTrue("Bound automatic retries instead of looping forever", java.contains("downloadStallRetries"));
         assertTrue("A stalled request must be recovered through a dedicated path", java.contains("handleStalledDownload(slug)"));
-        assertTrue("Stall detection should wait 45 seconds before recovery", java.contains("now - lastAt > 45000"));
+        assertTrue("Stall detection should wait 120 seconds before recovery on slow connections", java.contains("now - lastAt > 120000"));
         assertTrue("Manual cancellation must clear scheduled stall retry state", java.contains("downloadStallRetries.remove(slug);"));
         assertTrue("Self-update UI must refresh while retry recovery happens", java.contains("refreshDetail(); updateSelfUpdateUi();"));
     }

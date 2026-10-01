@@ -46,7 +46,9 @@ public final class UpdateCheckWorker extends Worker {
                 connection.setConnectTimeout(12000); connection.setReadTimeout(12000);
                 connection.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
                 try {
-                    if (connection.getResponseCode() != 200) return Result.retry();
+                    // One app's transient failure must not discard the whole batch and
+                    // force an unbounded full retry loop — skip it and keep partial results.
+                    if (connection.getResponseCode() != 200) continue;
                     try (InputStream stream = connection.getInputStream()) {
                         JSONArray releases = new JSONArray(new String(Io.readAllBytes(stream), StandardCharsets.UTF_8));
                         if (releases.length() == 0) continue;

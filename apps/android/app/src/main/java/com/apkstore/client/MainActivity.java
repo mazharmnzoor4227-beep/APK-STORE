@@ -85,6 +85,15 @@ public class MainActivity extends Activity {
     private Runnable pendingSearch;
     private boolean legalPage;
     private boolean firstScreen = true;
+    /** True while an information page (Downloads/About/legal/My apps) is showing instead of a tab. */
+    private boolean infoPageOpen;
+    /** True while the Downloads manager page is showing (subset of infoPageOpen). */
+    private boolean downloadsPageOpen;
+    /** Active-row views on the Downloads page, updated in place by the download poll. */
+    private final HashMap<String, ProgressRing> downloadRowRings = new HashMap<>();
+    private final HashMap<String, TextView> downloadRowStatus = new HashMap<>();
+    /** Icon URLs that failed to load — not retried on every render (cleared on catalog refresh). */
+    private final java.util.HashSet<String> failedIconUrls = new java.util.HashSet<>();
     private final HashMap<String, Long> downloads = new HashMap<>();
     private final HashMap<String, Long> completedDownloads = new HashMap<>();
     private final HashMap<String, String> downloadPaths = new HashMap<>();
@@ -318,10 +327,16 @@ public class MainActivity extends Activity {
             else refreshUpdateButtons();
             if (detailApp != null && completedDownloads.containsKey(detailApp.optString("slug")))
                 watchInstallResult(detailApp.optString("slug"));
-            if (pendingInstallSlug != null && getPackageManager().canRequestPackageInstalls()) {
-                String slug = pendingInstallSlug;
-                pendingInstallSlug = null;
-                openDownloaded(slug);
+            if (pendingInstallSlug != null) {
+                if (getPackageManager().canRequestPackageInstalls()) {
+                    String slug = pendingInstallSlug;
+                    pendingInstallSlug = null;
+                    openDownloaded(slug);
+                } else {
+                    // User came back without granting the permission — drop the pending
+                    // install so it can't fire unexpectedly on some much later resume.
+                    pendingInstallSlug = null;
+                }
             }
         });
     }
@@ -485,6 +500,10 @@ public class MainActivity extends Activity {
     private void showTab(int selected) {
         detailApp = null;
         legalPage = false;
+        infoPageOpen = false;
+        downloadsPageOpen = false;
+        downloadRowRings.clear();
+        downloadRowStatus.clear();
         tab = selected;
         getWindow().setStatusBarColor(bg());
         getWindow().setNavigationBarColor(bg());
@@ -536,17 +555,6 @@ public class MainActivity extends Activity {
 
         if (selected == SEARCH) {
             makeSearch();
-        } else if (selected == UPDATES) {
-            space(body, 16);
-            JSONArray pending = pendingUpdates();
-            body.addView(text(pending.length() + " update(s) available", 19, ink(), true));
-            if (pending.length() > 0) {
-                TextView all = text("Update all", 15, green(), true);
-                all.setGravity(Gravity.CENTER); all.setMinHeight(dp(48));
-                all.setOnClickListener(v -> { for (int i = 0; i < pending.length(); i++) startDownload(pending.optJSONObject(i)); });
-                body.addView(all);
-            }
-            space(body, 18);
         }
         render();
         if (catalog.length() == 0) load();
@@ -611,6 +619,7 @@ public class MainActivity extends Activity {
                         lastCatalogRefresh = android.os.SystemClock.elapsedRealtime();
                         releaseVersions.clear();
                         releaseVersions.putAll(versions);
+                        synchronized (failedIconUrls) { failedIconUrls.clear(); }
                         if (initial && apps.length() > 0) showTab(tab); else render();
                     } });
             } catch (Exception error) {
@@ -738,6 +747,28 @@ public class MainActivity extends Activity {
         if (Boolean.valueOf(circular).equals(iconFrame.getTag())) return;
         iconFrame.setTag(circular);
         iconFrame.setBackground(shape(raised(), circular ? iconDp / 2 : 13));
+    }
+    /** In-place progress update for the Downloads manager page — no full re-render, no flicker. */
+    private void updateDownloadsRow(String slug) {
+        ProgressRing ring = downloadRowRings.get(slug);
+        if (ring != null) ring.setProgress(downloadProgress.getOrDefault(slug, 0));
+        TextView status = downloadRowStatus.get(slug);
+        if (status != null) {
+            String err = downloadErrors.get(slug);
+            status.setText(err != null ? err : "Downloading… " + downloadProgress.getOrDefault(slug, 0) + "%");
+        }
+    }
+    /** Re-render the Downloads manager page if it is currently open (rows move between sections). */
+    private void refreshDownloadsPage() {
+        if (downloadsPageOpen) showDownloads();
+    }
+    /** Find the ProgressRing inside an iconWithRing frame without depending on child order. */
+    private ProgressRing findRing(android.widget.FrameLayout wrap) {
+        for (int i = 0; i < wrap.getChildCount(); i++) {
+            android.view.View child = wrap.getChildAt(i);
+            if (child instanceof ProgressRing) return (ProgressRing) child;
+        }
+        return null;
     }
     /** Buttery Material-style ease for sheet and panel motion. */
     private android.view.animation.Interpolator smooth() {
@@ -900,9 +931,9 @@ public class MainActivity extends Activity {
         String slug = app.optString("slug");
         LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
         android.widget.FrameLayout iconWrap = iconWithRing(app, 56, 0);
-        ProgressRing ring = (ProgressRing) iconWrap.getChildAt(1);
-        ring.setVisibility(View.GONE);
-        updateRings.put(slug, ring);
+        ProgressRing ring = findRing(iconWrap);
+        if (ring != null) ring.setVisibility(View.GONE);
+        if (ring != null) updateRings.put(slug, ring);
         row.addView(iconWrap, new LinearLayout.LayoutParams(dp(64), dp(64)));
         LinearLayout info = vertical(); info.setPadding(dp(12), 0, dp(8), 0);
         TextView title = text(app.optString("title"), 15, ink(), true); title.setSingleLine(true);
@@ -998,6 +1029,7 @@ public class MainActivity extends Activity {
     }
     private void showDownloads() {
         LinearLayout page = informationPage("Downloads", () -> showTab(tab));
+        downloadsPageOpen = true;
         boolean any = false;
         java.util.List<String> active = new java.util.ArrayList<>(downloads.keySet());
         java.util.List<String> ready = new java.util.ArrayList<>(completedDownloads.keySet());
@@ -1007,20 +1039,32 @@ public class MainActivity extends Activity {
             space(page, 8);
             for (String slug : active) {
                 JSONObject app = appForDownload(slug);
-                if (app == null) continue;
+                final String rowSlug = slug;
+                // A download keeps running even if its app left the catalog — still show it
+                // (with the slug as title) so the user can watch and cancel it.
+                final JSONObject rowApp = app != null ? app : new JSONObject();
+                if (app == null) { try { rowApp.put("title", slug); } catch (Exception ignored) { } }
                 LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
-                android.widget.FrameLayout dlWrap = iconWithRing(app, 48, downloadProgress.getOrDefault(slug, 0));
+                android.widget.FrameLayout dlWrap = iconWithRing(rowApp, 48, downloadProgress.getOrDefault(slug, 0));
                 setIconFrameCircular(dlWrap, true, 48);
+                ProgressRing dlRing = findRing(dlWrap);
+                if (dlRing != null) downloadRowRings.put(slug, dlRing);
                 row.addView(dlWrap,
                         new LinearLayout.LayoutParams(dp(56), dp(56)));
                 LinearLayout labels = vertical(); labels.setPadding(dp(12), 0, 0, 0);
-                TextView title = text(app.optString("title"), 16, ink(), true); title.setSingleLine(true);
+                TextView title = text(app != null ? app.optString("title") : slug, 16, ink(), true); title.setSingleLine(true);
                 labels.addView(title);
-                labels.addView(text("Downloading… " + downloadProgress.getOrDefault(slug, 0) + "%", 12, muted(), false));
+                TextView status = text("Downloading… " + downloadProgress.getOrDefault(slug, 0) + "%", 12, muted(), false);
+                labels.addView(status);
+                downloadRowStatus.put(slug, status);
                 row.addView(labels, weight());
-                if (installedVersion(app.optString("package_id")) >= 0) addInstalledTick(row, app);
+                TextView cancel = text("Cancel", 14, ink(), true);
+                cancel.setMinHeight(dp(48)); cancel.setPadding(dp(12), 0, dp(12), 0); cancel.setGravity(Gravity.CENTER_VERTICAL);
+                cancel.setOnClickListener(v -> cancelDownload(rowSlug));
+                row.addView(cancel);
+                if (app != null && installedVersion(app.optString("package_id")) >= 0) addInstalledTick(row, app);
                 row.setMinimumHeight(dp(72));
-                row.setOnClickListener(v -> showDetail(app));
+                if (app != null) { final JSONObject tapped = app; row.setOnClickListener(v -> showDetail(tapped)); }
                 page.addView(row);
                 space(page, 4);
             }
@@ -1171,7 +1215,10 @@ public class MainActivity extends Activity {
             if (cached != null) iconCache.put(url, cached);
         }
         if (cached != null) image.setImageBitmap(cached);
-        else {
+        else if (failedIconUrls.contains(url)) {
+            // This URL already failed — don't hit the network again on every render.
+            image.setVisibility(View.GONE);
+        } else {
             image.setVisibility(View.GONE);
             synchronized (pendingIcons) {
                 java.util.ArrayList<ImageView> waiting = pendingIcons.get(url);
@@ -1206,7 +1253,13 @@ public class MainActivity extends Activity {
                 handler.post(() -> {
                     java.util.ArrayList<ImageView> waiting;
                     synchronized (pendingIcons) { waiting = pendingIcons.remove(url); }
-                    if (result != null && waiting != null) for (ImageView target : waiting) {
+                    if (result == null) {
+                        // Remember broken URLs so every render doesn't retry the network.
+                        // Cleared on the next catalog refresh in case the URL was fixed.
+                        synchronized (failedIconUrls) { failedIconUrls.add(url); }
+                        return;
+                    }
+                    if (waiting != null) for (ImageView target : waiting) {
                         target.setImageBitmap(result); target.setVisibility(View.VISIBLE);
                     }
                 });
@@ -1679,6 +1732,10 @@ public class MainActivity extends Activity {
         rows.addView(row);
     }
     private LinearLayout informationPage(String title, Runnable backAction) {
+        infoPageOpen = true;
+        downloadsPageOpen = false;
+        downloadRowRings.clear();
+        downloadRowStatus.clear();
         LinearLayout root = vertical(); root.setBackgroundColor(bg());
         applySafeArea(root); setContentView(root); root.requestApplyInsets();
         TextView back = text("‹  " + title, 20, ink(), true);
@@ -1957,6 +2014,10 @@ public class MainActivity extends Activity {
         consumeInstallResult(app.optString("slug"));
         detailApp = app;
         detailBack = backTo;
+        infoPageOpen = false;
+        downloadsPageOpen = false;
+        downloadRowRings.clear();
+        downloadRowStatus.clear();
         LinearLayout root = vertical(); root.setBackgroundColor(bg());
         applySafeArea(root); setContentView(root); root.requestApplyInsets();
         LinearLayout top = new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL);
@@ -2313,7 +2374,7 @@ public class MainActivity extends Activity {
         detailSecondary.setEnabled(true);
         detailSecondary.setBackground(outline(16, green()));
         detailSecondary.setOnClickListener(v -> {
-            if (running) cancelDownload(slug);
+            if (downloads.containsKey(slug)) cancelDownload(slug);
             else requestSystemUninstall(detailApp.optString("package_id"));
         });
         if (installed && !running && !installing && !updateAvailable(detailApp)) {
@@ -2353,7 +2414,11 @@ public class MainActivity extends Activity {
         // is reported by UninstallResultReceiver.
         try {
             android.content.pm.PackageInstaller installer = getPackageManager().getPackageInstaller();
-            android.content.Intent callback = new android.content.Intent(UninstallResultReceiver.ACTION)
+            // Explicit intent: the receiver is declared exported="false" with no
+            // intent-filter, so an implicit intent could never resolve and the
+            // "uninstall done/cancelled" toast never fired.
+            android.content.Intent callback = new android.content.Intent(this, UninstallResultReceiver.class)
+                    .setAction(UninstallResultReceiver.ACTION)
                     .putExtra("pkg", pkg);
             android.app.PendingIntent pi = android.app.PendingIntent.getBroadcast(this, pkg.hashCode(), callback,
                     android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_MUTABLE);
@@ -2384,6 +2449,9 @@ public class MainActivity extends Activity {
         if (updateQueue.isEmpty()) { updateQueueTotal = 0; return; }
         JSONObject next = updateQueue.poll();
         if (next == null) { startNextQueuedUpdate(); return; }
+        String nextSlug = next.optString("slug");
+        // Already downloading or already downloaded: skip without wedging the queue.
+        if (downloads.containsKey(nextSlug) || completedDownloads.containsKey(nextSlug)) { startNextQueuedUpdate(); return; }
         int done = updateQueueTotal - updateQueue.size();
         android.widget.Toast.makeText(this, "Updating " + done + " of " + updateQueueTotal, android.widget.Toast.LENGTH_SHORT).show();
         startDownload(next);
@@ -2413,7 +2481,13 @@ public class MainActivity extends Activity {
             downloadLastBytes.put(slug, -1L);
             downloadLastProgressAt.put(slug, android.os.SystemClock.elapsedRealtime());
             pollDownload(slug); refreshDetail();
-        } catch (Exception e) { downloadErrors.put(slug, "Download could not start: " + e.getMessage()); refreshDetail(); }
+        } catch (Exception e) {
+            downloadErrors.put(slug, "Download could not start: " + e.getMessage());
+            refreshDetail(); refreshUpdateButtons();
+            // A queued "Update all" item must never wedge the rest of the queue:
+            // keep the queue moving even when one download fails to start.
+            startNextQueuedUpdate();
+        }
     }
     private static final String INSTALLING_MARKER = "Waiting for Android installation confirmation";
 
@@ -2450,11 +2524,14 @@ public class MainActivity extends Activity {
                     refreshDetail(); refreshUpdateButtons(); updateSelfUpdateUi(); watchInstallResult(slug);
                 });
             } catch (Exception error) {
+                final String message = error.getMessage() == null ? "APK verification failed." : error.getMessage();
                 runOnUiThread(() -> {
-                    downloadErrors.put(slug, error.getMessage() == null ? "APK verification failed." : error.getMessage());
+                    downloadErrors.put(slug, message);
                     completedDownloads.remove(slug);
+                    downloadPaths.remove(slug);
+                    history.record(slug, target.optString("title", slug), "Failed", message, id, "", 0);
                     ((DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE)).remove(id);
-                    refreshDetail();
+                    refreshDetail(); refreshUpdateButtons(); updateSelfUpdateUi(); refreshDownloadsPage();
                 });
             }
         });
@@ -2482,13 +2559,13 @@ public class MainActivity extends Activity {
         history.record(slug, slug, "Cancelled", "", id == null ? -1 : id, "", 0);
         downloadErrors.remove(slug);
         startNextQueuedUpdate();
-        refreshDetail(); updateSelfUpdateUi(); refreshUpdateButtons();
+        refreshDetail(); updateSelfUpdateUi(); refreshUpdateButtons(); refreshDownloadsPage();
     }
     private void failDownload(String slug, String message) {
         Long id = stopActiveDownload(slug, true);
         downloadErrors.put(slug, message);
         history.record(slug, slug, "Failed", message, id == null ? -1 : id, "", 0);
-        refreshDetail(); updateSelfUpdateUi(); refreshUpdateButtons();
+        refreshDetail(); updateSelfUpdateUi(); refreshUpdateButtons(); refreshDownloadsPage();
         startNextQueuedUpdate();
     }
     private void handleStalledDownload(String slug) {
@@ -2500,7 +2577,7 @@ public class MainActivity extends Activity {
             String message = "Download stalled and release metadata is unavailable. Check for updates again.";
             downloadErrors.put(slug, message);
             history.record(slug, slug, "Stalled", message, id == null ? -1 : id, "", 0);
-            refreshDetail(); updateSelfUpdateUi();
+            refreshDetail(); updateSelfUpdateUi(); refreshUpdateButtons(); refreshDownloadsPage();
             startNextQueuedUpdate();
             return;
         }
@@ -2509,14 +2586,14 @@ public class MainActivity extends Activity {
             String message = "Download stalled after 3 retries. Check your connection and tap Retry.";
             downloadErrors.put(slug, message);
             history.record(slug, slug, "Stalled", message, id == null ? -1 : id, "", 0);
-            refreshDetail(); updateSelfUpdateUi();
+            refreshDetail(); updateSelfUpdateUi(); refreshUpdateButtons(); refreshDownloadsPage();
             startNextQueuedUpdate();
             return;
         }
         int attempt = retries + 1;
         downloadStallRetries.put(slug, attempt);
         downloadErrors.put(slug, "Download stalled — retrying " + attempt + "/3…");
-        refreshDetail(); updateSelfUpdateUi(); refreshUpdateButtons();
+        refreshDetail(); updateSelfUpdateUi(); refreshUpdateButtons(); refreshDownloadsPage();
         final JSONObject target = app;
         Runnable retry = () -> {
             downloadRetryTasks.remove(slug);
@@ -2545,6 +2622,7 @@ public class MainActivity extends Activity {
                         downloadProgress.put(slug, 100);
                         clearStallState(slug, true);
                         refreshDetail();
+                        refreshDownloadsPage();
                         openDownloaded(slug);
                         startNextQueuedUpdate();
                         return;
@@ -2573,7 +2651,10 @@ public class MainActivity extends Activity {
                         downloadLastProgressAt.put(slug, now);
                     } else if (!retryableState) {
                         downloadLastProgressAt.put(slug, now);
-                    } else if (lastAt != null && now - lastAt > 45000L) {
+                    } else if (lastAt != null && now - lastAt > 120000L) {
+                        // Slow mobile connections can stall for a while without being dead.
+                        // Killing the download too eagerly restarts it from zero and makes
+                        // big files take forever — give it two minutes before retrying.
                         handleStalledDownload(slug);
                         return;
                     }
@@ -2588,7 +2669,9 @@ public class MainActivity extends Activity {
                     // A UI hiccup must never kill the download: refreshDetail() runs outside
                     // the failure path so an exception here can't trigger failDownload().
                     try { refreshDetail(); } catch (Exception ignored) { }
-                    if (detailApp == null && body != null) {
+                    if (downloadsPageOpen) {
+                        updateDownloadsRow(slug);
+                    } else if (!infoPageOpen && detailApp == null && body != null) {
                         if (tab == UPDATES) refreshUpdateButtons();
                         else render();
                     }
@@ -2628,7 +2711,10 @@ public class MainActivity extends Activity {
     }
     @Override public void onBackPressed() {
         if (detailApp != null) { detailApp = null; Runnable b = detailBack != null ? detailBack : () -> showTab(APPS); b.run(); }
-        else if (legalPage) showAbout(); else showTab(APPS);
+        else if (legalPage) showAbout();
+        else if (infoPageOpen) showTab(tab);
+        else if (tab != APPS) showTab(APPS);
+        else super.onBackPressed();
     }
     @Override protected void onDestroy() {
         if (pendingSearch != null) handler.removeCallbacks(pendingSearch);
@@ -2636,6 +2722,6 @@ public class MainActivity extends Activity {
         for (Runnable retry : downloadRetryTasks.values()) handler.removeCallbacks(retry);
         if (installResultPoll != null) handler.removeCallbacks(installResultPoll);
         if (selfUpdateUiPoll != null) handler.removeCallbacks(selfUpdateUiPoll);
-        worker.shutdownNow(); super.onDestroy();
+        worker.shutdownNow(); iconWorker.shutdownNow(); super.onDestroy();
     }
 }
