@@ -516,7 +516,8 @@ public class MainActivity extends Activity {
         download.setOnClickListener(v -> tap(v, this::showDownloads));
             header.addView(download, new LinearLayout.LayoutParams(dp(48), dp(48)));
             TextView more = action("more_vert", "More options");
-            more.setOnClickListener(v -> tap(v, this::showMoreMenu));
+            // Open instantly: the tap() scale animation delayed the menu and made it feel laggy.
+            more.setOnClickListener(v -> showMoreMenu());
             header.addView(more, new LinearLayout.LayoutParams(dp(48), dp(48)));
         }
         root.addView(header, new LinearLayout.LayoutParams(-1, dp(58)));
@@ -713,12 +714,34 @@ public class MainActivity extends Activity {
      * just outside the icon, matching the reference Updates/Downloads rows. */
     private android.widget.FrameLayout iconWithRing(JSONObject app, int iconDp, int progress) {
         android.widget.FrameLayout wrap = new android.widget.FrameLayout(this);
-        wrap.addView(icon(app, iconDp), new android.widget.FrameLayout.LayoutParams(dp(iconDp), dp(iconDp), Gravity.CENTER));
+        // Clipping frame: at rest it matches the icon's rounded-rect look; while a
+        // download runs it becomes a circle so the icon never pokes out of the ring.
+        android.widget.FrameLayout iconFrame = new android.widget.FrameLayout(this);
+        iconFrame.setClipToOutline(true);
+        iconFrame.setBackground(shape(raised(), 13));
+        iconFrame.setTag(Boolean.FALSE);
+        iconFrame.addView(icon(app, iconDp),
+                new android.widget.FrameLayout.LayoutParams(-1, -1));
+        wrap.addView(iconFrame, new android.widget.FrameLayout.LayoutParams(dp(iconDp), dp(iconDp), Gravity.CENTER));
+        wrap.setTag(iconFrame);
         ProgressRing ring = new ProgressRing();
         ring.setLayoutParams(new android.widget.FrameLayout.LayoutParams(dp(iconDp + 8), dp(iconDp + 8), Gravity.CENTER));
         ring.setProgress(progress);
         wrap.addView(ring);
         return wrap;
+    }
+    /** Play Store style: the app icon turns into a circle while its download runs. */
+    private void setIconFrameCircular(android.widget.FrameLayout wrap, boolean circular, int iconDp) {
+        Object tag = wrap.getTag();
+        if (!(tag instanceof android.widget.FrameLayout)) return;
+        android.widget.FrameLayout iconFrame = (android.widget.FrameLayout) tag;
+        if (Boolean.valueOf(circular).equals(iconFrame.getTag())) return;
+        iconFrame.setTag(circular);
+        iconFrame.setBackground(shape(raised(), circular ? iconDp / 2 : 13));
+    }
+    /** Buttery Material-style ease for sheet and panel motion. */
+    private android.view.animation.Interpolator smooth() {
+        return new android.view.animation.PathInterpolator(0.4f, 0f, 0.2f, 1f);
     }
     private boolean updateAvailable(JSONObject app) {
         String packageId = app.optString("package_id");
@@ -814,6 +837,9 @@ public class MainActivity extends Activity {
                 boolean running = downloads.containsKey(slug);
                 ring.setVisibility(running ? View.VISIBLE : View.GONE);
                 if (running) ring.setProgress(downloadProgress.getOrDefault(slug, 0));
+                // Icon goes circular while its download runs, back to rounded when done.
+                if (ring.getParent() instanceof android.widget.FrameLayout)
+                    setIconFrameCircular((android.widget.FrameLayout) ring.getParent(), running, 56);
             }
         }
         if (updateAllLabel != null) {
@@ -846,7 +872,7 @@ public class MainActivity extends Activity {
             sync();
         }
         private void onTap() {
-            if (downloads.containsKey(slug)) { cancelDownload(slug); return; }
+            if (downloads.containsKey(slug)) { cancelDownload(slug); sync(); return; }
             if (completedDownloads.containsKey(slug)) { openDownloaded(slug); sync(); return; }
             startDownload(app);
             sync();
@@ -983,7 +1009,9 @@ public class MainActivity extends Activity {
                 JSONObject app = appForDownload(slug);
                 if (app == null) continue;
                 LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
-                row.addView(iconWithRing(app, 48, downloadProgress.getOrDefault(slug, 0)),
+                android.widget.FrameLayout dlWrap = iconWithRing(app, 48, downloadProgress.getOrDefault(slug, 0));
+                setIconFrameCircular(dlWrap, true, 48);
+                row.addView(dlWrap,
                         new LinearLayout.LayoutParams(dp(56), dp(56)));
                 LinearLayout labels = vertical(); labels.setPadding(dp(12), 0, 0, 0);
                 TextView title = text(app.optString("title"), 16, ink(), true); title.setSingleLine(true);
@@ -1430,11 +1458,11 @@ public class MainActivity extends Activity {
         menuScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         menuScroll.setVerticalScrollBarEnabled(false);
         LinearLayout rows = vertical();
-        sheetRow(rows, "smartphone", "My apps", this::showMyApps, sheet);
-        sheetRow(rows, "favorite", "Favourites", () -> showTab(FAVORITES), sheet);
-        sheetRow(rows, "cancel", "Blacklist", () -> showSavedApps("Blacklist", "blacklist"), sheet);
-        sheetRow(rows, "history", "Ignored updates", () -> showSavedApps("Ignored updates", "ignored"), sheet);
-        sheetRow(rows, "volunteer_activism", "Donate", () -> openLink("https://github.com/mazharmnzoor4227-beep/APK-STORE"), sheet);
+        sheetRow(rows, "smartphone", "My apps", this::showMyApps, () -> dismissMenuSheet(sheet, panel));
+        sheetRow(rows, "favorite", "Favourites", () -> showTab(FAVORITES), () -> dismissMenuSheet(sheet, panel));
+        sheetRow(rows, "cancel", "Blacklist", () -> showSavedApps("Blacklist", "blacklist"), () -> dismissMenuSheet(sheet, panel));
+        sheetRow(rows, "history", "Ignored updates", () -> showSavedApps("Ignored updates", "ignored"), () -> dismissMenuSheet(sheet, panel));
+        sheetRow(rows, "volunteer_activism", "Donate", () -> openLink("https://github.com/mazharmnzoor4227-beep/APK-STORE"), () -> dismissMenuSheet(sheet, panel));
         menuScroll.addView(rows);
         // Wrap the content but never grow past ~62% of the screen: no dead space, no cramped scroll.
         int maxMenuH = (int) (getResources().getDisplayMetrics().heightPixels * 0.62);
@@ -1451,13 +1479,19 @@ public class MainActivity extends Activity {
             attributes.dimAmount = 0.55f;
             window.setAttributes(attributes);
         }
+        // Hide until positioned: without this the fully-open sheet flashes for a
+        // frame before the slide-up starts — the stutter users see on open.
+        panel.setVisibility(View.INVISIBLE);
         sheet.show();
         if (window != null) window.setLayout(-1, -2);
         if (ValueAnimator.areAnimatorsEnabled()) {
             panel.post(() -> {
                 panel.setTranslationY(panel.getHeight());
-                panel.animate().translationY(0).setDuration(330).setInterpolator(new DecelerateInterpolator()).start();
+                panel.setVisibility(View.VISIBLE);
+                panel.animate().translationY(0).setDuration(280).setInterpolator(smooth()).start();
             });
+        } else {
+            panel.setVisibility(View.VISIBLE);
         }
         handleZone.setOnTouchListener(new View.OnTouchListener() {
             float startY;
@@ -1472,15 +1506,21 @@ public class MainActivity extends Activity {
                 }
                 if (event.getActionMasked() == MotionEvent.ACTION_UP || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
                     if (panel.getTranslationY() > dp(90)) {
-                        panel.animate().translationY(panel.getHeight()).setDuration(200).setInterpolator(new DecelerateInterpolator()).withEndAction(sheet::dismiss).start();
+                        dismissMenuSheet(sheet, panel);
                     } else {
-                        panel.animate().translationY(0).setDuration(260).setInterpolator(new DecelerateInterpolator()).start();
+                        panel.animate().translationY(0).setDuration(260).setInterpolator(smooth()).start();
                     }
                     return true;
                 }
                 return false;
             }
         });
+    }
+    /** Buttery bottom-sheet exit: slide down, then dismiss. */
+    private void dismissMenuSheet(android.app.Dialog sheet, View panel) {
+        if (!ValueAnimator.areAnimatorsEnabled()) { sheet.dismiss(); return; }
+        panel.animate().translationY(panel.getHeight()).setDuration(230)
+                .setInterpolator(smooth()).withEndAction(sheet::dismiss).start();
     }
     private void showMyApps() {
         LinearLayout page = informationPage("My apps", () -> showTab(tab));
@@ -1626,7 +1666,7 @@ public class MainActivity extends Activity {
             }
         }));
     }
-    private void sheetRow(LinearLayout panel, String glyph, String title, Runnable onClick, Dialog sheet) {
+    private void sheetRow(LinearLayout rows, String glyph, String title, Runnable onClick, Runnable dismiss) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setMinimumHeight(dp(56));
@@ -1635,11 +1675,8 @@ public class MainActivity extends Activity {
         TextView icon = action(glyph, title);
         row.addView(icon, new LinearLayout.LayoutParams(dp(44), dp(48)));
         row.addView(text(title, 16, ink(), false), weight());
-        row.setOnClickListener(v -> {
-            sheet.dismiss();
-            onClick.run();
-        });
-        panel.addView(row);
+        row.setOnClickListener(v -> { dismiss.run(); onClick.run(); });
+        rows.addView(row);
     }
     private LinearLayout informationPage(String title, Runnable backAction) {
         LinearLayout root = vertical(); root.setBackgroundColor(bg());
@@ -2445,13 +2482,13 @@ public class MainActivity extends Activity {
         history.record(slug, slug, "Cancelled", "", id == null ? -1 : id, "", 0);
         downloadErrors.remove(slug);
         startNextQueuedUpdate();
-        refreshDetail(); updateSelfUpdateUi();
+        refreshDetail(); updateSelfUpdateUi(); refreshUpdateButtons();
     }
     private void failDownload(String slug, String message) {
         Long id = stopActiveDownload(slug, true);
         downloadErrors.put(slug, message);
         history.record(slug, slug, "Failed", message, id == null ? -1 : id, "", 0);
-        refreshDetail(); updateSelfUpdateUi();
+        refreshDetail(); updateSelfUpdateUi(); refreshUpdateButtons();
         startNextQueuedUpdate();
     }
     private void handleStalledDownload(String slug) {
