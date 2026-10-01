@@ -2304,7 +2304,7 @@ public class MainActivity extends Activity {
                 running ? downloadSizes.getOrDefault(slug, "Preparing download…") :
                         ready ? "Downloaded · Android will confirm installation" : ""));
         detailStatus.setVisibility(detailStatus.getText().length() == 0 ? View.GONE : View.VISIBLE);
-        detailPrimary.setText(running ? "Open" : installing ? "Installing…" : ready ? "Install" : updateAvailable(detailApp) ? "Update" : "Install");
+        detailPrimary.setText(running ? "Updating…" : installing ? "Installing…" : ready ? "Install" : updateAvailable(detailApp) ? "Update" : "Install");
         detailPrimary.setEnabled(!running && !installing);
         detailPrimary.setBackground(shape(running || installing ? raised() : green(), 16));
         detailPrimary.setTextColor(running || installing ? muted() : bg());
@@ -2585,7 +2585,9 @@ public class MainActivity extends Activity {
                     downloadSizes.put(slug, total > 0 ? String.format(java.util.Locale.ROOT,
                             "%.1f / %.1f MB", done / 1048576.0, total / 1048576.0) :
                             String.format(java.util.Locale.ROOT, "%.1f MB downloaded", done / 1048576.0));
-                    refreshDetail();
+                    // A UI hiccup must never kill the download: refreshDetail() runs outside
+                    // the failure path so an exception here can't trigger failDownload().
+                    try { refreshDetail(); } catch (Exception ignored) { }
                     if (detailApp == null && body != null) {
                         if (tab == UPDATES) refreshUpdateButtons();
                         else render();
