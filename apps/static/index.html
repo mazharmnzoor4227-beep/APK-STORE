@@ -242,6 +242,35 @@ footer{background:var(--hdr);border-top:1px solid var(--border);margin-top:48px}
   .ud-dl{max-width:560px}
   .uditem:hover .nm{color:var(--acc)}
 }
+/* auth */
+.acctwrap{position:relative}
+.acctmenu{position:absolute;right:0;top:46px;min-width:230px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 12px 32px rgba(0,0,0,.18);padding:8px;display:none;z-index:200}
+.acctmenu.open{display:block}
+.acctmenu .am-hd{padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;word-break:break-all;color:var(--hd)}
+.acctmenu a{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font-size:14px;color:var(--text);text-decoration:none;cursor:pointer}
+.acctmenu a:hover{background:var(--acc-soft)}
+.avatar{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--acc),#0088ab);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:14px}
+.modal-scrim{position:fixed;inset:0;background:rgba(10,20,24,.55);z-index:300;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-scrim.open{display:flex}
+.authcard{width:100%;max-width:380px;background:var(--surface);border-radius:18px;padding:28px 24px;position:relative;box-shadow:0 24px 64px rgba(0,0,0,.3);max-height:92vh;overflow-y:auto}
+.authcard h2{font-size:22px;margin:0 0 4px;color:var(--hd)}
+.authcard .sub{font-size:13px;color:var(--muted);margin-bottom:6px}
+.authcard label{font-size:12px;font-weight:600;color:var(--muted);display:block;margin:12px 0 6px}
+.authcard input{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:15px;box-sizing:border-box}
+.authcard input:focus{outline:2px solid var(--acc);border-color:var(--acc)}
+.abtn{width:100%;padding:13px;border:none;border-radius:12px;background:var(--acc);color:#fff;font-size:15px;font-weight:700;margin-top:16px;cursor:pointer}
+.abtn:disabled{opacity:.6}
+.gbtn{width:100%;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);font-size:14px;font-weight:600;margin-top:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px}
+.gbtn:hover{background:var(--acc-soft)}
+.ordiv{display:flex;align-items:center;gap:10px;margin:16px 0 2px;color:var(--muted);font-size:12px}
+.ordiv:before,.ordiv:after{content:"";flex:1;height:1px;background:var(--border)}
+.aerr{background:#fdecec;color:#c0392b;font-size:13px;padding:10px 12px;border-radius:10px;margin-top:12px;display:none}
+.aok{background:#e8f9ef;color:#1e7e46;font-size:13px;padding:10px 12px;border-radius:10px;margin-top:12px;display:none}
+.aswitch{text-align:center;font-size:13px;color:var(--muted);margin-top:14px}
+.aswitch a{color:var(--acc);font-weight:600;cursor:pointer;text-decoration:none}
+.ax{position:absolute;top:10px;right:12px;border:none;background:none;font-size:18px;color:var(--muted);cursor:pointer;padding:6px}
+.favbtn{width:46px;height:46px;border-radius:50%;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:20px;cursor:pointer;flex-shrink:0;margin-left:auto;line-height:1}
+.favbtn.on{color:#e5484d;border-color:#e5484d;background:#fdeeee}
 </style>
 </head>
 <body>
@@ -260,7 +289,11 @@ footer{background:var(--hdr);border-top:1px solid var(--border);margin-top:48px}
   <span class="hsp"></span>
   <button class="icobtn" onclick="toggleSearch()" aria-label="Search"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></button>
   <button class="icobtn" onclick="toggleTheme()" aria-label="Toggle theme" id="themeBtn"></button>
+  <div class="acctwrap"><button class="icobtn" id="acctBtn" onclick="openAuth('login')" aria-label="Account"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg></button><div class="acctmenu" id="acctMenu"></div></div>
 </div></header>
+<div class="modal-scrim" id="authScrim" onclick="if(event.target===this)closeAuth()">
+ <div class="authcard"><button class="ax" onclick="closeAuth()" aria-label="Close">✕</button><div id="authBody"></div></div>
+</div>
 <div class="hsearch" id="hSearch"><div class="wrap hs-in">
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
   <input id="q" placeholder="Search apps" onkeydown="if(event.key==='Enter')doSearch()" oninput="hdrInput(this)" autocomplete="off">
@@ -273,6 +306,7 @@ footer{background:var(--hdr);border-top:1px solid var(--border);margin-top:48px}
   <a href="#" onclick="go('apps');closeDrawer();return false">All Apps</a>
   <a href="#" onclick="go('cats');closeDrawer();return false">Categories</a>
   <a href="#" onclick="go('updates');closeDrawer();return false">Updates</a>
+  <a href="#" onclick="go('favs');closeDrawer();return false">♥ Favorites</a>
   <a href="#" onclick="toggleTheme();return false"><span id="themeLbl">Dark mode</span></a>
   <a href="#" onclick="closeDrawer();startAppDownload();return false" style="color:var(--acc);font-weight:600">Download APK STORE</a>
 </div>
@@ -322,6 +356,7 @@ footer{background:var(--hdr);border-top:1px solid var(--border);margin-top:48px}
   </div>
 </div></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7/dist/umd/supabase.min.js"></script>
 <script>
 const ICONS={lark:"data:image/webp;base64,UklGRkQDAABXRUJQVlA4IDgDAACwGgCdASrAAMAAPpVKnkqnpKMhqLy4iPASiWdu4XCA5PM2tn6p9hEi78u6AzAC4PNJVHc7u7u7pitHFQrae93d3d3bMbiIhgw/HBHiB6td1as6d3SkbIXKPZELBx+Oz+rfJPXN7Scl/kE+u9rLnjLjrnEhII8d3Tf34vghLgUoIiGOe4LAQ3dkQ0dHB21hnRCUlVGAezC7mB0/MpP88XTOKlwgN9OtT0JiYSjBy3C3QLiRjyGnT3wS4a/WagAJHtn+9J3kQO0nSh8ladI0WmPzXtbfzRXm01vkAXj26IAA/v3NynIVw2QejiOI/Vm9VKelRZSBcYr4MZUO+PI1hZvPhGeAAAgizlAiX2LYCgEmyl6lICXawkYX6GLud8Qd42w8hAPGpJ6HbtmJy0de0JHdlxR8C+H5TuBBL/QSJKEMHoE9ZN5IjocAZG5l6y2BGxKb1p/n6zwjbVE0hh7/QLp026Q27kwfXUnc0ry35Sl9+dmsxITdcQJY9HjKcTE62P4c8LEmFR9QDhV123O0XtM9G2GwWUcBoeINZbthe2SpDBu3FXIx2X2tHSoWwIZe9uViEtF/IwKo142Vm3hsd2Ym8hsDToTYj25TPBX3oDOR0H4oCAXmvpyDH2HcFceLO3S/WGAf3N/ZB7HJydJbcEDvPMuJXNDf9lEzmccINLRuKKNwOLuHKpoezMfsik2cUITxKbkoUOHGqJnKtseiIZlud50QH8Indeg1AgQ4vo7dzMMF9Kefi2GW5upFTjKqX9x+Z1SOgo1Vu0C0C1c0x5vTAKuGHxzP+smUQEQg/qXRR2/XzvdZ502Qr6efQG42r3IL2PfVRtAPVendoV7BCgWG9YSf1B4Dq/NSJhrgbdC7MS/Wj17q3mUYMH5ihSmOAOX6It7kGapz83OpZWxKBs1qPhYw/XaV6pTbRNWzC2ROcw2E1z9EKnIzCj3ii+KPS17ke0btWjuDIUzGswwz8e8wOd/AY9+Em7ETGqSd8NmQavGBwbhOH46p/q+OM4gifXf5aT/+O7u8FXKmz6DPWs6hZC1pSmDEtuHnoC8w4GjBMe+TRS1cSSjY+mHhSc63Kyg/RgA/iZDAAA==",blackhole:"data:image/webp;base64,UklGRsIGAABXRUJQVlA4ILYGAACQJwCdASrAAMAAPpVKn0slpCMipddpoLASiWNu4XVQ79r8WKOO0gdmA3Zb9Im4h55jzr9+Yp26+pmNs6777oDNlVizUvKAnn2uumQOyG56tldkyAv7a1ziEYsyBloOuleo1qSp7/D/+pTieZBamfwQqSWQuwHuRRp0vxd46XTbNc3bPSzFY0o5csA2e4EjNtXc3+Aj1p06shLFs2k0Ybc8WrTXFRPsYqbY89iRk6w0c6PUjvGkvL10yd7F+HTo/GNZblTA1GwH4GYTkOEQO/MWWSdDl3TkFt0djxxOIfujwAk5lU9YbrZhwAewTw/2JUuVircbB7I75II0hGynmYqR0wUq5JiQQcQTnKbPxWo80C7XjJ7FTjqqrNCA0memMeGu8LzycBBafRsBl3lFx5dT12dkzhoZfCTwAsyr9ASnUofWr5gAAP7/jboAmKdRnj3tvD70Ld+jp+qV/1R9cDFASj70K4KVFeuzp/IKvmYKGO1FgdNizlj75x8DA+HU1u32AptZiZo/je3IG945YPxFwxnL2j4QkX4JLHmPmOj9fwzKST2lQOUI3jWSnOfLllWcCn9dWbOrXWU8/gxCBIIJ6swJPP33pvS3zARwemfpOOxrnVbzMwqcYs4X3e28KMLoFWUU+YMLKeSRwN1cdH8Gf8V9hKXY5aNZPEwYrZqFF5KrFaG7Fx0DjxJ4e2Q9ZC6FAOySJzYdbhdfIk8jxzs11BErcv3hHhCKgrrtnb+Xq+7P7vfi2++8pxaTqBuJSpITeD+mxPOjHLkeojs79JpT+urIvsm/Qe3Y9tqHCWhb+K3DdUjuYttcXeTPEQQHERqQJh85J+Euk9ubF3lozATQsaSyz2X3OoQNFpkEeg7DfogMqrCCXgo2FY6sD6xOxLmsJMSwstO/9bp8nuFkcOCDuoXXBTaXmPAAn8+ykW8MTaO1LHoVT8mMEQK0+hwRSG9+9Og5OTGc1SAoXABizxpkuqvBd2Szo3S2FvjjU++qDhj1qUOohNxVrV6f57wT78V541MkDG/CDIvrzK79y1Zp4YDncywc9n2bK6VQVLOF8c+1/EDjeFnGo6KfzKyol+j2n+mFwIDGQkog0KD9hS++sLPGHx0EjoU7OTp2QbdGR8KtT/0enL7tRBCFlAbu5JBX1aJfDQLRRjLnr2PRlmEvTc569BbvEZFz3A5jyF2Ci3Wr8pjz6WSfWcLsEB0QOJ6ay+oFB3ScZAOQ5u1CSqivzUZYzj+EebYePQsIILfuzR/wGwLBGbwqc3q70xzDXhLN8eGGcINuCxTGBw4OmbSmiNaWn+nFLR+QzRjOkMdWeS0jtFzSFtahOL5VjgqZKxRkH+wvm4k5aHwwGUTf039btrznDmj+8XYqaMNHsCRtR+pf5o+i7TEpWOqLusWg89qVNLmD/fWbe62a1xJBkS4NGN0303u/rpat8t4jvAzz67ai4DeYoBCEwBy28aelv8K/BHdZd2NJIU2fXGLF7GTYEu7cZdYLWlsJ/UM1Q6M5VFCGt7/bMYiL/GMeBioYuYRjD2M37809XYNqXqMHyGD2vu1i2bZErJF5Dmq1kTGl0C+3WTmEkGKuNV8acjIoh0Hr8SgsZOgLbyz9wtHOD1lumkDBm1HjmHilFejEQnvf3yp/JC2tH4auTV091oLdfZmS18H8A5d42uBaXK2ouP1eMypUewxfG3s+2Nl02aaCzInrhsNXO92t8xh1vux/2Hhaa09wgfSyBFUHGkY6YI7gxEVtpym8QWLzWmk+jSaeqNy4U0Qvk0XWUvtiHOeazk2Ay1HUAs2QuQX9UVkTWCUQqSV8/PfxD/1qZ0V6KVLWPa4mBIXDSeh/DYSjiVUYltCXVV6pBzaSmySiUk6y8D2QsayZtZeSgdVDngZ9aVLbRKKJD0zNUVhb697haeLcypLAAFsBedsDSFwiuAxpQnF6kZ8Td+wbWuEdfB+4lCnWkPu1z7W4gmSlnBx3sy6truI6EoSPdAJWeYCVvUE5y5N/t6NdyhT0En8TfaDREPboTr9DMGP5W3/8uAVM3SqyYoeKeHXhJiux3Si9ZMdfHJjFFXIzL4+/iBeALqADgc1XQsoSINdYidHqh4F0joztcH9mC1Xr1NJ1UfNoWt0AzFzNogi8ONK9NCTcdSry2bkhJy9x+jG6RUf9olbFsaWh1JX9bkNmAw7nk5AqDQEtwDhvf9/TxC/kg332qaz19TAoLATTpSjHzPjItOwU8eDSnjJbZvFj5DrGANYMG+c2DBCD6OC2FfVv5u0t6hh2nrCCxkTiAAAAAA==",pulse:"data:image/webp;base64,UklGRggDAABXRUJQVlA4IPwCAADQFwCdASrAAMAAPpVKo0ulpKOhpnjYELASiWVu3V8X5xtrfMBjrVOzes7Z5Z+mDZ7EKlErOO5x3OO5x3OPKuXlbnHiLm3SpSAzYytbLytYuU0rAsYzMnFsPl+kRIGGxoWmXjcJtIjm77AEcTJ0J/vcqCiUB51364dX9jHqJQsMJTsHwu6DidThOuyR/3lg52zJt0lqPES94AUFk/qFEvcS+IYiRrZT+QVGFDHIDyXmJaFCtzjuw3AV5BT25OwmjXzg8+nf7IQAAP71iha8f9St+uiiU7JVAF5aEDAscAq3nv4ojeraSzZgXBOj0U5cQfN+l4+yf6j33W+38aSMDjqLP9IZloFiUbdnh041r2+2JlbFVpooZvp0mEdJkHB87AvIPVjXWSXP0uAXpgLQKXYFZHXe47Yxtu2fBEw2XzysgnCuSsWIN5ly+zLTscQdlCedTnKw/lZRb7+c6Dov3hm/R8J9pvjULrEyKL765HMwQvUDLMBX2DJitznn4SVriVqZXO8NH1aCf1ncVzhYQsZGsTRRk0FRsNz+xJjkP++59ALH9LNp+RAA7z8C9CwvLawTiJFTCE7aS/hqTW3Cg/M/ouftEajWhva/FVjjTgo2qt1cXzoZj2RTA0HH1xLUp62crd/bP0fZiFkHwXt6ro0xh9R6n+FI/+ovqRsGc8i3lDVwaS2iJyOc+YcZbLjJnMCbsMxQFWzNAUaDRBEWVayLhZifSwEzsAex94TCH20cmPH87enaiBXrlRfKhTmtA8K2BN47hPhC5TD6n38RHriliJO6BnJaYTft7oBtMXrITjouIqkB7drTj7tcA8PtUgOMBLPaVh2eKXee5L2R6jNIu3JzT/quk405lAvNvMP0/MjLQuIGMe5aC6i7XpPpdsgxbF2+yENmT8lnRSjEUpcts1tOVAzL4X5NehYNtz1pMHrsABuO5aC2ARYfmfyUGdrhmbCSzKEoaVJnWgSGM/LkclBi7NHwXs/MKEBn2xzlnaASxKE7+H0/UAAAAA==",amaze:"data:image/webp;base64,UklGRhwCAABXRUJQVlA4IBACAADQEwCdASrAAMAAPpVKn0wlpKMiJZUoaLASiWlu+F6osJo2YQaMu5RhoHHuLhnwN4uBpkxtqAoZ8DeLhfNT7L/T7XogiaU19kL6Wyxa1YT+AUJTXlRRfwFep+jprLFSu52hlagqnqgxBSwA0232vBf2EuEcWCIFdgyB0+cDVmz9IV1FbdUyudsSm0nVBpFIUpKaAqoB8eyhuvZ8bagKGfA3i4Z8DeLIAAD+/l2P6tJpF5/6+8odikHV4wCWhBKJM8uncuggAlRJiAf36cHft5rUdTjHttj/0WCj8qPjLP1ZrU0xylKwUBZv+D3kBzw75UZh7elqST9dOHpBK3gadi8xGGhlBDea7eWoyaH4gZaWiNqNTUs8Aoqezfe9yJuYS16tdB9rXpACorl1qGgBPFR2lQtOH2WTQMlcA85WVIyjXC+MwZqHI/zImNB5AWlIKMSduI4rbx6kVKQbSDKfPCLE2wcAJEAzjQPcmNyJFs7JIEXr3/dv6V8YRKwPW6XjmGhhKHNfLTfeQuL39BUqgOiZDlheGGaajyoPS2m6zghfRC/wSFTNznSC4yys/ISzxYXPfrhk424yiPLdr/SUiTDQlsDok/iIXBXRFrwiE8q04KYhL6ngKFxScdn/CUTfXyKFdRvAaQlS9DEApsTgUHcVxLRk4CH3THxK/lmv32DU+7GXVWdkCIhULMluAAAAAAA="};
 const SB_URL="https://qfbfxencwsgryoczkdyj.supabase.co";
@@ -463,6 +498,200 @@ function trackDl(a){ if(!a||a.code==null) return; const d=getDls().filter(x=>x.s
  try{ localStorage.setItem("as_downloads",JSON.stringify(d.slice(0,100))); }catch(e){} }
 function dlApp(id){ const a=APPS.find(x=>x.id===id); if(!a||!a.dl) return; trackDl(a); location.href=a.dl; }
 
+/* ---------- Auth (Supabase Auth: email/password + Google) ---------- */
+const PERSON_SVG='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg>';
+const G_SVG='<svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M23.5 12.3c0-.9-.1-1.5-.3-2.3H12v4.5h6.5c-.1 1.1-.8 2.7-2.4 3.8l3.6 2.8c2.2-2 3.8-5 3.8-8.8z"/><path fill="#34A853" d="M12 24c3.2 0 5.9-1.1 7.9-2.9l-3.8-2.9c-1 .7-2.4 1.2-4.1 1.2-3.1 0-5.8-2.1-6.8-5l-3.7 2.9C3.5 21.3 7.5 24 12 24z"/><path fill="#FBBC05" d="M5.2 14.4c-.2-.7-.4-1.5-.4-2.4s.1-1.7.4-2.4L1.5 6.7C.5 8.5 0 10.2 0 12s.5 3.5 1.4 5.2l3.8-2.8z"/><path fill="#EA4335" d="M12 4.7c1.8 0 3 .8 3.7 1.4l3.3-3.2C17.9 1.1 15.2 0 12 0 7.5 0 3.5 2.7 1.4 6.8l3.8 2.9c1-2.9 3.7-5 6.8-5z"/></svg>';
+let sbAuth=null, AUTH_USER=null;
+const GOOGLE_ENABLED=false; /* set true after Google OAuth is enabled in Supabase dashboard (see setup steps) */
+const FAV_KEY="as_favs";
+let FAV_CLOUD="unknown"; /* cloud favorites sync: ok | local | unknown */
+function getFavs(){ try{ return new Set(JSON.parse(localStorage.getItem(FAV_KEY)||"[]")); }catch(e){ return new Set(); } }
+function saveFavs(s){ try{ localStorage.setItem(FAV_KEY,JSON.stringify([...s])); }catch(e){} }
+function isFav(slug){ return getFavs().has(slug); }
+function pageUrl(){ return location.origin+location.pathname; }
+function authInit(){
+ if(!window.supabase){ return; }
+ try{ sbAuth=window.supabase.createClient(SB_URL,SB_KEY); }catch(e){ return; }
+ handleAuthRedirect();
+ try{ sbAuth.auth.onAuthStateChange(function(ev,sess){ setUser(sess&&sess.user?sess.user:null); }); }catch(e){}
+ document.addEventListener("click",function(e){ const m=$("acctMenu"); if(m&&m.classList.contains("open")&&!e.target.closest(".acctwrap")) m.classList.remove("open"); });
+}
+async function handleAuthRedirect(){
+ try{
+  const url=new URL(location.href), code=url.searchParams.get("code");
+  if(code&&sbAuth){
+   await sbAuth.auth.exchangeCodeForSession(code);
+   url.searchParams.delete("code");
+   try{ history.replaceState({route:route},"","#/"+encodeURIComponent(route)); }catch(e){}
+   if(localStorage.getItem("as_recovery")==="1"){ localStorage.removeItem("as_recovery"); setTimeout(function(){ openAuth("newpass"); },500); }
+  }
+ }catch(e){}
+ try{ const d=await sbAuth.auth.getSession(); setUser(d.data.session&&d.data.session.user?d.data.session.user:null); }catch(e){}
+}
+function setUser(u){ AUTH_USER=u||null; FAV_CLOUD="unknown"; refreshAuthUI(); if(AUTH_USER) syncFavsFromCloud(); }
+function refreshAuthUI(){
+ const b=$("acctBtn"), m=$("acctMenu"); if(!b||!m) return;
+ if(AUTH_USER){
+  const em=AUTH_USER.email||"Account", ch=(em.trim().charAt(0)||"A").toUpperCase();
+  b.innerHTML='<span class="avatar">'+escHtml(ch)+'</span>';
+  b.onclick=function(e){ e.stopPropagation(); m.classList.toggle("open"); };
+  m.innerHTML='<div class="am-hd">'+escHtml(em)+'</div>'
+   +'<a onclick="go(\'favs\');closeAcctMenu()">\u2665 My Favorites</a>'
+   +'<a onclick="authLogout()">Log out</a>';
+ }else{
+  b.innerHTML=PERSON_SVG;
+  b.onclick=function(){ openAuth("login"); };
+  m.innerHTML=""; m.classList.remove("open");
+ }
+}
+function closeAcctMenu(){ const m=$("acctMenu"); if(m) m.classList.remove("open"); }
+let AUTH_MODE="login";
+function openAuth(mode,note){ AUTH_MODE=mode||"login"; renderAuth(note); $("authScrim").classList.add("open"); }
+function closeAuth(){ const s=$("authScrim"); if(s) s.classList.remove("open"); }
+function renderAuth(note){
+ const el=$("authBody"); if(!el) return;
+ const gbtn='<button class="gbtn" onclick="authGoogle()">'+G_SVG+' Continue with Google</button>';
+ let h="";
+ if(AUTH_MODE==="login"){
+  h='<h2>Welcome back</h2><div class="sub">Log in to sync favorites across devices.</div>'
+  +gbtn+'<div class="ordiv"><span>or</span></div>'
+  +'<label>Email</label><input id="aEmail" type="email" placeholder="you@example.com" autocomplete="email">'
+  +'<label>Password</label><input id="aPass" type="password" placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" autocomplete="current-password" onkeydown="if(event.key===\'Enter\')authLogin()">'
+  +'<div class="aerr" id="aErr"></div>'
+  +'<button class="abtn" id="aGo" onclick="authLogin()">Log in</button>'
+  +'<div class="aswitch"><a onclick="openAuth(\'forgot\')">Forgot password?</a></div>'
+  +'<div class="aswitch">New here? <a onclick="openAuth(\'signup\')">Create an account</a></div>';
+ }else if(AUTH_MODE==="signup"){
+  h='<h2>Create account</h2><div class="sub">Free forever. Favorites sync on all devices.</div>'
+  +gbtn+'<div class="ordiv"><span>or</span></div>'
+  +'<label>Email</label><input id="aEmail" type="email" placeholder="you@example.com" autocomplete="email">'
+  +'<label>Password</label><input id="aPass" type="password" placeholder="Min. 6 characters" autocomplete="new-password" onkeydown="if(event.key===\'Enter\')authSignup()">'
+  +'<div class="aerr" id="aErr"></div><div class="aok" id="aOk"></div>'
+  +'<button class="abtn" id="aGo" onclick="authSignup()">Sign up</button>'
+  +'<div class="aswitch">Already have an account? <a onclick="openAuth(\'login\')">Log in</a></div>';
+ }else if(AUTH_MODE==="forgot"){
+  h='<h2>Reset password</h2><div class="sub">We will email you a reset link.</div>'
+  +'<label>Email</label><input id="aEmail" type="email" placeholder="you@example.com" onkeydown="if(event.key===\'Enter\')authForgot()">'
+  +'<div class="aerr" id="aErr"></div><div class="aok" id="aOk"></div>'
+  +'<button class="abtn" id="aGo" onclick="authForgot()">Send reset link</button>'
+  +'<div class="aswitch"><a onclick="openAuth(\'login\')">Back to login</a></div>';
+ }else if(AUTH_MODE==="newpass"){
+  h='<h2>Set new password</h2><div class="sub">Choose a new password for your account.</div>'
+  +'<label>New password</label><input id="aPass" type="password" placeholder="Min. 6 characters" autocomplete="new-password" onkeydown="if(event.key===\'Enter\')authNewPass()">'
+  +'<div class="aerr" id="aErr"></div><div class="aok" id="aOk"></div>'
+  +'<button class="abtn" id="aGo" onclick="authNewPass()">Save password</button>';
+ }
+ if(note) h='<div class="aok" style="display:block;margin:0 0 6px">'+escHtml(note)+'</div>'+h;
+ el.innerHTML=h;
+ const em=$("aEmail"); if(em) setTimeout(function(){ em.focus(); },50);
+}
+function aErrMsg(e){ const m=String((e&&e.message)||e||"Something went wrong");
+ if(/invalid login credentials|invalid.*password/i.test(m)) return "Email ya password ghalat hai.";
+ if(/already registered|already exists|user already/i.test(m)) return "Is email se account pehle se bana hai \u2014 login karein.";
+ if(/password.*short|weak password|at least 6/i.test(m)) return "Password kam az kam 6 characters ka ho.";
+ if(/invalid email|email.*invalid/i.test(m)) return "Sahih email address likhein.";
+ if(/rate limit|too many requests|over.*limit/i.test(m)) return "Bohat zyada koshishen \u2014 thodi der baad try karein.";
+ if(/provider.*not enabled|unsupported provider|validation failed.*provider/i.test(m)) return "Google sign-in abhi setup nahi hua \u2014 email se account banayein.";
+ if(/redirect.*not allowed|redirect_uri/i.test(m)) return "Setup mein redirect URL missing hai \u2014 admin se rabta karein.";
+ return m; }
+function showAErr(t){ const e=$("aErr"); if(e){ e.textContent=t; e.style.display="block"; } }
+function showAOk(t){ const e=$("aOk"); if(e){ e.textContent=t; e.style.display="block"; } }
+function validEmail(em){ return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em); }
+async function authSignup(){
+ if(!sbAuth) return showAErr("Auth service load nahi hui \u2014 page refresh karein.");
+ const em=$("aEmail").value.trim(), pw=$("aPass").value;
+ if(!validEmail(em)) return showAErr("Sahih email address likhein.");
+ if(pw.length<6) return showAErr("Password kam az kam 6 characters ka ho.");
+ const b=$("aGo"); b.disabled=true; b.textContent="Creating\u2026";
+ try{
+  const r=await sbAuth.auth.signUp({email:em,password:pw,options:{emailRedirectTo:pageUrl()}});
+  if(r.error) throw r.error;
+  if(r.data.session){ closeAuth(); }
+  else showAOk("Account ban gaya! Email mein confirmation link bheja hai \u2014 us par click karke phir login karein.");
+ }catch(e){ showAErr(aErrMsg(e)); }
+ b.disabled=false; b.textContent="Sign up";
+}
+async function authLogin(){
+ if(!sbAuth) return showAErr("Auth service load nahi hui \u2014 page refresh karein.");
+ const em=$("aEmail").value.trim(), pw=$("aPass").value;
+ if(!validEmail(em)) return showAErr("Sahih email address likhein.");
+ if(!pw) return showAErr("Password likhein.");
+ const b=$("aGo"); b.disabled=true; b.textContent="Logging in\u2026";
+ try{
+  const r=await sbAuth.auth.signInWithPassword({email:em,password:pw});
+  if(r.error) throw r.error;
+  closeAuth();
+ }catch(e){ showAErr(aErrMsg(e)); }
+ b.disabled=false; b.textContent="Log in";
+}
+async function authLogout(){ try{ if(sbAuth) await sbAuth.auth.signOut(); }catch(e){} setUser(null); closeAcctMenu(); if(route==="favs") go("home"); }
+async function authGoogle(){
+ if(!GOOGLE_ENABLED) return showAErr("Google sign-in jald aa raha hai \u2014 abhi email se account banayein.");
+ if(!sbAuth) return showAErr("Auth service load nahi hui \u2014 page refresh karein.");
+ try{
+  const r=await sbAuth.auth.signInWithOAuth({provider:"google",options:{redirectTo:pageUrl()+"#/"}});
+  if(r.error) throw r.error;
+ }catch(e){ showAErr(aErrMsg(e)); }
+}
+async function authForgot(){
+ if(!sbAuth) return showAErr("Auth service load nahi hui \u2014 page refresh karein.");
+ const em=$("aEmail").value.trim();
+ if(!validEmail(em)) return showAErr("Sahih email address likhein.");
+ const b=$("aGo"); b.disabled=true; b.textContent="Sending\u2026";
+ try{
+  const r=await sbAuth.auth.resetPasswordForEmail(em,{redirectTo:pageUrl()});
+  if(r.error) throw r.error;
+  try{ localStorage.setItem("as_recovery","1"); }catch(e){}
+  showAOk("Reset link bhej diya \u2014 apna email check karein.");
+ }catch(e){ showAErr(aErrMsg(e)); }
+ b.disabled=false; b.textContent="Send reset link";
+}
+async function authNewPass(){
+ if(!sbAuth) return showAErr("Auth service load nahi hui \u2014 page refresh karein.");
+ const pw=$("aPass").value;
+ if(pw.length<6) return showAErr("Password kam az kam 6 characters ka ho.");
+ const b=$("aGo"); b.disabled=true; b.textContent="Saving\u2026";
+ try{
+  const r=await sbAuth.auth.updateUser({password:pw});
+  if(r.error) throw r.error;
+  showAOk("Password change ho gaya!");
+  setTimeout(closeAuth,1200);
+ }catch(e){ showAErr(aErrMsg(e)); }
+ b.disabled=false; b.textContent="Save password";
+}
+/* ---------- Favorites (local + per-account cloud sync) ---------- */
+async function toggleFav(slug){
+ if(!AUTH_USER){ openAuth("login","Favorites save karne ke liye login karein."); return; }
+ const s=getFavs(), has=s.has(slug);
+ if(has) s.delete(slug); else s.add(slug);
+ saveFavs(s); render();
+ if(sbAuth){ try{
+  let fr;
+  if(has) fr=await sbAuth.from("favorites").delete().eq("user_id",AUTH_USER.id).eq("app_slug",slug);
+  else fr=await sbAuth.from("favorites").upsert({user_id:AUTH_USER.id,app_slug:slug},{onConflict:"user_id,app_slug"});
+  FAV_CLOUD=(fr&&fr.error)?"local":"ok";
+ }catch(e){ FAV_CLOUD="local"; }
+ if(route==="favs") render(); }
+}
+async function syncFavsFromCloud(){
+ if(!AUTH_USER||!sbAuth) return;
+ try{
+  const r=await sbAuth.from("favorites").select("app_slug").eq("user_id",AUTH_USER.id);
+  if(r.error) throw r.error;
+  const s=getFavs(); (r.data||[]).forEach(function(x){ if(x.app_slug) s.add(x.app_slug); });
+  saveFavs(s); FAV_CLOUD="ok";
+  if(route==="favs"||route.indexOf("app:")===0) render();
+ }catch(e){ FAV_CLOUD="local"; if(route==="favs") render(); }
+}
+function vFavs(){
+ let h='<div class="ud-crumb"><a href="#" onclick="go(\'home\');return false">Home</a> / Favorites</div><h1 class="pg-h1">My Favorites</h1>';
+ if(!AUTH_USER) return h+'<div class="empty"><b>Login required</b><br>Favorites sync karne ke liye login karein.<br><br><button class="btn-p" onclick="openAuth(\'login\')">Log in</button></div>';
+ const list=APPS.filter(function(a){ return isFav(a.slug); });
+ if(!list.length) return h+'<div class="empty"><b>No favorites yet</b><br>App page par \u2665 dabayein.</div>';
+ return h+'<p class="pg-sub">'+list.length+' saved \u00b7 '+(FAV_CLOUD==="ok"?"synced to your account":"saved on this device")+'</p><div class="grid">'
+  +list.map(function(a){ return '<div class="gcard" onclick="openApp(\''+a.id+'\')">'+im(a,"width:52px;height:52px;border-radius:13px;margin-bottom:10px")+'<h3>'+a.title+'</h3><div class="c">'+a.cat+'</div><div class="m">'+(a.ver?"v"+a.ver:"")+(a.size?" \u00b7 "+a.size:"")+'</div></div>'; }).join("")+'</div>';
+}
+
 /* Uptodown-style cards + rows (original code, our own markup) */
 const CHEV_R='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>';
 const DL_IC='<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5M4 20h16"/></svg>';
@@ -586,15 +815,16 @@ function vApp(id){ const a=APPS.find(x=>x.id===id); if(!a)return vHome();
  let h='<div class="ud-crumb"><a href="#" onclick="go(\'home\');return false">Home</a> / <a href="#" onclick="goCat(\''+a.cat+'\');return false">'+a.cat+'</a> / '+a.title+'</div>';
  h+='<div class="ud-top">'+im(a,"width:100px;height:100px;border-radius:24px;flex-shrink:0")+
   '<div class="di"><h1>'+a.title+'</h1><div class="ud-ver">v'+a.ver+(a.pkg?' · '+a.pkg:"")+'</div>'+
-  '<a class="ud-catbtn" href="#" onclick="goCat(\''+a.cat+'\');return false">'+a.cat+'</a></div></div>';
+  '<a class="ud-catbtn" href="#" onclick="goCat(\''+a.cat+'\');return false">'+a.cat+'</a></div>'
+  +'<button class="favbtn'+(isFav(a.slug)?" on":"")+'" onclick="toggleFav(\''+a.slug+'\')" aria-label="Save to favorites">\u2665</button></div>';
  h+='<div class="ud-stats"><span><b>'+a.size+'</b> size</span><span><b>'+a.updated+'</b> updated</span><span><b>v'+a.ver+'</b> version</span></div>';
  h+='<h2 class="ud-tag">'+shortDesc(a.desc)+'</h2>';
  h+='<button class="ud-dl" onclick="dlApp(\''+a.id+'\')"><span><h3>Get the latest version</h3><p>v'+a.ver+' · '+a.size+' · '+a.updated+'</p></span><span class="rhs">'+DL_IC+'</span></button>';
  h+='<a class="ud-oldlink" href="#" onclick="document.getElementById(\'vhist\').scrollIntoView({behavior:\'smooth\'});return false">Older versions</a>';
- h+='<div class="ud-secure"><span class="sh">✓</span><span><b>Secure</b> — signature verified · no malware detected</span></div>';
+ h+='<div class="ud-secure"><span class="sh">✓</span><span><b>Secure</b> — signature verified</span></div>';
  h+='<h2 class="ud-sec">Screenshots</h2>'+(a.shots.length?'<div class="ud-gal">'+a.shots.map((s,i)=>'<div class="shot" onclick="openShot('+i+')"><img src="'+escAttr(s)+'" loading="lazy" alt="Screenshot"></div>').join("")+'</div>':'<p class="pg-sub">No screenshots yet.</p>');
  h+='<h2 class="ud-sec">About this app</h2><p class="ud-about">'+a.desc+'</p>';
- h+='<h2 class="ud-sec" id="vhist">Version history</h2>'+rel.map(r=>'<div class="ovrow"><span class="type">apk</span><div class="vv"><b>v'+r.v+(r.cur?'<span class="lt">LATEST</span>':"")+'</b><span>'+r.s+' · '+r.d+'</span></div><button class="g" onclick="dlApp(\''+a.id+'\')">'+(r.cur?"Download":"Get")+'</button></div>').join("");
+ h+='<h2 class="ud-sec" id="vhist">Version history</h2>'+rel.map(r=>'<div class="ovrow"><span class="type">apk</span><div class="vv"><b>v'+r.v+(r.cur?'<span class="lt">LATEST</span>':"")+'</b><span>'+r.s+' · '+r.d+'</span></div>'+(r.cur?'<button class="g" onclick="dlApp(\''+a.id+'\')">Download</button>':"")+'</div>').join("");
  h+='<h2 class="ud-sec">Requirements <span style="font-size:12px;color:var(--muted);font-weight:400">(latest version)</span></h2><table class="ud-table">'+
   (minSdk?'<tr><td>Android</td><td>'+sdkName(minSdk)+'</td></tr>':"")+
   '<tr><td>Package</td><td><code>'+a.pkg+'</code></td></tr>'+
@@ -613,14 +843,14 @@ function stateHTML(){ if(CATALOG_STATE==="loading") return '<div style="padding:
 function render(){ const st=stateHTML(); if(st){ $("main").innerHTML=st; return; }
  let h="";
  if(route==="home")h=vHome(); else if(route==="apps")h=vApps(); else if(route==="cats")h=vCats();
- else if(route==="updates")h=vUpdates(); else if(route==="search")h=vSearch();
+ else if(route==="updates")h=vUpdates(); else if(route==="search")h=vSearch(); else if(route==="favs")h=vFavs();
  else if(route.indexOf("app:")===0)h=vApp(route.slice(4));
  $("main").innerHTML=h; fixCatScroll(); paintBanners(); }
 window.addEventListener("popstate",function(e){ const st=e.state||{}; const r=st.route||decodeURIComponent((location.hash||"").replace(/^#\/?/,""))||"home";
  route=r; syncNav(); render(); const sy=st.scroll||0; requestAnimationFrame(function(){ window.scrollTo(0,sy); }); });
 (function(){ const hr=decodeURIComponent((location.hash||"").replace(/^#\/?/,"")); if(hr) route=hr;
  try{ history.replaceState({route:route},"","#/"+encodeURIComponent(route)); }catch(e){} })();
-render(); loadCatalog();
+render(); loadCatalog(); authInit();
 </script>
 </body>
 </html>
