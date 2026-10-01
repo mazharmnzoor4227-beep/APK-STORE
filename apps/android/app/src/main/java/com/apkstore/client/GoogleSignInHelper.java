@@ -63,9 +63,20 @@ final class GoogleSignInHelper {
 
                         @Override
                         public void onError(GetCredentialException e) {
-                            String msg = "Google sign-in was cancelled.";
-                            if (e != null && e.getClass().getSimpleName().contains("NoCredential")) {
+                            // Note: Play Services funnels both a user-dismissed dialog AND a
+                            // platform refusal (e.g. app not registered with Google) through
+                            // GetCredentialCancellationException. A refusal carries a numeric
+                            // status like "[16] ..." in the message; a real dismissal does not.
+                            String type = e == null ? "" : e.getClass().getSimpleName();
+                            String detail = e == null || e.getMessage() == null ? "" : e.getMessage();
+                            android.util.Log.e("GoogleSignIn", "getCredential failed: " + type + ": " + detail);
+                            String msg;
+                            if (type.contains("NoCredential")) {
                                 msg = "No Google account found on this device.";
+                            } else if (type.contains("Cancellation") && !detail.matches("(?s).*\\[\\d+\\].*")) {
+                                msg = "Google sign-in was cancelled.";
+                            } else {
+                                msg = "Google sign-in failed. Please try again.";
                             }
                             callback.onResult(null, msg);
                             exec.shutdown();
