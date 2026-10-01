@@ -141,15 +141,39 @@ details.ovr[open] summary .chev{transform:rotate(90deg);}
 .field label{display:block;font-size:12.5px;color:var(--mut);margin-bottom:6px;font-weight:600;}
 
 /* ---------- website management ---------- */
-.slot{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px;margin-bottom:10px;}
-.slot.off{opacity:.55;}
-.slot .pos{width:30px;height:30px;border-radius:9px;background:var(--card2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:var(--acc);flex:none;}
-.slot select{flex:1;min-width:0;padding:10px;}
-.slot .mv{display:flex;flex-direction:column;gap:2px;flex:none;}
-.slot .mv button{width:30px;height:22px;border-radius:7px;background:var(--card2);border:1px solid var(--line);color:var(--mut);font-size:12px;line-height:1;}
-.slot .mv button:hover{color:var(--txt);}
-.slot .rm{width:32px;height:32px;border-radius:9px;color:var(--dim);font-size:17px;flex:none;}
-.slot .rm:hover{color:var(--red);background:rgba(248,113,113,.08);}
+
+/* ---------- hero banner picker ---------- */
+.happ{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;margin-bottom:10px;}
+.happ.off{opacity:.55;}
+.happ .hpos{width:30px;height:30px;border-radius:9px;background:var(--card2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:var(--acc);flex:none;}
+.happ .hic{width:46px;height:46px;border-radius:12px;background:var(--card2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;color:var(--acc);overflow:hidden;flex:none;}
+.happ .hic img{width:100%;height:100%;object-fit:cover;}
+.happ .hn{flex:1;min-width:0;}
+.happ .ht{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.happ .hs{font-size:12px;color:var(--mut);margin-top:2px;}
+.happ .mv{display:flex;flex-direction:column;gap:2px;flex:none;}
+.happ .mv button{width:30px;height:22px;border-radius:7px;background:var(--card2);border:1px solid var(--line);color:var(--mut);font-size:12px;line-height:1;}
+.happ .mv button:hover{color:var(--txt);}
+.happ .mv button:disabled{opacity:.35;}
+.happ .rm{width:32px;height:32px;border-radius:9px;color:var(--dim);font-size:17px;flex:none;}
+.happ .rm:hover{color:var(--red);background:rgba(248,113,113,.08);}
+.sheet{position:fixed;inset:0;z-index:60;display:none;}
+.sheet.open{display:block;}
+.sheet .scrim2{position:absolute;inset:0;background:rgba(0,0,0,.6);}
+.sheet .panel{position:absolute;left:0;right:0;bottom:0;max-height:82vh;background:var(--bg2);border:1px solid var(--line);border-bottom:none;border-radius:22px 22px 0 0;display:flex;flex-direction:column;overflow:hidden;}
+.sheet .shead{padding:16px 18px 10px;display:flex;align-items:center;gap:10px;}
+.sheet .shead .t{font-weight:800;font-size:17px;flex:1;}
+.sheet .shead .x{width:34px;height:34px;border-radius:10px;color:var(--dim);font-size:18px;}
+.sheet .shead .x:hover{color:var(--txt);background:var(--card2);}
+.sheet .sbody{overflow-y:auto;padding:0 14px calc(env(safe-area-inset-bottom,0px) + 18px);}
+.sheet .srow{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:10px;border-radius:14px;}
+.sheet .srow:hover{background:var(--card2);}
+.sheet .srow .hic{width:44px;height:44px;border-radius:12px;background:var(--card);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;color:var(--acc);overflow:hidden;flex:none;}
+.sheet .srow .hic img{width:100%;height:100%;object-fit:cover;}
+.sheet .srow .sn{flex:1;min-width:0;}
+.sheet .srow .st2{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sheet .srow .sv{font-size:12px;color:var(--mut);margin-top:2px;}
+.sheet .srow .add{color:var(--acc);font-size:22px;font-weight:700;flex:none;padding:0 6px;}
 
 /* ---------- misc ---------- */
 .searchbar{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:13px;padding:0 14px;margin-bottom:12px;}
@@ -427,10 +451,10 @@ details.ovr[open] summary .chev{transform:rotate(90deg);}
 
       <div id="siteWarn"></div>
 
-      <div class="section-title">Hero carousel</div>
-      <div class="note">Up to <b>6 apps</b> in the top hero banner. Turn any slot <b>on/off</b>, reorder with the arrows, and pick which app each slot shows. Changes go live on the website instantly.</div>
-      <div id="heroSlots"></div>
-      <div class="btnrow"><button class="btn primary" id="heroSaveBtn" onclick="saveHero()">Save hero banners</button></div>
+      <div class="section-title">Hero banner</div>
+      <div class="note">The big banner on top of the website — it <b>scrolls automatically</b> and visitors can also <b>swipe</b> it. <b>Pick up to 6 of your published apps</b> below; the banner (app icon, image, name, Download button) is created automatically from each app.</div>
+      <div id="heroApps"></div>
+      <div class="btnrow"><button class="btn" id="heroAddBtn" onclick="openHeroPicker()">+ Add app</button><button class="btn primary" id="heroSaveBtn" onclick="saveHero()">Save hero banner</button></div>
 
       <div class="section-title">Announcement banner</div>
       <div class="note">A dismissible strip at the top of the website — use it for notices, new releases, maintenance.</div>
@@ -571,6 +595,7 @@ function enterApp(){
   document.getElementById("avatarBtn").textContent=ch;
   document.getElementById("drawerAvatar").textContent=ch;
   refreshAll();
+  go("dashboard");
 }
 
 /* ---------- load all ---------- */
@@ -941,51 +966,103 @@ document.getElementById("edShotFile").addEventListener("change",e=>{ addShots("e
 
 <script>
 /* ---------- website management ---------- */
+let heroReady=false;
 async function loadWebsite(){
   const warn=document.getElementById("siteWarn");
   try{
     const rows=await sbRest("site_settings?select=key,value");
     const byKey={}; rows.forEach(r=>byKey[r.key]=r.value);
-    let slots=(byKey.hero_slots&&byKey.hero_slots.slots)||[];
-    while(slots.length<6) slots.push({app_id:null,enabled:true});
-    heroSlots=slots.slice(0,6).map(s=>({app_id:s.app_id||null,enabled:s.enabled!==false}));
+    const slots=(byKey.hero_slots&&byKey.hero_slots.slots)||[];
+    heroSlots=slots.filter(s=>s&&s.app_id).slice(0,6)
+      .map(s=>({app_id:s.app_id,enabled:s.enabled!==false}));
     announcement=Object.assign({enabled:false,text:""},byKey.announcement||{});
+    heroReady=true;
     warn.innerHTML="";
-    renderHeroSlots(); renderAnnouncement();
+    renderHeroApps(); renderAnnouncement();
   }catch(e){
     warn.innerHTML='<div class="note"><b>Website settings are not available yet.</b><br>Run the file <b>supabase/migrations/20261001_site_settings.sql</b> in your Supabase SQL editor once, then reopen this page.</div>';
-    heroSlots=[]; renderHeroSlots();
+    heroReady=false; heroSlots=[]; renderHeroApps();
   }
 }
 function publishedApps(){
   return APPS.filter(a=>a.visibility==="published"&&!a.deleted_at)
     .slice().sort((a,b)=>(a.title||"").localeCompare(b.title||""));
 }
-function renderHeroSlots(){
-  const apps=publishedApps();
-  const box=document.getElementById("heroSlots");
-  if(!heroSlots.length){ box.innerHTML='<div class="empty">Settings unavailable.</div>'; return; }
+function appIcon(a,cls){
+  return a&&a.icon_url?'<img src="'+esc(a.icon_url)+'" alt="" loading="lazy">':esc(((a&&a.title)||"A")[0].toUpperCase());
+}
+function appVer(a){
+  return a&&a.release&&a.release.version_name?(" v"+a.release.version_name):"";
+}
+function renderHeroApps(){
+  const box=document.getElementById("heroApps");
+  const addBtn=document.getElementById("heroAddBtn");
+  if(!heroReady){ box.innerHTML='<div class="empty">Settings unavailable.</div>'; if(addBtn)addBtn.disabled=true; return; }
+  if(addBtn) addBtn.disabled=heroSlots.length>=6;
+  if(!heroSlots.length){
+    box.innerHTML='<div class="empty">No apps chosen yet.<br>Tap <b>+ Add app</b> to pick up to 6 of your published apps.</div>';
+    return;
+  }
   box.innerHTML=heroSlots.map((s,i)=>{
-    const opts='<option value="">— No app —</option>'+apps.map(a=>
-      '<option value="'+a.id+'"'+(a.id===s.app_id?" selected":"")+'>'+esc(a.title)+'</option>').join("");
-    return '<div class="slot'+(s.enabled?"":" off")+'">'+
-      '<div class="pos">'+(i+1)+'</div>'+
-      '<select onchange="heroPick('+i+',this.value)">'+opts+'</select>'+
-      '<div class="mv"><button onclick="heroMove('+i+',-1)" '+(i===0?"disabled":"")+'>▲</button>'+
-      '<button onclick="heroMove('+i+',1)" '+(i===heroSlots.length-1?"disabled":"")+'>▼</button></div>'+
-      '<button class="toggle'+(s.enabled?" on":"")+'" onclick="heroToggle('+i+')" aria-label="Enable slot"></button>'+
-      '<button class="rm" onclick="heroPick('+i+',\'\')" aria-label="Clear">×</button></div>';
+    const a=APPS.find(x=>x.id===s.app_id);
+    return '<div class="happ'+(s.enabled?"":" off")+'">'+
+      '<div class="hpos">'+(i+1)+'</div>'+
+      '<div class="hic">'+appIcon(a)+'</div>'+
+      '<div class="hn"><div class="ht">'+esc(a?a.title:"Unknown app")+'</div>'+
+      '<div class="hs">'+(s.enabled?"Shown in banner":"Hidden")+esc(appVer(a))+'</div></div>'+
+      '<div class="mv"><button onclick="heroMove('+i+',-1)"'+(i===0?" disabled":"")+'>▲</button>'+
+      '<button onclick="heroMove('+i+',1)"'+(i===heroSlots.length-1?" disabled":"")+'>▼</button></div>'+
+      '<button class="toggle'+(s.enabled?" on":"")+'" onclick="heroToggle('+i+')" aria-label="Show or hide"></button>'+
+      '<button class="rm" onclick="heroRemove('+i+')" aria-label="Remove">×</button></div>';
   }).join("");
 }
-function heroPick(i,id){ heroSlots[i].app_id=id||null; renderHeroSlots(); }
 function heroMove(i,d){ const j=i+d; if(j<0||j>=heroSlots.length) return;
-  const t=heroSlots[i]; heroSlots[i]=heroSlots[j]; heroSlots[j]=t; renderHeroSlots(); }
-function heroToggle(i){ heroSlots[i].enabled=!heroSlots[i].enabled; renderHeroSlots(); }
+  const t=heroSlots[i]; heroSlots[i]=heroSlots[j]; heroSlots[j]=t; renderHeroApps(); }
+function heroToggle(i){ heroSlots[i].enabled=!heroSlots[i].enabled; renderHeroApps(); }
+function heroRemove(i){ heroSlots.splice(i,1); renderHeroApps(); }
+function heroAdd(id){
+  if(heroSlots.length>=6) return toast("Max 6 apps in the banner");
+  if(heroSlots.some(s=>s.app_id===id)) return toast("Already in the banner");
+  heroSlots.push({app_id:id,enabled:true});
+  closeHeroPicker(); renderHeroApps(); toast("Added to hero banner");
+}
+function openHeroPicker(){
+  if(!heroReady) return;
+  if(heroSlots.length>=6) return toast("Max 6 apps in the banner");
+  closeHeroPicker();
+  const sh=document.createElement("div");
+  sh.className="sheet open"; sh.id="heroSheet";
+  sh.innerHTML='<div class="scrim2" onclick="closeHeroPicker()"></div>'+
+    '<div class="panel"><div class="shead"><div class="t">Choose an app</div>'+
+    '<button class="x" onclick="closeHeroPicker()">×</button></div>'+
+    '<div style="padding:0 14px 8px;"><div class="searchbar">'+
+    '<input id="heroPickQ" placeholder="Search your apps…" oninput="heroPickFilter(this.value)"></div></div>'+
+    '<div class="sbody" id="heroPickList"></div></div>';
+  document.body.appendChild(sh);
+  heroPickFilter("");
+  setTimeout(()=>{ const q=document.getElementById("heroPickQ"); if(q)q.focus(); },80);
+}
+function closeHeroPicker(){ const s=document.getElementById("heroSheet"); if(s) s.remove(); }
+function heroPickFilter(q){
+  const list=document.getElementById("heroPickList"); if(!list) return;
+  const chosen=new Set(heroSlots.map(s=>s.app_id));
+  q=(q||"").toLowerCase().trim();
+  const apps=publishedApps().filter(a=>!chosen.has(a.id)&&(!q||(a.title||"").toLowerCase().includes(q)));
+  list.innerHTML=apps.length?apps.map(a=>
+    '<button class="srow" onclick="heroAdd(\''+a.id+'\')">'+
+    '<div class="hic">'+appIcon(a)+'</div>'+
+    '<div class="sn"><div class="st2">'+esc(a.title)+'</div>'+
+    '<div class="sv">'+esc(a.category||"")+esc(appVer(a))+'</div></div>'+
+    '<div class="add">+</div></button>').join("")
+    :'<div class="empty">'+(q?"No matching apps.":"All published apps are already in the banner.")+'</div>';
+}
 async function saveHero(){
   const btn=document.getElementById("heroSaveBtn"); btn.disabled=true;
   try{
-    await sbRest("site_settings?key=eq.hero_slots","PATCH",{value:{slots:heroSlots}});
-    toast("Hero banners saved — live on the website");
+    const slots=heroSlots.map(s=>({app_id:s.app_id,enabled:s.enabled}));
+    while(slots.length<6) slots.push({app_id:null,enabled:true});
+    await sbRest("site_settings?key=eq.hero_slots","PATCH",{value:{slots:slots}});
+    toast("Hero banner saved — live on the website");
     loadHeroCount(); renderDashboard();
   }catch(e){ toast(e.message); }
   btn.disabled=false;
@@ -1055,7 +1132,7 @@ async function resolveCrash(id){
 (function(){
   if(!anonKey) document.getElementById("setupBox").classList.remove("hidden");
   renderShots();
-  if(token&&userEmail){ document.getElementById("authView").classList.add("hidden"); enterApp(); go("dashboard"); }
+  if(token&&userEmail){ enterApp(); }
   else { document.getElementById("authView").classList.remove("hidden"); }
 })();
 </script>
