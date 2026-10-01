@@ -274,8 +274,11 @@ footer{background:var(--hdr);border-top:1px solid var(--border);margin-top:48px}
 .aswitch{text-align:center;font-size:13px;color:var(--muted);margin-top:14px}
 .aswitch a{color:var(--acc);font-weight:600;cursor:pointer;text-decoration:none}
 .ax{position:absolute;top:10px;right:12px;border:none;background:none;font-size:18px;color:var(--muted);cursor:pointer;padding:6px}
-.favbtn{width:46px;height:46px;border-radius:50%;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:20px;cursor:pointer;flex-shrink:0;margin-left:auto;line-height:1}
+.favbtn{width:46px;height:46px;border-radius:50%;border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;flex-shrink:0;margin-left:auto;display:flex;align-items:center;justify-content:center;padding:0;transition:color .2s,border-color .2s,background .2s,transform .12s}
+.favbtn:active{transform:scale(.93)}
+.favbtn svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;display:block}
 .favbtn.on{color:#e5484d;border-color:#e5484d;background:#fdeeee}
+.favbtn.on svg{fill:#e5484d}
 </style>
 </head>
 <body>
@@ -311,7 +314,7 @@ footer{background:var(--hdr);border-top:1px solid var(--border);margin-top:48px}
   <a href="#" onclick="go('apps');closeDrawer();return false">All Apps</a>
   <a href="#" onclick="go('cats');closeDrawer();return false">Categories</a>
   <a href="#" onclick="go('updates');closeDrawer();return false">Updates</a>
-  <a href="#" onclick="go('favs');closeDrawer();return false">♥ Favorites</a>
+  <a href="#" onclick="go('favs');closeDrawer();return false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg> Favorites</a>
   <a href="#" onclick="toggleTheme();return false"><span id="themeLbl">Dark mode</span></a>
   <a href="#" onclick="closeDrawer();startAppDownload();return false" style="color:var(--acc);font-weight:600">Download APK STORE</a>
 </div>
@@ -550,7 +553,7 @@ function refreshAuthUI(){
   b.innerHTML='<span class="avatar">'+escHtml(ch)+'</span>';
   b.onclick=function(e){ e.stopPropagation(); m.classList.toggle("open"); };
   m.innerHTML='<div class="am-hd">'+escHtml(em)+'</div>'
-   +'<a onclick="go(\'favs\');closeAcctMenu()">\u2665 My Favorites</a>'
+   +'<a onclick="go(\'favs\');closeAcctMenu()">'+HEART_SM+' My Favorites</a>'
    +'<a onclick="authLogout()">Log out</a>';
  }else{
   b.innerHTML=PERSON_SVG;
@@ -615,6 +618,8 @@ function showAOk(t){ const e=$("aOk"); if(e){ e.textContent=t; e.style.display="
 function validEmail(em){ return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em); }
 const EYE_SVG='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_OFF_SVG='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="23" x2="23" y2="1"/></svg>';
+const HEART_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
+const HEART_SM=HEART_SVG.replace('<svg','<svg width="18" height="18"');
 function pwField(inputHtml){
  return '<div class="pwfield">'+inputHtml+'<button type="button" class="pweye" onclick="togglePw(this)" aria-label="Show password">'+EYE_SVG+'</button></div>';
 }
@@ -723,7 +728,7 @@ function vFavs(){
  let h='<div class="ud-crumb"><a href="#" onclick="go(\'home\');return false">Home</a> / Favorites</div><h1 class="pg-h1">My Favorites</h1>';
  if(!AUTH_USER) return h+'<div class="empty"><b>Login required</b><br>Please log in to sync your favorites.<br><br><button class="btn-p" onclick="openAuth(\'login\')">Log in</button></div>';
  const list=APPS.filter(function(a){ return isFav(a.slug); });
- if(!list.length) return h+'<div class="empty"><b>No favorites yet</b><br>App page par \u2665 dabayein.</div>';
+ if(!list.length) return h+'<div class="empty"><b>No favorites yet</b><br>Tap the heart icon on any app page.</div>';
  return h+'<p class="pg-sub">'+list.length+' saved \u00b7 '+(FAV_CLOUD==="ok"?"synced to your account":"saved on this device")+'</p><div class="grid">'
   +list.map(function(a){ return '<div class="gcard" onclick="openApp(\''+a.id+'\')">'+im(a,"width:52px;height:52px;border-radius:13px;margin-bottom:10px")+'<h3>'+a.title+'</h3><div class="c">'+a.cat+'</div><div class="m">'+(a.ver?"v"+a.ver:"")+(a.size?" \u00b7 "+a.size:"")+'</div></div>'; }).join("")+'</div>';
 }
@@ -852,7 +857,7 @@ function vApp(id){ const a=APPS.find(x=>x.id===id); if(!a)return vHome();
  h+='<div class="ud-top">'+im(a,"width:100px;height:100px;border-radius:24px;flex-shrink:0")+
   '<div class="di"><h1>'+a.title+'</h1><div class="ud-ver">v'+a.ver+(a.pkg?' · '+a.pkg:"")+'</div>'+
   '<a class="ud-catbtn" href="#" onclick="goCat(\''+a.cat+'\');return false">'+a.cat+'</a></div>'
-  +'<button class="favbtn'+(isFav(a.slug)?" on":"")+'" onclick="toggleFav(\''+a.slug+'\')" aria-label="Save to favorites">\u2665</button></div>';
+  +'<button class="favbtn'+(isFav(a.slug)?" on":"")+'" onclick="toggleFav(\''+a.slug+'\')" aria-label="Save to favorites">'+HEART_SVG+'</button></div>';
  h+='<div class="ud-stats"><span><b>'+a.size+'</b> size</span><span><b>'+a.updated+'</b> updated</span><span><b>v'+a.ver+'</b> version</span></div>';
  h+='<h2 class="ud-tag">'+shortDesc(a.desc)+'</h2>';
  h+='<button class="ud-dl" onclick="dlApp(\''+a.id+'\')"><span><h3>Get the latest version</h3><p>v'+a.ver+' · '+a.size+' · '+a.updated+'</p></span><span class="rhs">'+DL_IC+'</span></button>';
