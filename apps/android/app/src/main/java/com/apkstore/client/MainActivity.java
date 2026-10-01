@@ -2881,40 +2881,31 @@ public class MainActivity extends Activity {
             if (detailApp != null) refreshDetail();
             return;
         }
-        // Primary path: PackageInstaller.uninstall(). With REQUEST_DELETE_PACKAGES
-        // declared in the manifest this reliably raises Android's own official
-        // "Uninstall this app?" confirmation dialog (app name, OK/Cancel) on every
-        // device. ACTION_DELETE alone is silently a no-op on some OEMs, which is
-        // why the button appeared completely dead. The result (confirmed/cancelled)
-        // is reported by UninstallResultReceiver.
+        // Primary path: the public ACTION_DELETE flow — Android's own official
+        // uninstall confirmation (app name, OK/Cancel); the system performs the
+        // actual removal. This is the long-standing behavior.
+        try {
+            android.content.Intent uninstall = new android.content.Intent(
+                    Intent.ACTION_DELETE, Uri.parse("package:" + pkg));
+            if (uninstall.resolveActivity(getPackageManager()) != null) {
+                startActivity(uninstall);
+                return;
+            }
+        } catch (Exception e) {
+            // Fall through to the PackageInstaller path below.
+        }
+        // Fallback: PackageInstaller.uninstall() (needs REQUEST_DELETE_PACKAGES,
+        // declared in the manifest). The result is reported by UninstallResultReceiver.
         try {
             android.content.pm.PackageInstaller installer = getPackageManager().getPackageInstaller();
             // Explicit intent: the receiver is declared exported="false" with no
-            // intent-filter, so an implicit intent could never resolve and the
-            // "uninstall done/cancelled" toast never fired.
+            // intent-filter, so an implicit intent could never resolve.
             android.content.Intent callback = new android.content.Intent(this, UninstallResultReceiver.class)
                     .setAction(UninstallResultReceiver.ACTION)
                     .putExtra("pkg", pkg);
             android.app.PendingIntent pi = android.app.PendingIntent.getBroadcast(this, pkg.hashCode(), callback,
                     android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_MUTABLE);
             installer.uninstall(pkg, pi.getIntentSender());
-            return;
-        } catch (Exception e) {
-            // Fall through to the public ACTION_DELETE flow below.
-        }
-        // Fallback: the public ACTION_DELETE flow (official system dialog on most devices).
-        try {
-            android.content.Intent uninstall = new android.content.Intent(
-                    Intent.ACTION_DELETE, Uri.parse("package:" + pkg));
-            if (uninstall.resolveActivity(getPackageManager()) != null) {
-                startActivity(uninstall);
-            } else {
-                android.widget.Toast.makeText(this, "System uninstaller not found \u2013 opening App info",
-                        android.widget.Toast.LENGTH_LONG).show();
-                startActivity(new android.content.Intent(
-                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                        Uri.parse("package:" + pkg)));
-            }
         } catch (Exception e) {
             android.widget.Toast.makeText(this, "Couldn't open the uninstaller", android.widget.Toast.LENGTH_SHORT).show();
         }
