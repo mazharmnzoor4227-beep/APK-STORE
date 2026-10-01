@@ -511,7 +511,7 @@ function isFav(slug){ return getFavs().has(slug); }
 function pageUrl(){ return location.origin+location.pathname; }
 function authInit(){
  if(!window.supabase){ return; }
- try{ sbAuth=window.supabase.createClient(SB_URL,SB_KEY); }catch(e){ return; }
+ try{ sbAuth=window.supabase.createClient(SB_URL,SB_KEY,{auth:{flowType:"pkce"}}); }catch(e){ return; }
  handleAuthRedirect();
  try{ sbAuth.auth.onAuthStateChange(function(ev,sess){ setUser(sess&&sess.user?sess.user:null); }); }catch(e){}
  document.addEventListener("click",function(e){ const m=$("acctMenu"); if(m&&m.classList.contains("open")&&!e.target.closest(".acctwrap")) m.classList.remove("open"); });
@@ -524,6 +524,13 @@ async function handleAuthRedirect(){
    url.searchParams.delete("code");
    try{ history.replaceState({route:route},"","#/"+encodeURIComponent(route)); }catch(e){}
    if(localStorage.getItem("as_recovery")==="1"){ localStorage.removeItem("as_recovery"); setTimeout(function(){ openAuth("newpass"); },500); }
+  }else if(sbAuth){
+   try{
+    var hp=new URLSearchParams((location.hash||"").replace(/^#\/?/,""));
+    var at=hp.get("access_token"), rt=hp.get("refresh_token");
+    if(at&&rt){ await sbAuth.auth.setSession({access_token:at,refresh_token:rt}); }
+    try{ history.replaceState({route:route},"","#/"+encodeURIComponent(route)); }catch(e){}
+   }catch(ee){}
   }
  }catch(e){}
  try{ const d=await sbAuth.auth.getSession(); setUser(d.data.session&&d.data.session.user?d.data.session.user:null); }catch(e){}
