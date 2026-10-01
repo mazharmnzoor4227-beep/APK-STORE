@@ -13,7 +13,7 @@ const headers = { 'Access-Control-Allow-Origin': allowedOrigins[0], 'Access-Cont
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
 const auth = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { auth: { persistSession: false } });
 const ownerEmail = 'mazharmanzoor4117@gmail.com';
-const maxApkSize = 700 * 1024 * 1024;
+const maxApkSize = 500 * 1024 * 1024;
 const smallLimit = 50 * 1024 * 1024;
 const r2Bucket = Deno.env.get('R2_BUCKET');
 const r2 = Deno.env.get('R2_ACCOUNT_ID') && Deno.env.get('R2_ACCESS_KEY_ID') && Deno.env.get('R2_SECRET_ACCESS_KEY') && r2Bucket
@@ -45,7 +45,7 @@ Deno.serve(async (request) => {
       const filename = String(input.filename || '');
       const byteSize = Number(input.byteSize);
       if (!/^[^/\\]{1,160}\.apk$/i.test(filename) || !Number.isSafeInteger(byteSize) || byteSize < 1 || byteSize > maxApkSize)
-        return json({ error: 'Select an APK up to 700 MB' }, 400);
+        return json({ error: 'Select an APK up to 500 MB' }, 400);
       if (byteSize > smallLimit && !r2) return json({ error: 'Large APK storage is not configured yet.' }, 503);
       const id = crypto.randomUUID();
       const objectKey = byteSize > smallLimit ? `r2/pending/${user.id}/${id}.apk` : `pending/${user.id}/${id}.apk`;
@@ -65,8 +65,16 @@ Deno.serve(async (request) => {
       }
     }
     if (request.method === 'POST' && route === 'complete') {
-      const { id } = await request.json();
+      const { id, sha256 } = await request.json();
       if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) return json({ error: 'Invalid upload' }, 400);
+      // Browser-computed SHA-256 of the uploaded file. Required context for large
+      // (R2) uploads: the inspect step trusts it instead of re-downloading +
+      // re-hashing the file, which exceeds the function CPU budget (HTTP 546).
+      let clientSha256: string | null = null;
+      if (sha256 !== undefined) {
+        if (typeof sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(sha256)) return json({ error: 'Invalid checksum' }, 400);
+        clientSha256 = sha256;
+      }
       const { data: candidate } = await db.from('upload_candidates').select('object_key,byte_size,expires_at').eq('id', id).eq('owner_id', user.id).eq('status', 'uploading').maybeSingle();
       if (!candidate || Date.parse(candidate.expires_at) < Date.now()) return json({ error: 'Upload expired' }, 409);
       if (candidate.object_key.startsWith('r2/')) {
@@ -77,7 +85,9 @@ Deno.serve(async (request) => {
         const { data: object } = await db.storage.from('apk-files').info(candidate.object_key);
         if (!object || Number(object.size) !== Number(candidate.byte_size)) return json({ error: 'File missing or size mismatch' }, 409);
       }
-      const { error } = await db.from('upload_candidates').update({ status: 'uploaded' }).eq('id', id).eq('owner_id', user.id).eq('status', 'uploading');
+      const patch: Record<string, unknown> = { status: 'uploaded' };
+      if (clientSha256) patch.inspection = { clientSha256 };
+      const { error } = await db.from('upload_candidates').update(patch).eq('id', id).eq('owner_id', user.id).eq('status', 'uploading');
       if (error) throw error;
       return json({ status: 'uploaded' });
     }
@@ -104,13 +114,30 @@ Deno.serve(async (request) => {
       const certificates = parsed.signatures.filter((s: { found: boolean; certificate?: { sha256?: string } }) => s.found && s.certificate?.sha256).map((s: { certificate: { sha256: string } }) => s.certificate.sha256.toLowerCase());
       if (!parsed.packageName || !Number.isSafeInteger(parsed.versionCode) || parsed.versionCode <= 0 || !certificates.length || new Set(certificates).size !== 1)
         return json({ error: 'APK package, version or signer could not be verified' }, 422);
-      const download = await fetch(signedUrl);
-      if (!download.ok || !download.body) throw new Error('APK could not be read for checksum');
-      const hash = createHash('sha256'); let bytes = 0;
-      for await (const chunk of download.body) { bytes += chunk.byteLength; if (bytes > maxApkSize) throw new Error('APK exceeds size limit'); hash.update(chunk); }
-      if (bytes !== Number(candidate.byte_size)) return json({ error: 'APK size changed after upload' }, 409);
+      const isR2 = candidate.object_key.startsWith('r2/');
+      const clientSha256 = candidate.inspection && typeof candidate.inspection === 'object'
+        ? (candidate.inspection as Record<string, unknown>).clientSha256 : null;
+      let apkSha256: string;
+      if (isR2) {
+        // Large file: trust the browser-computed checksum stored at complete time.
+        // Re-downloading + re-hashing a multi-hundred-MB file here blows the
+        // function CPU budget and the platform answers HTTP 546.
+        if (typeof clientSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(clientSha256))
+          return json({ error: 'Checksum missing — refresh the admin panel and upload again' }, 400);
+        const head = await r2!.send(new HeadObjectCommand({ Bucket: r2Bucket!, Key: candidate.object_key })).catch(() => null);
+        if (!head || Number(head.ContentLength) !== Number(candidate.byte_size))
+          return json({ error: 'APK size changed after upload' }, 409);
+        apkSha256 = clientSha256;
+      } else {
+        const download = await fetch(signedUrl);
+        if (!download.ok || !download.body) throw new Error('APK could not be read for checksum');
+        const hash = createHash('sha256'); let bytes = 0;
+        for await (const chunk of download.body) { bytes += chunk.byteLength; if (bytes > maxApkSize) throw new Error('APK exceeds size limit'); hash.update(chunk); }
+        if (bytes !== Number(candidate.byte_size)) return json({ error: 'APK size changed after upload' }, 409);
+        apkSha256 = hash.digest('hex');
+      }
       const metadata = parsed as typeof parsed & { minSdkVersion?: number; targetSdkVersion?: number; minSdk?: number; targetSdk?: number; permissions?: string[]; abis?: string[] };
-      const inspection = { packageId: parsed.packageName, versionCode: parsed.versionCode, versionName: parsed.versionName || String(parsed.versionCode), certificateSha256: certificates[0], apkSha256: hash.digest('hex'), appName: String(parsed.appName || parsed.packageName).slice(0, 100), minSdk: metadata.minSdkVersion || metadata.minSdk || null, targetSdk: metadata.targetSdkVersion || metadata.targetSdk || null, permissions: Array.isArray(metadata.permissions) ? metadata.permissions.slice(0, 300) : [], abis: Array.isArray(metadata.abis) ? metadata.abis.slice(0, 20) : [] };
+      const inspection = { packageId: parsed.packageName, versionCode: parsed.versionCode, versionName: parsed.versionName || String(parsed.versionCode), certificateSha256: certificates[0], apkSha256, appName: String(parsed.appName || parsed.packageName).slice(0, 100), minSdk: metadata.minSdkVersion || metadata.minSdk || null, targetSdk: metadata.targetSdkVersion || metadata.targetSdk || null, permissions: Array.isArray(metadata.permissions) ? metadata.permissions.slice(0, 300) : [], abis: Array.isArray(metadata.abis) ? metadata.abis.slice(0, 20) : [] };
       if (parsed.iconBlob && parsed.iconBlob.size <= 1048576 && ['image/png','image/jpeg','image/webp'].includes(parsed.iconBlob.type)) {
         const iconKey = `${id}.${parsed.iconBlob.type.split('/')[1] === 'jpeg' ? 'jpg' : parsed.iconBlob.type.split('/')[1]}`;
         const { error } = await db.storage.from('app-icons').upload(iconKey, parsed.iconBlob, { contentType: parsed.iconBlob.type, upsert: true });
