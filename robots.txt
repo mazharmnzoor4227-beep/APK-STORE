@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /APK-STORE/apps/static/
+Disallow: /APK-STORE/admin/
+
+Sitemap: https://mazharmnzoor4227-beep.github.io/APK-STORE/apps/static/sitemap.xml
