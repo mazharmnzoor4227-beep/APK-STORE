@@ -120,8 +120,6 @@ header{position:sticky;top:0;z-index:100;background:var(--hdr);border-bottom:1px
 .ud-track{display:flex;transition:transform .45s ease}
 .ud-slide{flex:0 0 100%;min-width:0}
 .ud-slide .ud-hero{margin-bottom:0}
-.ud-carbtn{position:absolute;top:36%;width:36px;height:36px;border-radius:50%;background:rgba(10,12,16,.55);color:#fff;font-size:20px;line-height:1;backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.18);z-index:3}
-.ud-carbtn.prev{left:10px}.ud-carbtn.next{right:10px}
 .ud-dots{display:flex;gap:7px;justify-content:center;margin-top:10px}
 .ud-dots button{width:8px;height:8px;border-radius:99px;background:var(--border);padding:0;transition:all .25s}
 .ud-dots button.on{background:var(--acc);width:22px}
@@ -846,7 +844,7 @@ function heroCard(a){ return '<div class="ud-hero" onclick="openApp(\''+a.id+'\'
   '<div class="hb">'+im(a,"width:60px;height:60px;border-radius:15px;flex-shrink:0;margin-top:-44px;border:3px solid var(--surface);position:relative;z-index:2;background:var(--surface)")+
   '<div class="ht"><h2>'+a.title+'</h2><p>'+shortDesc(a.desc)+'</p>'+
   '<div class="hm"><span><b>v'+a.ver+'</b> version</span><span><b>'+a.size+'</b></span><span><b>'+a.updated+'</b> updated</span></div></div></div>'+
-  '<div class="hf"><button class="ud-dlbtn" onclick="event.stopPropagation();dlApp(\''+a.id+'\')">Download APK · v'+a.ver+' · '+a.size+'</button></div></div>'; }
+  '<div class="hf"><button class="ud-dlbtn" onclick="event.stopPropagation();openApp(\''+a.id+'\')">View details</button></div></div>'; }
 function heroList(){
   if(Array.isArray(HERO_SLOTS)){
     const l=HERO_SLOTS.filter(s=>s&&s.enabled&&s.app_id).map(s=>APPS.find(a=>a.appid===s.app_id)).filter(Boolean);
@@ -862,8 +860,6 @@ function heroHTML(){
   heroIdx=0;
   return '<div class="ud-carousel" id="heroCar"><div class="ud-viewport"><div class="ud-track" id="heroTrack">'+
     list.map(a=>'<div class="ud-slide">'+heroCard(a)+'</div>').join("")+'</div></div>'+
-    '<button class="ud-carbtn prev" onclick="heroGo(heroIdx-1)" aria-label="Previous banner">‹</button>'+
-    '<button class="ud-carbtn next" onclick="heroGo(heroIdx+1)" aria-label="Next banner">›</button>'+
     '<div class="ud-dots" id="heroDots">'+list.map((_,i)=>'<button class="'+(i===0?"on":"")+'" onclick="heroGo('+i+')" aria-label="Banner '+(i+1)+'"></button>').join("")+'</div></div>';
 }
 let heroIdx=0, heroTimer=null;
