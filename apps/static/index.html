@@ -437,7 +437,8 @@ function openInstallModal(){ const c=APPS.find(a=>a.slug==="apk-store-client");
 function closeInstallModal(){ $("installModal").classList.remove("show"); }
 function startAppDownload(){ try{localStorage.setItem("as_app_dl","1");}catch(e){} var b=$("installBanner"); if(b) b.classList.remove("show"); location.href=CLIENT_DL; }
 function dismissBanner(){ var b=$("installBanner"); if(b) b.classList.remove("show"); try{localStorage.setItem("as_banner","1");}catch(e){} }
-function maybeShowInstallBanner(){ try{ if(localStorage.getItem("as_banner")||localStorage.getItem("as_app_dl")) return; }catch(e){} if(APPS.some(function(a){return a.slug==="apk-store-client";})) $("installBanner").classList.add("show"); }
+function maybeShowInstallBanner(force){ try{ if(!force&&(localStorage.getItem("as_banner")||localStorage.getItem("as_app_dl"))) return; }catch(e){} if(force||APPS.some(function(a){return a.slug==="apk-store-client";})) $("installBanner").classList.add("show"); }
+if(/[?&]banner=1/.test(location.search)) setTimeout(function(){ maybeShowInstallBanner(true); },1600);
 
 /* nav */
 function openDrawer(){ $("drawer").classList.add("show"); $("scrim").classList.add("show"); }
