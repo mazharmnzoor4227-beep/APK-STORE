@@ -1,5 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.58.0';
-import { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand, DeleteObjectCommand } from 'npm:@aws-sdk/client-s3@3.901.0';
+import { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand, DeleteObjectCommand, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from 'npm:@aws-sdk/client-s3@3.901.0';
 import { getSignedUrl } from 'npm:@aws-sdk/s3-request-presigner@3.901.0';
 import { parseApkFile, parseApkUrl } from 'npm:simple-apk-parser@0.1.2';
 import { createHash } from 'node:crypto';
@@ -20,6 +20,22 @@ const r2 = Deno.env.get('R2_ACCOUNT_ID') && Deno.env.get('R2_ACCESS_KEY_ID') && 
   ? new S3Client({ region: 'auto', endpoint: `https://${Deno.env.get('R2_ACCOUNT_ID')}.r2.cloudflarestorage.com`, credentials: { accessKeyId: Deno.env.get('R2_ACCESS_KEY_ID')!, secretAccessKey: Deno.env.get('R2_SECRET_ACCESS_KEY')! } }) : null;
 let activeHeaders: Record<string, string> = headers;
 function json(value: unknown, status = 200) { return Response.json(value, { status, headers: activeHeaders }); }
+
+// Multipart helper for R2 large uploads. The browser uploads parts directly to
+// R2 via presigned UploadPart URLs; the server only assembles them. Used for
+// APKs > 50 MB, where a single PUT of several hundred MB is unreliable
+// (Cloudflare R2 occasionally answers 500 on very large single PUTs).
+async function mpLoad(id: unknown, userId: string) {
+  if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) return { err: json({ error: 'Invalid upload' }, 400) };
+  const { data: c } = await db.from('upload_candidates')
+    .select('object_key,byte_size,status,expires_at,inspection')
+    .eq('id', id).eq('owner_id', userId).maybeSingle();
+  if (!c || c.status !== 'uploading') return { err: json({ error: 'Upload is not ready' }, 409) };
+  if (Date.parse(c.expires_at) < Date.now()) return { err: json({ error: 'Upload expired' }, 409) };
+  if (!String(c.object_key).startsWith('r2/')) return { err: json({ error: 'Multipart is for large uploads only' }, 400) };
+  if (!r2) return { err: json({ error: 'Large APK storage unavailable' }, 503) };
+  return { c, insp: ((c.inspection as Record<string, unknown>) || {}) };
+}
 
 Deno.serve(async (request) => {
   const reqOrigin = request.headers.get('origin') || '';
@@ -63,6 +79,93 @@ Deno.serve(async (request) => {
         await db.from('upload_candidates').delete().eq('id', id).eq('owner_id', user.id);
         throw signedError;
       }
+    }
+    // --- R2 multipart upload for large APKs (> 50 MB) ---
+    // Permanent fix for unreliable single-PUT uploads of multi-hundred-MB
+    // files: the browser uploads 16 MiB parts with per-part retry; the server
+    // only assembles them. Part PUTs must NOT send Content-Type — the part
+    // URLs are signed without it.
+    if (request.method === 'POST' && route === 'mp-start') {
+      const { id } = await request.json();
+      const loaded = await mpLoad(id, user.id);
+      if ('err' in loaded) return loaded.err;
+      const { c, insp } = loaded;
+      // Abort any previous orphaned multipart upload for this candidate.
+      if (typeof insp.mpUploadId === 'string' && insp.mpUploadId) {
+        await r2!.send(new AbortMultipartUploadCommand({ Bucket: r2Bucket!, Key: c.object_key, UploadId: insp.mpUploadId })).catch(() => {});
+      }
+      const out = await r2!.send(new CreateMultipartUploadCommand({ Bucket: r2Bucket!, Key: c.object_key, ContentType: 'application/vnd.android.package-archive' }));
+      if (!out.UploadId) throw new Error('Could not start multipart upload');
+      const { error } = await db.from('upload_candidates')
+        .update({ inspection: { ...insp, mpUploadId: out.UploadId } })
+        .eq('id', id).eq('owner_id', user.id).eq('status', 'uploading');
+      if (error) throw error;
+      return json({ uploadId: out.UploadId });
+    }
+    if (request.method === 'POST' && route === 'mp-part-url') {
+      const { id, partNumber } = await request.json();
+      const pn = Number(partNumber);
+      if (!Number.isSafeInteger(pn) || pn < 1 || pn > 10000) return json({ error: 'Invalid part number' }, 400);
+      const loaded = await mpLoad(id, user.id);
+      if ('err' in loaded) return loaded.err;
+      const { c, insp } = loaded;
+      const uploadId = typeof insp.mpUploadId === 'string' && insp.mpUploadId ? insp.mpUploadId : null;
+      if (!uploadId) return json({ error: 'Multipart upload not started' }, 409);
+      const signedUrl = await getSignedUrl(r2!, new UploadPartCommand({ Bucket: r2Bucket!, Key: c.object_key, UploadId: uploadId, PartNumber: pn }), { expiresIn: 900 });
+      return json({ signedUrl, partNumber: pn });
+    }
+    if (request.method === 'POST' && route === 'mp-complete') {
+      const { id, parts, sha256 } = await request.json();
+      let clientSha256: string | null = null;
+      if (sha256 !== undefined) {
+        if (typeof sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(sha256)) return json({ error: 'Invalid checksum' }, 400);
+        clientSha256 = sha256;
+      }
+      if (!Array.isArray(parts) || parts.length < 1 || parts.length > 10000) return json({ error: 'Invalid parts' }, 400);
+      const norm: { partNumber: number; etag: string }[] = [];
+      for (const p of parts) {
+        const pn = Number(p && p.partNumber);
+        const etag = String(p && p.etag || '');
+        if (!Number.isSafeInteger(pn) || pn < 1 || pn > 10000 || etag.length < 3 || etag.length > 256) return json({ error: 'Invalid parts' }, 400);
+        norm.push({ partNumber: pn, etag });
+      }
+      norm.sort((a, b) => a.partNumber - b.partNumber);
+      for (let i = 1; i < norm.length; i++) if (norm[i].partNumber === norm[i - 1].partNumber) return json({ error: 'Duplicate part' }, 400);
+      const loaded = await mpLoad(id, user.id);
+      if ('err' in loaded) return loaded.err;
+      const { c, insp } = loaded;
+      const uploadId = typeof insp.mpUploadId === 'string' && insp.mpUploadId ? insp.mpUploadId : null;
+      if (!uploadId) return json({ error: 'Multipart upload not started' }, 409);
+      await r2!.send(new CompleteMultipartUploadCommand({
+        Bucket: r2Bucket!, Key: c.object_key, UploadId: uploadId,
+        MultipartUpload: { Parts: norm.map(p => ({ PartNumber: p.partNumber, ETag: p.etag })) },
+      }));
+      const object = await r2!.send(new HeadObjectCommand({ Bucket: r2Bucket!, Key: c.object_key })).catch(() => null);
+      if (!object || Number(object.ContentLength) !== Number(c.byte_size)) {
+        await r2!.send(new DeleteObjectCommand({ Bucket: r2Bucket!, Key: c.object_key })).catch(() => {});
+        return json({ error: 'Assembled file size mismatch' }, 409);
+      }
+      const { error } = await db.from('upload_candidates')
+        .update({ status: 'uploaded', inspection: { ...insp, ...(clientSha256 ? { clientSha256 } : {}), mpUploadId: null } })
+        .eq('id', id).eq('owner_id', user.id).eq('status', 'uploading');
+      if (error) throw error;
+      return json({ status: 'uploaded' });
+    }
+    if (request.method === 'POST' && route === 'mp-abort') {
+      // Best-effort cleanup after a failed or cancelled multipart upload.
+      try {
+        const { id } = await request.json();
+        if (typeof id === 'string' && /^[0-9a-f-]{36}$/.test(id)) {
+          const { data: c } = await db.from('upload_candidates')
+            .select('object_key,inspection').eq('id', id).eq('owner_id', user.id).maybeSingle();
+          const insp = ((c && c.inspection) as Record<string, unknown>) || {};
+          if (c && r2 && typeof insp.mpUploadId === 'string' && insp.mpUploadId) {
+            await r2.send(new AbortMultipartUploadCommand({ Bucket: r2Bucket!, Key: c.object_key, UploadId: insp.mpUploadId })).catch(() => {});
+          }
+          if (c) await db.from('upload_candidates').delete().eq('id', id).eq('owner_id', user.id);
+        }
+      } catch { /* best effort */ }
+      return json({ aborted: true });
     }
     if (request.method === 'POST' && route === 'complete') {
       const { id, sha256 } = await request.json();

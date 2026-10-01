@@ -702,6 +702,60 @@ function setStep(n){
    real <Code>). Surfacing it saves a blind-guess round-trip on the next failure. */
 function uploadErr(xhr){ let d=""; try{ d=String(xhr.responseText||"").replace(/\s+/g," ").slice(0,300); }catch(_){}
   return new Error("Upload failed ("+xhr.status+")"+(d?": "+d:"")); }
+/* ---------- R2 multipart upload (files > 50 MB) ----------
+   Permanent fix for flaky single-PUT uploads of multi-hundred-MB APKs:
+   16 MiB parts, 3 concurrent, per-part retry with exponential backoff.
+   Part PUTs must NOT send Content-Type — the part URLs are presigned without
+   it. Reading each part's ETag needs "ETag" in the R2 CORS ExposeHeaders. */
+const MP_PART_SIZE=16*1024*1024, MP_CONCURRENCY=3, MP_MAX_RETRIES=5;
+const mpSleep=ms=>new Promise(r=>setTimeout(r,ms));
+function mpPutPart(url,blob,onp){
+  return new Promise((res,rej)=>{
+    const xhr=new XMLHttpRequest();
+    xhr.upload.onprogress=onp;
+    xhr.onload=()=>{
+      if(xhr.status<300){
+        const etag=xhr.getResponseHeader("ETag");
+        if(etag) res(etag);
+        else rej(new Error("Upload failed ("+xhr.status+"): ETag missing — add ETag to Exposed Headers in the R2 CORS rule (Cloudflare R2 → bucket → Settings → CORS)"));
+      }else rej(uploadErr(xhr));
+    };
+    xhr.onerror=()=>rej(new Error("Network error — large uploads need the R2 CORS rule (Cloudflare R2 → bucket → Settings → CORS), with ETag in Exposed Headers"));
+    xhr.open("PUT",url);
+    xhr.send(blob); // no Content-Type header: not part of the part-URL signature
+  });
+}
+async function uploadMultipart(file,candidateId,onprog){
+  const totalParts=Math.ceil(file.size/MP_PART_SIZE);
+  const {uploadId}=await api("mp-start","POST",{id:candidateId});
+  if(!uploadId) throw new Error("Could not start multipart upload");
+  const sizes=[],loaded=new Array(totalParts).fill(0),etags=new Array(totalParts);
+  for(let i=0;i<totalParts;i++) sizes.push(Math.min((i+1)*MP_PART_SIZE,file.size)-i*MP_PART_SIZE);
+  let next=0,fatal=null;
+  const report=()=>{ const done=loaded.reduce((a,b)=>a+b,0);
+    const p=Math.min(99,Math.round(done/file.size*100)); onprog(p,"Uploading… "+p+"%"); };
+  async function worker(){
+    while(!fatal&&next<totalParts){
+      const idx=next++,partNumber=idx+1;
+      const blob=file.slice(idx*MP_PART_SIZE,idx*MP_PART_SIZE+sizes[idx],""); // type "" → no Content-Type header
+      let ok=false;
+      for(let attempt=1;attempt<=MP_MAX_RETRIES&&!ok&&!fatal;attempt++){
+        try{
+          const {signedUrl}=await api("mp-part-url","POST",{id:candidateId,partNumber});
+          etags[idx]=await mpPutPart(signedUrl,blob,ev=>{ if(ev.lengthComputable){ loaded[idx]=ev.loaded; report(); } });
+          ok=true;
+        }catch(e){
+          if(attempt>=MP_MAX_RETRIES) fatal=e;
+          else await mpSleep(Math.min(1000*Math.pow(2,attempt-1),15000));
+        }
+      }
+    }
+  }
+  await Promise.all(Array.from({length:Math.min(MP_CONCURRENCY,totalParts)},worker));
+  if(fatal){ try{ await api("mp-abort","POST",{id:candidateId}); }catch(_){} throw fatal; }
+  onprog(100,"Uploading… 100%");
+  return etags.map((etag,i)=>({partNumber:i+1,etag}));
+}
 async function startUpload(file){
   if(!/\.apk$/i.test(file.name)) return toast("Select an .apk file");
   setStep(0);
@@ -713,24 +767,33 @@ async function startUpload(file){
     const s=await api("start","POST",{filename:file.name,byteSize:file.size});
     candidateId=s.id;
     txt.textContent="Uploading… 0%";
-    const bigFile=file.size>50*1024*1024; // >50 MB uploads go via R2 presigned URL
-    await new Promise((res,rej)=>{
-      const xhr=new XMLHttpRequest();
-      xhr.upload.onprogress=ev=>{ if(ev.lengthComputable){ const p=Math.round(ev.loaded/ev.total*100);
-        bar.style.width=p+"%"; txt.textContent="Uploading… "+p+"%"; } };
-      xhr.onload=()=>xhr.status<300?res():rej(uploadErr(xhr));
-      xhr.onerror=()=>rej(new Error(bigFile?
-        "Network error — large uploads need the R2 CORS rule (Cloudflare R2 → bucket → Settings → CORS)":
-        "Network error"));
-      xhr.open("PUT",s.signedUrl); xhr.setRequestHeader("Content-Type","application/vnd.android.package-archive");
-      xhr.send(file);
-    });
-    bar.style.width="100%"; txt.textContent="Verifying…";
-    // Checksum in-browser: for large (R2) uploads the edge function trusts this
-    // hash instead of re-downloading + re-hashing the file (Supabase 546 limit).
-    const sha256=await sha256File(file,p=>{txt.textContent="Verifying… "+p+"%";});
-    txt.textContent="Finalizing…";
-    await api("complete","POST",{id:candidateId,sha256});
+    const bigFile=file.size>50*1024*1024; // >50 MB: R2 multipart (reliable for hundreds of MB)
+    let sha256;
+    if(bigFile){
+      // Permanent fix for flaky single-PUT uploads of multi-hundred-MB APKs:
+      // 16 MiB parts, 3 concurrent, per-part retry with backoff.
+      const parts=await uploadMultipart(file,candidateId,(p,label)=>{bar.style.width=p+"%";txt.textContent=label;});
+      bar.style.width="100%"; txt.textContent="Verifying…";
+      // Checksum in-browser: the edge function trusts this hash instead of
+      // re-downloading + re-hashing the file (Supabase 546 limit).
+      sha256=await sha256File(file,p=>{txt.textContent="Verifying… "+p+"%";});
+      txt.textContent="Finalizing…";
+      await api("mp-complete","POST",{id:candidateId,parts,sha256});
+    }else{
+      await new Promise((res,rej)=>{
+        const xhr=new XMLHttpRequest();
+        xhr.upload.onprogress=ev=>{ if(ev.lengthComputable){ const p=Math.round(ev.loaded/ev.total*100);
+          bar.style.width=p+"%"; txt.textContent="Uploading… "+p+"%"; } };
+        xhr.onload=()=>xhr.status<300?res():rej(uploadErr(xhr));
+        xhr.onerror=()=>rej(new Error("Network error"));
+        xhr.open("PUT",s.signedUrl); xhr.setRequestHeader("Content-Type","application/vnd.android.package-archive");
+        xhr.send(file);
+      });
+      bar.style.width="100%"; txt.textContent="Verifying…";
+      sha256=await sha256File(file,p=>{txt.textContent="Verifying… "+p+"%";});
+      txt.textContent="Finalizing…";
+      await api("complete","POST",{id:candidateId,sha256});
+    }
     inspectCandidate(candidateId);
   }catch(e){ txt.textContent="Failed: "+e.message; toast("Upload failed: "+e.message); }
 }
