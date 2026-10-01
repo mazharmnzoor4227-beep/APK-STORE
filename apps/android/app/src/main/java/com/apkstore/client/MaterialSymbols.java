@@ -13,6 +13,7 @@ final class MaterialSymbols {
             case "share": return 0xe80d;
             case "favorite": return 0xe87e;
             case "more_vert": return 0xe5d4;
+            case "person": return 0xe7fd;
             case "info": return 0xe88e;
             case "history": return 0xe8b3;
             case "code": return 0xe86f;

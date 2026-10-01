@@ -539,10 +539,10 @@ public class MainActivity extends Activity {
         download.setContentDescription("Downloads");
         download.setOnClickListener(v -> tap(v, this::showDownloads));
             header.addView(download, new LinearLayout.LayoutParams(dp(48), dp(48)));
-            TextView more = action("more_vert", "More options");
+            FrameLayout profileBtn = profileHeaderButton();
             // Open instantly: the tap() scale animation delayed the menu and made it feel laggy.
-            more.setOnClickListener(v -> showMoreMenu());
-            header.addView(more, new LinearLayout.LayoutParams(dp(48), dp(48)));
+            profileBtn.setOnClickListener(v -> showProfileMenu());
+            header.addView(profileBtn, new LinearLayout.LayoutParams(dp(48), dp(48)));
         }
         root.addView(header, new LinearLayout.LayoutParams(-1, dp(58)));
 
@@ -1492,11 +1492,86 @@ public class MainActivity extends Activity {
         }
         sheet.show(); if (window != null) window.setLayout(-1, -2);
     }
-    private void showMoreMenu() {
+    // ---- Profile menu (replaces the old 3-dot overflow) ----
+    /** Header avatar: first letter of the signed-in email, or a person icon when signed out. */
+    private FrameLayout profileHeaderButton() {
+        boolean signedIn = authSession != null && authSession.isSignedIn();
+        FrameLayout wrap = new FrameLayout(this);
+        int d = dp(32);
+        TextView badge;
+        if (signedIn) {
+            String em = authSession.email == null ? "" : authSession.email.trim();
+            String initial = em.isEmpty() ? "A" : em.substring(0, 1).toUpperCase(java.util.Locale.ROOT);
+            badge = text(initial, 15, light ? Color.WHITE : Color.rgb(20, 22, 18), true);
+            badge.setBackground(shape(green(), d / 2));
+        } else {
+            badge = symbol("person", 20, ink());
+            badge.setBackground(shape(raised(), d / 2));
+        }
+        badge.setGravity(Gravity.CENTER);
+        badge.setContentDescription(signedIn ? "Account" : "Sign in");
+        wrap.addView(badge, new FrameLayout.LayoutParams(d, d, Gravity.CENTER));
+        return wrap;
+    }
+
+    private void showProfileMenu() {
         Dialog sheet = new Dialog(this);
         LinearLayout panel = vertical();
         panel.setPadding(dp(20), dp(15), dp(20), dp(24));
         panel.setBackground(shape(surface(), 24));
+
+        boolean signedIn = authSession != null && authSession.isSignedIn();
+        String email = signedIn && authSession.email != null ? authSession.email : "";
+
+        // Account header
+        LinearLayout acct = new LinearLayout(this);
+        acct.setGravity(Gravity.CENTER_VERTICAL);
+        acct.setMinimumHeight(dp(72));
+        acct.setBackground(rippleRow(16));
+        acct.setPadding(dp(6), dp(6), dp(10), dp(6));
+        int ad = dp(52);
+        TextView avatar;
+        if (signedIn) {
+            String initial = email.isEmpty() ? "A" : email.substring(0, 1).toUpperCase(java.util.Locale.ROOT);
+            avatar = text(initial, 22, light ? Color.WHITE : Color.rgb(20, 22, 18), true);
+            avatar.setBackground(shape(green(), ad / 2));
+        } else {
+            avatar = symbol("person", 28, ink());
+            avatar.setBackground(shape(raised(), ad / 2));
+        }
+        avatar.setGravity(Gravity.CENTER);
+        acct.addView(avatar, new LinearLayout.LayoutParams(ad, ad));
+        LinearLayout copy = vertical(); copy.setPadding(dp(14), 0, dp(8), 0);
+        copy.addView(text(signedIn ? (email.isEmpty() ? "Account" : email) : "Sign in", 17, ink(), true));
+        copy.addView(text(signedIn ? "Signed in \u00b7 Tap to sign out" : "Sync favorites across devices", 13, muted(), false));
+        acct.addView(copy, weight());
+        acct.addView(symbol("chevron_right", 22, muted()), new LinearLayout.LayoutParams(dp(28), dp(28)));
+        acct.setOnClickListener(v -> {
+            dismissMenuSheet(sheet, panel);
+            if (signedIn) signOutDialog(() -> showTab(tab)); else authDialog(false, () -> showTab(tab));
+        });
+        panel.addView(acct);
+        space(panel, 8);
+
+        View divider = new View(this);
+        divider.setBackgroundColor(muted());
+        divider.setAlpha(0.25f);
+        panel.addView(divider, new LinearLayout.LayoutParams(-1, dp(1)));
+        space(panel, 8);
+
+        LinearLayout rows = vertical();
+        sheetRow(rows, "smartphone", "My apps", this::showMyApps, () -> dismissMenuSheet(sheet, panel));
+        sheetRow(rows, "favorite", "Favourites", () -> showTab(FAVORITES), () -> dismissMenuSheet(sheet, panel));
+        sheetRow(rows, "cancel", "Blacklist", () -> showSavedApps("Blacklist", "blacklist"), () -> dismissMenuSheet(sheet, panel));
+        sheetRow(rows, "history", "Ignored updates", () -> showSavedApps("Ignored updates", "ignored"), () -> dismissMenuSheet(sheet, panel));
+        sheetRow(rows, "volunteer_activism", "Donate", () -> openLink("https://github.com/mazharmnzoor4227-beep/APK-STORE"), () -> dismissMenuSheet(sheet, panel));
+        panel.addView(rows);
+
+        presentMenuSheet(sheet, panel);
+    }
+
+    /** Wraps a panel in the standard bottom sheet: drag handle, dim, slide-up, drag-to-close. */
+    private void presentMenuSheet(Dialog sheet, LinearLayout panel) {
         GradientDrawable pill = new GradientDrawable();
         pill.setColor(muted()); pill.setCornerRadius(dp(2)); pill.setAlpha(120);
         View pillView = new View(this);
@@ -1506,26 +1581,7 @@ public class MainActivity extends Activity {
         FrameLayout handleZone = new FrameLayout(this);
         handleZone.setContentDescription("Drag settings up or down; drag down to close");
         handleZone.addView(pillView);
-        panel.addView(handleZone, new LinearLayout.LayoutParams(-1, dp(32)));
-        space(panel, 6);
-        panel.addView(text("APK STORE", 19, ink(), true));
-        space(panel, 14);
-        ScrollView menuScroll = new ScrollView(this);
-        menuScroll.setFillViewport(false);
-        menuScroll.setVerticalScrollBarEnabled(false);
-        menuScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        menuScroll.setVerticalScrollBarEnabled(false);
-        LinearLayout rows = vertical();
-        sheetRow(rows, "smartphone", "My apps", this::showMyApps, () -> dismissMenuSheet(sheet, panel));
-        sheetRow(rows, "favorite", "Favourites", () -> showTab(FAVORITES), () -> dismissMenuSheet(sheet, panel));
-        sheetRow(rows, "cancel", "Blacklist", () -> showSavedApps("Blacklist", "blacklist"), () -> dismissMenuSheet(sheet, panel));
-        sheetRow(rows, "history", "Ignored updates", () -> showSavedApps("Ignored updates", "ignored"), () -> dismissMenuSheet(sheet, panel));
-        sheetRow(rows, "volunteer_activism", "Donate", () -> openLink("https://github.com/mazharmnzoor4227-beep/APK-STORE"), () -> dismissMenuSheet(sheet, panel));
-        menuScroll.addView(rows);
-        // Wrap the content but never grow past ~62% of the screen: no dead space, no cramped scroll.
-        int maxMenuH = (int) (getResources().getDisplayMetrics().heightPixels * 0.62);
-        int needMenuH = 5 * dp(56) + dp(8);
-        panel.addView(menuScroll, new LinearLayout.LayoutParams(-1, Math.min(needMenuH, maxMenuH)));
+        panel.addView(handleZone, 0, new LinearLayout.LayoutParams(-1, dp(32)));
         sheet.setContentView(panel);
         Window window = sheet.getWindow();
         if (window != null) {
@@ -1574,6 +1630,7 @@ public class MainActivity extends Activity {
             }
         });
     }
+
     /** Buttery bottom-sheet exit: slide down, then dismiss. */
     private void dismissMenuSheet(android.app.Dialog sheet, View panel) {
         if (!ValueAnimator.areAnimatorsEnabled()) { sheet.dismiss(); return; }
@@ -1696,34 +1753,59 @@ public class MainActivity extends Activity {
         error.setVisibility(View.VISIBLE);
     }
 
-    private void authDialog(boolean startSignup) {
+    private void authDialog(boolean startSignup) { authDialog(startSignup, () -> showTab(SETTINGS)); }
+
+    private void authDialog(boolean startSignup, Runnable onDone) {
         final boolean[] signupMode = {startSignup};
-        final AlertDialog[] dialogRef = new AlertDialog[1];
+        final Dialog[] dialogRef = new Dialog[1];
 
-        LinearLayout root = vertical();
-        root.setPadding(dp(4), dp(4), dp(4), dp(4));
+        LinearLayout panel = vertical();
+        panel.setPadding(dp(22), dp(18), dp(22), dp(22));
+        panel.setBackground(shape(surface(), 24));
 
+        // Header: avatar + titles + close
+        LinearLayout head = new LinearLayout(this);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        int ad = dp(52);
+        TextView avatar = symbol("person", 28, light ? Color.WHITE : Color.rgb(20, 22, 18));
+        avatar.setGravity(Gravity.CENTER);
+        avatar.setBackground(shape(green(), ad / 2));
+        head.addView(avatar, new LinearLayout.LayoutParams(ad, ad));
+        LinearLayout titles = vertical(); titles.setPadding(dp(14), 0, dp(8), 0);
         TextView title = text(signupMode[0] ? "Create account" : "Welcome back", 20, ink(), true);
-        root.addView(title);
-        space(root, 8);
+        titles.addView(title);
+        TextView subtitle = text(signupMode[0] ? "Create your free account" : "Sign in to sync your favorites", 13, muted(), false);
+        titles.addView(subtitle);
+        head.addView(titles, weight());
+        TextView close = action("cancel", "Close");
+        close.setOnClickListener(v -> { if (dialogRef[0] != null) dialogRef[0].dismiss(); });
+        head.addView(close, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        panel.addView(head);
+        space(panel, 14);
 
-        TextView error = text("", 13, ink(), false);
+        // Error / info banner
+        TextView error = text("", 13, light ? Color.rgb(176, 42, 42) : Color.rgb(255, 150, 150), false);
         error.setVisibility(View.GONE);
-        root.addView(error);
-        space(root, 4);
+        error.setPadding(dp(12), dp(10), dp(12), dp(10));
+        GradientDrawable errBg = new GradientDrawable();
+        errBg.setCornerRadius(dp(12));
+        errBg.setColor(light ? Color.rgb(253, 232, 232) : Color.rgb(66, 28, 28));
+        error.setBackground(errBg);
+        panel.addView(error);
 
         EditText email = authInput("Email address",
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
-        root.addView(email);
-        space(root, 10);
+        panel.addView(email);
+        space(panel, 10);
 
-        LinearLayout pwRow = new LinearLayout(this);
-        pwRow.setGravity(Gravity.CENTER_VERTICAL);
+        // Password field with in-field Show/Hide toggle
+        FrameLayout pwWrap = new FrameLayout(this);
         EditText password = authInput("Password",
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        pwRow.addView(password, new LinearLayout.LayoutParams(0, -2, 1));
+        password.setPadding(dp(14), dp(14), dp(78), dp(14));
+        pwWrap.addView(password, new FrameLayout.LayoutParams(-1, -2));
         TextView showToggle = text("Show", 14, green(), true);
-        showToggle.setPadding(dp(12), dp(12), dp(4), dp(12));
+        showToggle.setPadding(dp(12), dp(14), dp(14), dp(14));
         final boolean[] showing = {false};
         showToggle.setOnClickListener(v -> {
             showing[0] = !showing[0];
@@ -1734,21 +1816,21 @@ public class MainActivity extends Activity {
             password.setSelection(Math.max(0, sel));
             showToggle.setText(showing[0] ? "Hide" : "Show");
         });
-        pwRow.addView(showToggle);
-        root.addView(pwRow);
+        pwWrap.addView(showToggle, new FrameLayout.LayoutParams(-2, -1, Gravity.END | Gravity.CENTER_VERTICAL));
+        panel.addView(pwWrap);
 
         TextView hint = text(AuthPolicy.signupPasswordHint(), 12, muted(), false);
         hint.setVisibility(signupMode[0] ? View.VISIBLE : View.GONE);
-        root.addView(hint);
-        space(root, 14);
+        panel.addView(hint);
+        space(panel, 14);
 
         TextView primary = text(signupMode[0] ? "Create account" : "Sign in", 16,
-                light ? Color.WHITE : Color.rgb(28, 28, 34), true);
+                light ? Color.WHITE : Color.rgb(20, 22, 18), true);
         primary.setGravity(Gravity.CENTER);
-        primary.setPadding(dp(16), dp(14), dp(16), dp(14));
-        primary.setBackground(shape(green(), 14));
-        root.addView(primary, new LinearLayout.LayoutParams(-1, -2));
-        space(root, 6);
+        primary.setPadding(dp(16), dp(15), dp(16), dp(15));
+        primary.setBackground(shape(green(), 16));
+        panel.addView(primary, new LinearLayout.LayoutParams(-1, -2));
+        space(panel, 10);
 
         LinearLayout links = new LinearLayout(this);
         links.setGravity(Gravity.CENTER_VERTICAL);
@@ -1757,10 +1839,12 @@ public class MainActivity extends Activity {
         links.addView(modeToggle, weight());
         TextView forgot = text("Forgot password?", 14, green(), true);
         links.addView(forgot);
-        root.addView(links);
+        panel.addView(links);
+        space(panel, 12);
 
         Runnable refreshMode = () -> {
             title.setText(signupMode[0] ? "Create account" : "Welcome back");
+            subtitle.setText(signupMode[0] ? "Create your free account" : "Sign in to sync your favorites");
             primary.setText(signupMode[0] ? "Create account" : "Sign in");
             hint.setVisibility(signupMode[0] ? View.VISIBLE : View.GONE);
             modeToggle.setText(signupMode[0] ? "Have an account? Sign in" : "New here? Create account");
@@ -1777,7 +1861,7 @@ public class MainActivity extends Activity {
             forgot.setEnabled(false);
             supabaseAuth.resetPassword(em, (ok, err) -> {
                 forgot.setEnabled(true);
-                if (ok) showAuthInfo(error, "Reset link sent — check your email (and spam folder).");
+                if (ok) showAuthInfo(error, "Reset link sent \u2014 check your email (and spam folder).");
                 else showAuthError(error, err);
             });
         }));
@@ -1799,7 +1883,7 @@ public class MainActivity extends Activity {
                     authSession = session;
                     sessionStore.save(session);
                     dialogRef[0].dismiss();
-                    showTab(SETTINGS);
+                    onDone.run();
                 } else if ("CONFIRM_EMAIL".equals(err)) {
                     showAuthInfo(error, "Account created. Open the confirmation link in your email (check spam), then sign in.");
                 } else {
@@ -1811,16 +1895,31 @@ public class MainActivity extends Activity {
         }));
 
         if (!BuildConfig.GOOGLE_WEB_CLIENT_ID.isEmpty()) {
-            space(root, 6);
-            TextView divider = text("or", 13, muted(), false);
-            divider.setGravity(Gravity.CENTER);
-            root.addView(divider);
-            space(root, 6);
-            TextView google = text("Continue with Google", 16, ink(), true);
+            LinearLayout orRow = new LinearLayout(this);
+            orRow.setGravity(Gravity.CENTER_VERTICAL);
+            View l1 = new View(this); l1.setBackgroundColor(muted()); l1.setAlpha(0.3f);
+            orRow.addView(l1, new LinearLayout.LayoutParams(0, dp(1), 1));
+            orRow.addView(text("  or  ", 13, muted(), false));
+            View l2 = new View(this); l2.setBackgroundColor(muted()); l2.setAlpha(0.3f);
+            orRow.addView(l2, new LinearLayout.LayoutParams(0, dp(1), 1));
+            panel.addView(orRow);
+            space(panel, 12);
+
+            LinearLayout google = new LinearLayout(this);
             google.setGravity(Gravity.CENTER);
-            google.setPadding(dp(16), dp(14), dp(16), dp(14));
-            google.setBackground(outline(14, muted()));
-            root.addView(google, new LinearLayout.LayoutParams(-1, -2));
+            google.setPadding(dp(16), dp(12), dp(16), dp(12));
+            google.setBackground(outline(16, muted()));
+            TextView gBadge = text("G", 17, Color.rgb(66, 133, 244), true);
+            gBadge.setGravity(Gravity.CENTER);
+            GradientDrawable gBg = new GradientDrawable();
+            gBg.setCornerRadius(dp(14));
+            gBg.setColor(light ? Color.WHITE : Color.rgb(40, 42, 48));
+            gBadge.setBackground(gBg);
+            google.addView(gBadge, new LinearLayout.LayoutParams(dp(28), dp(28)));
+            View gSpace = new View(this);
+            google.addView(gSpace, new LinearLayout.LayoutParams(dp(10), dp(1)));
+            google.addView(text("Continue with Google", 16, ink(), true));
+            panel.addView(google, new LinearLayout.LayoutParams(-1, -2));
             google.setOnClickListener(v -> tap(google, () -> {
                 error.setVisibility(View.GONE);
                 google.setEnabled(false);
@@ -1840,7 +1939,7 @@ public class MainActivity extends Activity {
                                     authSession = session;
                                     sessionStore.save(session);
                                     dialogRef[0].dismiss();
-                                    showTab(SETTINGS);
+                                    onDone.run();
                                 } else {
                                     showAuthError(error, serr);
                                 }
@@ -1849,14 +1948,23 @@ public class MainActivity extends Activity {
             }));
         }
 
-        dialogRef[0] = new AlertDialog.Builder(this)
-                .setView(root)
-                .setNegativeButton("Close", null)
-                .create();
-        dialogRef[0].show();
+        Dialog d = new Dialog(this);
+        d.setContentView(panel);
+        Window window = d.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawableResource(android.R.color.transparent);
+            android.view.WindowManager.LayoutParams attrs = window.getAttributes();
+            attrs.width = -1; attrs.height = -2;
+            attrs.gravity = Gravity.CENTER;
+            window.setAttributes(attrs);
+        }
+        dialogRef[0] = d;
+        d.show();
     }
 
-    private void signOutDialog() {
+    private void signOutDialog() { signOutDialog(() -> showTab(SETTINGS)); }
+
+    private void signOutDialog(Runnable onDone) {
         String who = (authSession != null && !authSession.email.isEmpty()) ? authSession.email : "your account";
         new AlertDialog.Builder(this)
                 .setTitle("Sign out")
@@ -1866,7 +1974,7 @@ public class MainActivity extends Activity {
                     supabaseAuth.signOut(token, (ok, err) -> {
                         authSession = null;
                         sessionStore.clear();
-                        showTab(SETTINGS);
+                        onDone.run();
                     });
                 })
                 .setNegativeButton("Cancel", null)
