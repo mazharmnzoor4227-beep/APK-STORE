@@ -1834,7 +1834,7 @@ public class MainActivity extends Activity {
 
         LinearLayout links = new LinearLayout(this);
         links.setGravity(Gravity.CENTER_VERTICAL);
-        TextView modeToggle = text(signupMode[0] ? "Have an account? Sign in" : "New here? Create account",
+        TextView modeToggle = text(signupMode[0] ? "Sign in" : "Create account",
                 14, green(), true);
         links.addView(modeToggle, weight());
         TextView forgot = text("Forgot password?", 14, green(), true);
@@ -1847,7 +1847,7 @@ public class MainActivity extends Activity {
             subtitle.setText(signupMode[0] ? "Create your free account" : "Sign in to sync your favorites");
             primary.setText(signupMode[0] ? "Create account" : "Sign in");
             hint.setVisibility(signupMode[0] ? View.VISIBLE : View.GONE);
-            modeToggle.setText(signupMode[0] ? "Have an account? Sign in" : "New here? Create account");
+            modeToggle.setText(signupMode[0] ? "Sign in" : "Create account");
             error.setVisibility(View.GONE);
         };
         modeToggle.setOnClickListener(v -> tap(modeToggle, () -> {
