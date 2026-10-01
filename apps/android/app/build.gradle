@@ -22,8 +22,8 @@ android {
         // Supabase publishable keys are intentionally public client credentials; RLS controls access.
         buildConfigField 'String', 'SUPABASE_KEY', '"' + (project.findProperty('supabasePublishableKey') ?: 'sb_publishable_RiOpxFwFfj3dRt45AVn3LA_T4C0kAoJ') + '"'
         // Google Web OAuth client ID (same one the website uses). Public identifier, not a secret.
-        // Pass -PgoogleWebClientId=... to enable Google sign-in; empty means the Google button is hidden.
-        buildConfigField 'String', 'GOOGLE_WEB_CLIENT_ID', '"' + (project.findProperty('googleWebClientId') ?: '') + '"'
+        // Override with -PgoogleWebClientId=... if needed.
+        buildConfigField 'String', 'GOOGLE_WEB_CLIENT_ID', '"' + (project.findProperty('googleWebClientId') ?: '288748828570-l16dt40bvheb9flapjv8rkrocao1sr4h.apps.googleusercontent.com') + '"'
     }
     buildFeatures { buildConfig true }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
@@ -52,7 +52,6 @@ dependencies {
     implementation 'androidx.work:work-runtime:2.12.0'
     implementation 'io.noties.markwon:core:4.6.2'
     // Google sign-in via Credential Manager (ID token -> Supabase Auth)
-    implementation 'androidx.core:core:1.15.0'
     implementation 'androidx.credentials:credentials:1.3.0'
     implementation 'androidx.credentials:credentials-play-services-auth:1.3.0'
     implementation 'com.google.android.libraries.identity.googleid:googleid:1.1.1'

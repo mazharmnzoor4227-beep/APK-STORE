@@ -1,12 +1,12 @@
 package com.apkstore.client;
 
 import android.content.Context;
+import android.os.CancellationSignal;
 import androidx.credentials.CredentialManager;
 import androidx.credentials.CredentialManagerCallback;
 import androidx.credentials.GetCredentialRequest;
 import androidx.credentials.GetCredentialResponse;
 import androidx.credentials.exceptions.GetCredentialException;
-import androidx.core.os.CancellationSignal;
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption;
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
 import java.util.concurrent.ExecutorService;
