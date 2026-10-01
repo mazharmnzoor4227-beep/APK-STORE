@@ -235,6 +235,7 @@ public class MainActivity extends Activity {
     private int green() { return light ? Color.rgb(69, 82, 157) : Color.rgb(183, 196, 255); }
     private int ink() { return light ? Color.rgb(28, 28, 34) : Color.rgb(230, 225, 229); }
     private int muted() { return light ? Color.rgb(97, 97, 108) : Color.rgb(169, 165, 173); }
+    private int danger() { return light ? Color.rgb(176, 42, 42) : Color.rgb(255, 138, 138); }
     private int dp(int n) { return Math.round(n * getResources().getDisplayMetrics().density); }
 
     @Override public void onCreate(Bundle state) {
@@ -1710,8 +1711,8 @@ public class MainActivity extends Activity {
         if (refreshToken.isEmpty()) { authSession = null; sessionStore.clear(); return; }
         supabaseAuth.refresh(refreshToken, (session, error) -> {
             if (session != null) {
-                authSession = session;
-                sessionStore.save(session);
+                authSession = session.withProvider(authSession.provider);
+                sessionStore.save(authSession);
             } else {
                 authSession = null;
                 sessionStore.clear();
@@ -1725,8 +1726,8 @@ public class MainActivity extends Activity {
         String email = signedIn ? authSession.email : "";
         settingsRow(card, "person",
                 signedIn ? (email.isEmpty() ? "Account" : email) : "Sign in",
-                signedIn ? "Signed in · Tap to sign out" : "Sync favorites across devices",
-                () -> { if (signedIn) signOutDialog(); else authDialog(false); }, true);
+                signedIn ? "Signed in · Tap to manage" : "Sync favorites across devices",
+                () -> { if (signedIn) showAccount(); else authDialog(false); }, true);
     }
 
     private EditText authInput(String hint, int inputType) {
@@ -1880,8 +1881,8 @@ public class MainActivity extends Activity {
                 primary.setEnabled(true);
                 primary.setAlpha(1f);
                 if (session != null) {
-                    authSession = session;
-                    sessionStore.save(session);
+                    authSession = session.withProvider("email");
+                    sessionStore.save(authSession);
                     dialogRef[0].dismiss();
                     onDone.run();
                 } else if ("CONFIRM_EMAIL".equals(err)) {
@@ -1936,8 +1937,8 @@ public class MainActivity extends Activity {
                                 google.setEnabled(true);
                                 google.setAlpha(1f);
                                 if (session != null) {
-                                    authSession = session;
-                                    sessionStore.save(session);
+                                    authSession = session.withProvider("google");
+                                    sessionStore.save(authSession);
                                     dialogRef[0].dismiss();
                                     onDone.run();
                                 } else {
@@ -1964,21 +1965,127 @@ public class MainActivity extends Activity {
 
     private void signOutDialog() { signOutDialog(() -> showTab(SETTINGS)); }
 
+    /** Themed sign-out confirmation, matching the auth dialog style. */
     private void signOutDialog(Runnable onDone) {
-        String who = (authSession != null && !authSession.email.isEmpty()) ? authSession.email : "your account";
-        new AlertDialog.Builder(this)
-                .setTitle("Sign out")
-                .setMessage("Sign out of " + who + " on this device?")
-                .setPositiveButton("Sign out", (d, w) -> {
-                    String token = authSession != null ? authSession.accessToken : "";
-                    supabaseAuth.signOut(token, (ok, err) -> {
-                        authSession = null;
-                        sessionStore.clear();
-                        onDone.run();
-                    });
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
+        String who = (authSession != null && authSession.email != null && !authSession.email.isEmpty())
+                ? authSession.email : "your account";
+        String initial = "your account".equals(who) ? "A"
+                : who.substring(0, 1).toUpperCase(java.util.Locale.ROOT);
+        final Dialog[] dialogRef = new Dialog[1];
+        LinearLayout panel = vertical();
+        panel.setBackground(shape(surface(), 24));
+        panel.setPadding(dp(24), dp(24), dp(24), dp(20));
+        panel.setGravity(Gravity.CENTER_HORIZONTAL);
+        TextView avatar = text(initial, 24, light ? Color.WHITE : Color.rgb(20, 22, 18), true);
+        avatar.setGravity(Gravity.CENTER);
+        avatar.setBackground(shape(green(), dp(30)));
+        panel.addView(avatar, new LinearLayout.LayoutParams(dp(60), dp(60)));
+        space(panel, 14);
+        TextView title = text("Sign out?", 19, ink(), true);
+        title.setGravity(Gravity.CENTER);
+        panel.addView(title);
+        space(panel, 8);
+        TextView msg = text("Sign out of " + who + " on this device?", 14, muted(), false);
+        msg.setGravity(Gravity.CENTER);
+        panel.addView(msg);
+        space(panel, 20);
+        LinearLayout btns = new LinearLayout(this);
+        btns.setOrientation(LinearLayout.HORIZONTAL);
+        TextView cancel = text("Cancel", 15, ink(), true);
+        cancel.setGravity(Gravity.CENTER);
+        cancel.setPadding(0, dp(13), 0, dp(13));
+        cancel.setBackground(outline(16, muted()));
+        TextView out = text("Sign out", 15, Color.WHITE, true);
+        out.setGravity(Gravity.CENTER);
+        out.setPadding(0, dp(13), 0, dp(13));
+        GradientDrawable outBg = new GradientDrawable();
+        outBg.setCornerRadius(dp(16));
+        outBg.setColor(Color.rgb(176, 42, 42));
+        out.setBackground(outBg);
+        btns.addView(cancel, new LinearLayout.LayoutParams(0, -2, 1));
+        View bs = new View(this);
+        btns.addView(bs, new LinearLayout.LayoutParams(dp(10), dp(1)));
+        btns.addView(out, new LinearLayout.LayoutParams(0, -2, 1));
+        panel.addView(btns, new LinearLayout.LayoutParams(-1, -2));
+        cancel.setOnClickListener(v -> tap(cancel, () -> dialogRef[0].dismiss()));
+        out.setOnClickListener(v -> tap(out, () -> {
+            out.setEnabled(false);
+            String token = authSession != null ? authSession.accessToken : "";
+            supabaseAuth.signOut(token, (ok, err) -> runOnUiThread(() -> {
+                authSession = null;
+                sessionStore.clear();
+                dialogRef[0].dismiss();
+                onDone.run();
+            }));
+        }));
+        Dialog d = new Dialog(this);
+        d.setContentView(panel);
+        Window window = d.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawableResource(android.R.color.transparent);
+            android.view.WindowManager.LayoutParams attrs = window.getAttributes();
+            attrs.width = -1; attrs.height = -2;
+            attrs.gravity = Gravity.CENTER;
+            window.setAttributes(attrs);
+        }
+        dialogRef[0] = d;
+        d.show();
+    }
+
+    /** Full Account page (Play Store style): profile header, details, and a managed Sign out row. */
+    private void showAccount() {
+        boolean signedIn = authSession != null && authSession.isSignedIn();
+        if (!signedIn) { authDialog(false); return; }
+        String email = authSession.email == null ? "" : authSession.email;
+        String provider = authSession.provider == null ? "" : authSession.provider;
+        String method = "google".equals(provider) ? "Google" : ("email".equals(provider) ? "Email" : "—");
+        LinearLayout page = informationPage("Account", () -> showTab(tab));
+        LinearLayout head = vertical();
+        head.setBackground(shape(surface(), 20));
+        head.setPadding(dp(20), dp(20), dp(20), dp(20));
+        head.setGravity(Gravity.CENTER_HORIZONTAL);
+        String initial = email.isEmpty() ? "A" : email.substring(0, 1).toUpperCase(java.util.Locale.ROOT);
+        TextView avatar = text(initial, 30, light ? Color.WHITE : Color.rgb(20, 22, 18), true);
+        avatar.setGravity(Gravity.CENTER);
+        avatar.setBackground(shape(green(), dp(38)));
+        head.addView(avatar, new LinearLayout.LayoutParams(dp(76), dp(76)));
+        space(head, 12);
+        TextView em = text(email.isEmpty() ? "Account" : email, 17, ink(), true);
+        em.setGravity(Gravity.CENTER);
+        head.addView(em);
+        space(head, 4);
+        TextView sub = text("Signed in to APK STORE", 13, muted(), false);
+        sub.setGravity(Gravity.CENTER);
+        head.addView(sub);
+        space(head, 10);
+        TextView pill = text("✓ Synced", 12, green(), true);
+        GradientDrawable pillBg = new GradientDrawable();
+        pillBg.setCornerRadius(dp(20));
+        pillBg.setColor(raised());
+        pill.setBackground(pillBg);
+        pill.setPadding(dp(12), dp(6), dp(12), dp(6));
+        head.addView(pill);
+        page.addView(head);
+        space(page, 16);
+        settingsSection(page, "Account details");
+        LinearLayout card = settingsCard(page);
+        settingsRow(card, "mail", "Email", email.isEmpty() ? "—" : email, null, false);
+        settingsRow(card, "lock", "Sign-in method", method, null, false);
+        settingsSection(page, "Manage");
+        LinearLayout manage = settingsCard(page);
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(64));
+        row.setPadding(dp(10), dp(8), dp(10), dp(8));
+        TextView tile = symbol("logout", 24, danger());
+        tile.setBackground(shape(raised(), 14));
+        row.addView(tile, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        LinearLayout copy = vertical(); copy.setPadding(dp(12), 0, dp(8), 0);
+        copy.addView(text("Sign out", 16, danger(), true));
+        copy.addView(text("Sign out on this device", 13, muted(), false));
+        row.addView(copy, weight());
+        manage.addView(row);
+        row.setOnClickListener(v -> tap(row, () -> signOutDialog(() -> showTab(tab))));
     }
 
     private void settingsSection(LinearLayout parent, String title) {

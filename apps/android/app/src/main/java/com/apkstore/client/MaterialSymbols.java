@@ -48,6 +48,8 @@ final class MaterialSymbols {
             case "build": return 0xf8cd;
             case "battery_full": return 0xe1a5;
             case "lock": return 0xe899;
+            case "mail": return 0xe158;
+            case "logout": return 0xe9ba;
             case "task_alt": return 0xe2e6;
             case "tune": return 0xe429;
             case "extension": return 0xe87b;
