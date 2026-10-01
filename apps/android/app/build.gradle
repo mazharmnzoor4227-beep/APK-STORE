@@ -15,8 +15,8 @@ android {
         applicationId 'com.apkstore.client'
         minSdk 26
         targetSdk 35
-        versionCode 30
-        versionName '1.1.22'
+        versionCode 31
+        versionName '1.1.23'
         buildConfigField 'String', 'SUPABASE_URL', '"https://qfbfxencwsgryoczkdyj.supabase.co"'
         buildConfigField 'String', 'SITE_URL', '"' + (project.findProperty('siteUrl') ?: 'https://mazharmnzoor4227-beep.github.io/APK-STORE/') + '"'
         // Supabase publishable keys are intentionally public client credentials; RLS controls access.
