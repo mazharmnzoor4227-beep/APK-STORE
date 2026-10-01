@@ -180,6 +180,9 @@ details.ovr[open] summary .chev{transform:rotate(90deg);}
 .searchbar svg{width:18px;height:18px;color:var(--dim);flex:none;}
 .searchbar input{border:none;background:none;padding:12px 0;}
 .searchbar input:focus{border:none;}
+.searchbar select{border:none;background:none;padding:12px 0;flex:1;}
+.searchbar select:focus{border:none;}
+.searchbar select option{background:var(--card2);color:var(--txt);}
 .stack{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:12px;
   font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:#c9d4e8;
   white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto;margin:10px 0;}
@@ -331,7 +334,8 @@ details.ovr[open] summary .chev{transform:rotate(90deg);}
           </div>
         </details>
         <div class="section-title">Category</div>
-        <div class="searchbar"><input id="rvCat" placeholder="Tools"></div>
+        <div class="searchbar"><select id="rvCatSel"></select></div>
+        <div class="searchbar hidden" id="rvCatNewWrap"><input id="rvCatNew" placeholder="Type new category name" maxlength="60"></div>
         <div class="section-title">Short description</div>
         <div class="searchbar"><input id="rvShort" placeholder="One line"></div>
         <div class="section-title">Description</div>
@@ -429,7 +433,8 @@ details.ovr[open] summary .chev{transform:rotate(90deg);}
         <div class="page-title" style="margin:0;">Edit app</div>
       </div>
       <div class="section-title" style="margin-top:0;">Title</div><div class="searchbar"><input id="edTitle"></div>
-      <div class="section-title">Category</div><div class="searchbar"><input id="edCat"></div>
+      <div class="section-title">Category</div><div class="searchbar"><select id="edCatSel"></select></div>
+      <div class="searchbar hidden" id="edCatNewWrap"><input id="edCatNew" placeholder="Type new category name" maxlength="60"></div>
       <div class="section-title">Short description</div><div class="searchbar"><input id="edShort"></div>
       <div class="section-title">Description</div><div class="searchbar"><textarea id="edDesc"></textarea></div>
       <div class="section-title">Screenshots <span style="text-transform:none;font-weight:400;">(up to 8)</span></div>
@@ -661,6 +666,26 @@ function __s256update(st,data){st.total+=data.length;let p=0;if(st.len>0){const 
 function __s256final(st){const bitLen=st.total*8;__s256update(st,new Uint8Array([0x80]));const z=new Uint8Array(64);while(st.len!==56){const n=st.len<56?56-st.len:64-st.len;__s256update(st,z.subarray(0,n));}const lb=new Uint8Array(8),hi=Math.floor(bitLen/0x100000000),lo=bitLen>>>0;lb[0]=hi>>>24;lb[1]=hi>>>16;lb[2]=hi>>>8;lb[3]=hi;lb[4]=lo>>>24;lb[5]=lo>>>16;lb[6]=lo>>>8;lb[7]=lo;__s256update(st,lb);return st.h.map(x=>(x>>>0).toString(16).padStart(8,"0")).join("");}
 async function sha256File(file,onp){const st=__s256new(),CH=8*1024*1024;let off=0;while(off<file.size){const end=Math.min(off+CH,file.size);__s256update(st,new Uint8Array(await file.slice(off,end).arrayBuffer()));off=end;if(onp)onp(Math.round(off/file.size*100));await new Promise(r=>setTimeout(r,0));}return __s256final(st);}
 
+/* ---------- category picker ----------
+   Dropdown of existing catalog categories (+ defaults) with a "new" option,
+   used by the Review step and the Edit-app dialog. */
+const CAT_DEFAULTS=["AI Models","AI Tools","Audio","Automation","Developer Tools","Entertainment","File management","Games","Media","Music & Audio","Photos & Gallery","Productivity","Security","System Tools","Tools","Video Players"];
+function allCategories(){const s=new Set(CAT_DEFAULTS);(APPS||[]).forEach(a=>{const c=(a.category||"").trim();if(c)s.add(c);});return[...s].sort((a,b)=>a.localeCompare(b));}
+function fillCatSelect(sel,newWrap,newInput,value){
+  const cats=allCategories(); value=(value||"Tools").trim()||"Tools";
+  if(!cats.includes(value)) cats.push(value);
+  cats.sort((a,b)=>a.localeCompare(b));
+  sel.innerHTML=cats.map(c=>'<option value="'+esc(c)+'"'+(c===value?" selected":"")+">"+esc(c)+"</option>").join("")
+    +'<option value="__new__">+ New category…</option>';
+  sel.value=value;
+  sel.onchange=()=>{const isNew=sel.value==="__new__";newWrap.classList.toggle("hidden",!isNew);if(isNew)newInput.focus();};
+  newWrap.classList.add("hidden"); newInput.value="";
+}
+function catSelectValue(sel,newInput){
+  if(sel.value==="__new__"){const v=newInput.value.trim();return v||"Tools";}
+  return (sel.value||"Tools").trim()||"Tools";
+}
+
 /* ---------- upload flow ---------- */
 document.getElementById("apkFile").addEventListener("change",e=>{
   const f=e.target.files[0]; if(f) startUpload(f);
@@ -728,7 +753,7 @@ async function inspectCandidate(id){
       (i.targetSdk?'<div class="kv"><span class="k">Target SDK</span><span class="v">'+i.targetSdk+'</span></div>':"")+
       '<div class="kv"><span class="k">Signer</span><span class="v" style="font-family:monospace;font-size:10.5px;">'+esc((i.certificateSha256||"").slice(0,24))+'…</span></div>';
     document.getElementById("rvTitle").value=target?target.title:(i.appName||"");
-    document.getElementById("rvCat").value=target?(target.category||"Tools"):"Tools";
+    fillCatSelect(document.getElementById("rvCatSel"),document.getElementById("rvCatNewWrap"),document.getElementById("rvCatNew"),target?(target.category||"Tools"):"Tools");
     document.getElementById("rvVer").textContent=((i.versionName||"")+" ("+i.versionCode+")").trim();
     document.getElementById("rvShort").value=target?(target.short_description||""):"";
     document.getElementById("rvDesc").value=target?(target.description||""):"";
@@ -754,7 +779,7 @@ async function publishCandidate(){
   try{
     const target=reuploadTarget?getApp(reuploadTarget):null;
     const body={ id:candidateId, rightsConfirmed:true, title,
-      category:document.getElementById("rvCat").value.trim()||"Tools",
+      category:catSelectValue(document.getElementById("rvCatSel"),document.getElementById("rvCatNew")),
       shortDescription:document.getElementById("rvShort").value.trim(),
       description:document.getElementById("rvDesc").value.trim(),
       releaseNotes:document.getElementById("rvNotes").value.trim(),
@@ -883,7 +908,7 @@ function goBackDetail(){ openAppDetail(currentApp); }
 function openEdit(){
   const a=getApp(currentApp); if(!a) return;
   document.getElementById("edTitle").value=a.title||"";
-  document.getElementById("edCat").value=a.category||"";
+  fillCatSelect(document.getElementById("edCatSel"),document.getElementById("edCatNewWrap"),document.getElementById("edCatNew"),a.category||"Tools");
   document.getElementById("edShort").value=a.short_description||"";
   document.getElementById("edDesc").value=a.description||"";
   editShots=(a.screenshots||[]).map(u=>({url:u,uploading:false}));
@@ -895,7 +920,7 @@ async function saveEdit(){
   const a=getApp(currentApp); if(!a) return;
   try{ const j=await api("manage-app","POST",{ id:a.id,
       title:document.getElementById("edTitle").value.trim(),
-      category:document.getElementById("edCat").value.trim(),
+      category:catSelectValue(document.getElementById("edCatSel"),document.getElementById("edCatNew")),
       short_description:document.getElementById("edShort").value.trim(),
       description:document.getElementById("edDesc").value.trim(),
       screenshots:editShots.filter(s=>s.url).map(s=>s.url) });
