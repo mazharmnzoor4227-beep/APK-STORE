@@ -636,14 +636,14 @@ public class MainActivity extends Activity {
     /** Appends a green ✓ badge to a list row when the app is installed on this device. */
     private void addInstalledTick(LinearLayout row, JSONObject app) {
         if (installedVersion(app.optString("package_id")) < 0) return;
-        TextView tick = text("✓", 14, 0xFF2196F3, true);
+        TextView tick = text("✓", 11, 0xFF2196F3, true);
         tick.setGravity(Gravity.CENTER);
         GradientDrawable ring = new GradientDrawable();
         ring.setShape(GradientDrawable.OVAL);
         ring.setColor(Color.TRANSPARENT);
-        ring.setStroke(dp(2), 0xFF2196F3);
+        ring.setStroke(Math.max(1, Math.round(1.5f * getResources().getDisplayMetrics().density)), 0xFF2196F3);
         tick.setBackground(ring);
-        int s = dp(28);
+        int s = dp(18);
         tick.setMinWidth(s); tick.setMinHeight(s);
         tick.setContentDescription("Installed on this device");
         row.addView(tick);
@@ -2155,7 +2155,7 @@ public class MainActivity extends Activity {
         detailSecondary.setBackground(outline(16, green()));
         detailSecondary.setOnClickListener(v -> {
             if (running) cancelDownload(slug);
-            else showUninstallSheet(detailApp);
+            else requestSystemUninstall(detailApp.optString("package_id"));
         });
         if (installed && !running && !installing && !updateAvailable(detailApp)) {
             detailPrimary.setText("Open");
@@ -2173,66 +2173,24 @@ public class MainActivity extends Activity {
             });
         }
     }
-    /** Bottom sheet asking for uninstall confirmation, matching the design reference. */
-    private void showUninstallSheet(JSONObject app) {
-        final String title = app.optString("title", "This app");
-        final String packageId = app.optString("package_id");
-        android.app.Dialog dialog = new android.app.Dialog(this);
-        LinearLayout panel = vertical();
-        panel.setPadding(dp(20), dp(16), dp(20), dp(24));
-        GradientDrawable panelBg = new GradientDrawable();
-        panelBg.setColor(surface());
-        float r = dp(20);
-        panelBg.setCornerRadii(new float[]{r, r, r, r, 0, 0, 0, 0});
-        panel.setBackground(panelBg);
-        View handle = new View(this);
-        LinearLayout.LayoutParams handleLp = new LinearLayout.LayoutParams(dp(40), dp(4));
-        handleLp.gravity = Gravity.CENTER_HORIZONTAL;
-        handle.setLayoutParams(handleLp);
-        handle.setBackground(shape(muted(), 2));
-        panel.addView(handle);
-        space(panel, 14);
-        panel.addView(text(title, 17, ink(), true));
-        space(panel, 6);
-        panel.addView(text("Do you want to uninstall this app?", 14, muted(), false));
-        space(panel, 20);
-        LinearLayout buttons = new LinearLayout(this);
-        buttons.setOrientation(LinearLayout.HORIZONTAL);
-        TextView cancel = text("Cancel", 15, ink(), true);
-        cancel.setGravity(Gravity.CENTER); cancel.setMinHeight(dp(52));
-        cancel.setBackground(outline(16, green()));
-        cancel.setOnClickListener(v -> dialog.dismiss());
-        TextView ok = text("OK", 15, bg(), true);
-        ok.setGravity(Gravity.CENTER); ok.setMinHeight(dp(52));
-        ok.setBackground(shape(green(), 16));
-        ok.setOnClickListener(v -> {
-            dialog.dismiss();
-            final String pkg = packageId;
-            new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
-                if (pkg == null || pkg.isEmpty()) {
-                    android.widget.Toast.makeText(this, "Package ID missing", android.widget.Toast.LENGTH_SHORT).show();
-                    return;
-                }
-                try {
-                    startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + pkg)));
-                } catch (Exception e) {
-                    android.widget.Toast.makeText(this, "Uninstall open nahi ho saka", android.widget.Toast.LENGTH_SHORT).show();
-                }
-            });
-        });
-        LinearLayout.LayoutParams cancelLp = new LinearLayout.LayoutParams(0, -2, 1);
-        cancelLp.setMarginEnd(dp(12));
-        buttons.addView(cancel, cancelLp);
-        buttons.addView(ok, new LinearLayout.LayoutParams(0, -2, 1));
-        panel.addView(buttons);
-        dialog.setContentView(panel);
-        android.view.Window w = dialog.getWindow();
-        if (w != null) {
-            w.setLayout(-1, -2);
-            w.setGravity(Gravity.BOTTOM);
-            w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+        /** Opens Android's official uninstall confirmation; the system performs the actual removal. */
+    private void requestSystemUninstall(String pkg) {
+        if (pkg == null || pkg.isEmpty()) {
+            android.widget.Toast.makeText(this, "Package ID missing", android.widget.Toast.LENGTH_SHORT).show();
+            return;
         }
-        dialog.show();
+        try {
+            getPackageManager().getPackageInfo(pkg, 0);
+        } catch (PackageManager.NameNotFoundException e) {
+            android.widget.Toast.makeText(this, "App installed nahi hai", android.widget.Toast.LENGTH_SHORT).show();
+            if (detailApp != null) refreshDetail();
+            return;
+        }
+        try {
+            startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + pkg)));
+        } catch (android.content.ActivityNotFoundException e) {
+            android.widget.Toast.makeText(this, "Uninstall open nahi ho saka", android.widget.Toast.LENGTH_SHORT).show();
+        }
     }
     /** Starts the next app in the Update All queue, one at a time. */
     private void startNextQueuedUpdate() {
