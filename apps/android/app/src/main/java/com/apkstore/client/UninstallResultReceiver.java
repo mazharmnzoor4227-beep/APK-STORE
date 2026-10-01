@@ -20,16 +20,26 @@ public final class UninstallResultReceiver extends BroadcastReceiver {
         if (pkg == null || pkg.isEmpty()) return;
         int status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE);
         if (status == PackageInstaller.STATUS_SUCCESS) {
-            Toast.makeText(context, "Uninstall ho gaya", Toast.LENGTH_SHORT).show();
+            Toast.makeText(context, "Uninstalled", Toast.LENGTH_SHORT).show();
             context.getSharedPreferences("uninstall_results", Context.MODE_PRIVATE)
                     .edit().putLong(pkg, System.currentTimeMillis()).apply();
         } else if (status == PackageInstaller.STATUS_FAILURE_ABORTED) {
-            Toast.makeText(context, "Uninstall cancel ho gaya", Toast.LENGTH_SHORT).show();
+            Toast.makeText(context, "Uninstall cancelled", Toast.LENGTH_SHORT).show();
         } else {
-            String message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE);
-            Toast.makeText(context,
-                    "Uninstall nahi ho saka" + (message == null || message.isEmpty() ? "" : ": " + message),
-                    Toast.LENGTH_LONG).show();
+            // The PackageInstaller path failed (e.g. device-specific issue): fall back to
+            // the public uninstaller so the user still gets Android's official
+            // confirmation dialog (app name, OK/Cancel) instead of a dead end.
+            try {
+                Intent uninstall = new Intent(Intent.ACTION_DELETE,
+                        android.net.Uri.parse("package:" + pkg));
+                uninstall.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                context.startActivity(uninstall);
+            } catch (Exception e) {
+                String message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE);
+                Toast.makeText(context,
+                        "Couldn't uninstall" + (message == null || message.isEmpty() ? "" : ": " + message),
+                        Toast.LENGTH_LONG).show();
+            }
         }
     }
 }

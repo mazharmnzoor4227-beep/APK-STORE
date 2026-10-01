@@ -1754,6 +1754,30 @@ public class MainActivity extends Activity {
         error.setVisibility(View.VISIBLE);
     }
 
+    /** Password field with an in-field Show/Hide toggle; the wrapper is added to parent. */
+    private EditText passwordField(LinearLayout parent, String hint) {
+        FrameLayout wrap = new FrameLayout(this);
+        EditText field = authInput(hint,
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        field.setPadding(dp(14), dp(14), dp(78), dp(14));
+        wrap.addView(field, new FrameLayout.LayoutParams(-1, -2));
+        TextView showToggle = text("Show", 14, green(), true);
+        showToggle.setPadding(dp(12), dp(14), dp(14), dp(14));
+        final boolean[] showing = {false};
+        showToggle.setOnClickListener(v -> {
+            showing[0] = !showing[0];
+            int sel = field.getSelectionEnd();
+            field.setInputType(InputType.TYPE_CLASS_TEXT | (showing[0]
+                    ? InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                    : InputType.TYPE_TEXT_VARIATION_PASSWORD));
+            field.setSelection(Math.max(0, sel));
+            showToggle.setText(showing[0] ? "Hide" : "Show");
+        });
+        wrap.addView(showToggle, new FrameLayout.LayoutParams(-2, -1, Gravity.END | Gravity.CENTER_VERTICAL));
+        parent.addView(wrap);
+        return field;
+    }
+
     private void authDialog(boolean startSignup) { authDialog(startSignup, () -> showTab(SETTINGS)); }
 
     private void authDialog(boolean startSignup, Runnable onDone) {
@@ -1775,7 +1799,7 @@ public class MainActivity extends Activity {
         LinearLayout titles = vertical(); titles.setPadding(dp(14), 0, dp(8), 0);
         TextView title = text(signupMode[0] ? "Create account" : "Welcome back", 20, ink(), true);
         titles.addView(title);
-        TextView subtitle = text(signupMode[0] ? "Create your free account" : "Sign in to sync your favorites", 13, muted(), false);
+        TextView subtitle = text(signupMode[0] ? "Create your free account" : "Login to sync your favorites", 13, muted(), false);
         titles.addView(subtitle);
         head.addView(titles, weight());
         TextView close = action("cancel", "Close");
@@ -1800,32 +1824,21 @@ public class MainActivity extends Activity {
         space(panel, 10);
 
         // Password field with in-field Show/Hide toggle
-        FrameLayout pwWrap = new FrameLayout(this);
-        EditText password = authInput("Password",
-                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        password.setPadding(dp(14), dp(14), dp(78), dp(14));
-        pwWrap.addView(password, new FrameLayout.LayoutParams(-1, -2));
-        TextView showToggle = text("Show", 14, green(), true);
-        showToggle.setPadding(dp(12), dp(14), dp(14), dp(14));
-        final boolean[] showing = {false};
-        showToggle.setOnClickListener(v -> {
-            showing[0] = !showing[0];
-            int sel = password.getSelectionEnd();
-            password.setInputType(InputType.TYPE_CLASS_TEXT | (showing[0]
-                    ? InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-                    : InputType.TYPE_TEXT_VARIATION_PASSWORD));
-            password.setSelection(Math.max(0, sel));
-            showToggle.setText(showing[0] ? "Hide" : "Show");
-        });
-        pwWrap.addView(showToggle, new FrameLayout.LayoutParams(-2, -1, Gravity.END | Gravity.CENTER_VERTICAL));
-        panel.addView(pwWrap);
+        EditText password = passwordField(panel, "Password");
+        space(panel, 10);
+        // Confirm password (signup mode only)
+        LinearLayout confirmSection = vertical();
+        EditText confirm = passwordField(confirmSection, "Confirm password");
+        space(confirmSection, 10);
+        confirmSection.setVisibility(signupMode[0] ? View.VISIBLE : View.GONE);
+        panel.addView(confirmSection);
 
         TextView hint = text(AuthPolicy.signupPasswordHint(), 12, muted(), false);
         hint.setVisibility(signupMode[0] ? View.VISIBLE : View.GONE);
         panel.addView(hint);
         space(panel, 14);
 
-        TextView primary = text(signupMode[0] ? "Create account" : "Sign in", 16,
+        TextView primary = text(signupMode[0] ? "Create account" : "Login", 16,
                 light ? Color.WHITE : Color.rgb(20, 22, 18), true);
         primary.setGravity(Gravity.CENTER);
         primary.setPadding(dp(16), dp(15), dp(16), dp(15));
@@ -1835,7 +1848,7 @@ public class MainActivity extends Activity {
 
         LinearLayout links = new LinearLayout(this);
         links.setGravity(Gravity.CENTER_VERTICAL);
-        TextView modeToggle = text(signupMode[0] ? "Sign in" : "Create account",
+        TextView modeToggle = text(signupMode[0] ? "Login" : "Create account",
                 14, green(), true);
         links.addView(modeToggle, weight());
         TextView forgot = text("Forgot password?", 14, green(), true);
@@ -1845,10 +1858,11 @@ public class MainActivity extends Activity {
 
         Runnable refreshMode = () -> {
             title.setText(signupMode[0] ? "Create account" : "Welcome back");
-            subtitle.setText(signupMode[0] ? "Create your free account" : "Sign in to sync your favorites");
-            primary.setText(signupMode[0] ? "Create account" : "Sign in");
+            subtitle.setText(signupMode[0] ? "Create your free account" : "Login to sync your favorites");
+            primary.setText(signupMode[0] ? "Create account" : "Login");
             hint.setVisibility(signupMode[0] ? View.VISIBLE : View.GONE);
-            modeToggle.setText(signupMode[0] ? "Sign in" : "Create account");
+            confirmSection.setVisibility(signupMode[0] ? View.VISIBLE : View.GONE);
+            modeToggle.setText(signupMode[0] ? "Login" : "Create account");
             error.setVisibility(View.GONE);
         };
         modeToggle.setOnClickListener(v -> tap(modeToggle, () -> {
@@ -1875,6 +1889,10 @@ public class MainActivity extends Activity {
             if (emailErr != null) { showAuthError(error, emailErr); return; }
             String pwErr = signupMode[0] ? AuthPolicy.signupPasswordError(pw) : AuthPolicy.loginPasswordError(pw);
             if (pwErr != null) { showAuthError(error, pwErr); return; }
+            if (signupMode[0] && !pw.equals(confirm.getText().toString())) {
+                showAuthError(error, "Passwords don't match.");
+                return;
+            }
             primary.setEnabled(false);
             primary.setAlpha(0.6f);
             SupabaseAuth.AuthCallback cb = (session, err) -> {
@@ -1886,7 +1904,7 @@ public class MainActivity extends Activity {
                     dialogRef[0].dismiss();
                     onDone.run();
                 } else if ("CONFIRM_EMAIL".equals(err)) {
-                    showAuthInfo(error, "Account created. Open the confirmation link in your email (check spam), then sign in.");
+                    showAuthInfo(error, "Account created. Open the confirmation link in your email (check spam), then log in.");
                 } else {
                     showAuthError(error, err);
                 }
@@ -2859,7 +2877,7 @@ public class MainActivity extends Activity {
         try {
             getPackageManager().getPackageInfo(pkg, 0);
         } catch (PackageManager.NameNotFoundException e) {
-            android.widget.Toast.makeText(this, "App installed nahi hai", android.widget.Toast.LENGTH_SHORT).show();
+            android.widget.Toast.makeText(this, "App is not installed", android.widget.Toast.LENGTH_SHORT).show();
             if (detailApp != null) refreshDetail();
             return;
         }
@@ -2891,14 +2909,14 @@ public class MainActivity extends Activity {
             if (uninstall.resolveActivity(getPackageManager()) != null) {
                 startActivity(uninstall);
             } else {
-                android.widget.Toast.makeText(this, "System uninstaller nahi mila - App info khol raha hoon",
+                android.widget.Toast.makeText(this, "System uninstaller not found \u2013 opening App info",
                         android.widget.Toast.LENGTH_LONG).show();
                 startActivity(new android.content.Intent(
                         android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                         Uri.parse("package:" + pkg)));
             }
         } catch (Exception e) {
-            android.widget.Toast.makeText(this, "Uninstall open nahi ho saka", android.widget.Toast.LENGTH_SHORT).show();
+            android.widget.Toast.makeText(this, "Couldn't open the uninstaller", android.widget.Toast.LENGTH_SHORT).show();
         }
     }
     /** Starts the next app in the Update All queue, one at a time. */
