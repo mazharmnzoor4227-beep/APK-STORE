@@ -704,10 +704,10 @@ function uploadErr(xhr){ let d=""; try{ d=String(xhr.responseText||"").replace(/
   return new Error("Upload failed ("+xhr.status+")"+(d?": "+d:"")); }
 /* ---------- R2 multipart upload (files > 50 MB) ----------
    Permanent fix for flaky single-PUT uploads of multi-hundred-MB APKs:
-   16 MiB parts, 3 concurrent, per-part retry with exponential backoff.
+   16 MiB parts, 6 concurrent, per-part retry with exponential backoff.
    Part PUTs must NOT send Content-Type — the part URLs are presigned without
    it. Reading each part's ETag needs "ETag" in the R2 CORS ExposeHeaders. */
-const MP_PART_SIZE=16*1024*1024, MP_CONCURRENCY=3, MP_MAX_RETRIES=5;
+const MP_PART_SIZE=16*1024*1024, MP_CONCURRENCY=6, MP_MAX_RETRIES=5;
 const mpSleep=ms=>new Promise(r=>setTimeout(r,ms));
 function mpPutPart(url,blob,onp){
   return new Promise((res,rej)=>{
@@ -759,6 +759,7 @@ async function uploadMultipart(file,candidateId,onprog){
 async function startUpload(file){
   if(!/\.apk$/i.test(file.name)) return toast("Select an .apk file");
   setStep(0);
+  let hashP=null;
   document.getElementById("upProgCard").classList.remove("hidden");
   document.getElementById("upFileName").textContent=file.name;
   const bar=document.getElementById("upProg"), txt=document.getElementById("upProgTxt");
@@ -768,15 +769,19 @@ async function startUpload(file){
     candidateId=s.id;
     txt.textContent="Uploading… 0%";
     const bigFile=file.size>50*1024*1024; // >50 MB: R2 multipart (reliable for hundreds of MB)
+    // Speed: hash the file WHILE it uploads (in parallel), so the "Verifying…"
+    // wait disappears from the critical path — the checksum is almost always
+    // ready by the time the upload finishes.
+    hashP=sha256File(file);
     let sha256;
     if(bigFile){
       // Permanent fix for flaky single-PUT uploads of multi-hundred-MB APKs:
-      // 16 MiB parts, 3 concurrent, per-part retry with backoff.
+      // 16 MiB parts, 6 concurrent, per-part retry with backoff.
       const parts=await uploadMultipart(file,candidateId,(p,label)=>{bar.style.width=p+"%";txt.textContent=label;});
       bar.style.width="100%"; txt.textContent="Verifying…";
       // Checksum in-browser: the edge function trusts this hash instead of
       // re-downloading + re-hashing the file (Supabase 546 limit).
-      sha256=await sha256File(file,p=>{txt.textContent="Verifying… "+p+"%";});
+      sha256=await hashP;
       txt.textContent="Finalizing…";
       await api("mp-complete","POST",{id:candidateId,parts,sha256});
     }else{
@@ -790,12 +795,12 @@ async function startUpload(file){
         xhr.send(file);
       });
       bar.style.width="100%"; txt.textContent="Verifying…";
-      sha256=await sha256File(file,p=>{txt.textContent="Verifying… "+p+"%";});
+      sha256=await hashP;
       txt.textContent="Finalizing…";
       await api("complete","POST",{id:candidateId,sha256});
     }
     inspectCandidate(candidateId);
-  }catch(e){ txt.textContent="Failed: "+e.message; toast("Upload failed: "+e.message); }
+  }catch(e){ if(hashP) hashP.catch(()=>{}); txt.textContent="Failed: "+e.message; toast("Upload failed: "+e.message); }
 }
 async function inspectCandidate(id){
   candidateId=id;
