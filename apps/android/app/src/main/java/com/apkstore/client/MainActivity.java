@@ -99,7 +99,7 @@ public class MainActivity extends Activity {
     private JSONObject selfUpdateApp;
     private LinearLayout selfUpdatePage;
     private TextView selfUpdateStatus, selfUpdateProgress;
-    private ProgressRing selfUpdateRing;
+    private LinearProgressBar selfUpdateBar;
     private android.widget.Button selfUpdateButton;
     private Runnable selfUpdateUiPoll;
     private final HashMap<String, Integer> downloadProgress = new HashMap<>();
@@ -177,6 +177,38 @@ public class MainActivity extends Activity {
             float x = -seg + eased * (w + seg);
             canvas.drawRoundRect(x, 0, x + seg, h, r, r, paint);
             if (getVisibility() == View.VISIBLE) postInvalidateOnAnimation();
+        }
+    }
+
+    /** Long horizontal determinate progress bar (Play Store style) with a smoothly animated fill. */
+    private class LinearProgressBar extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private float shownPercent;
+        private ValueAnimator progressAnimator;
+        LinearProgressBar() { super(MainActivity.this); }
+        void setProgress(int value) {
+            int target = Math.max(0, Math.min(100, value));
+            if (progressAnimator != null) progressAnimator.cancel();
+            progressAnimator = ValueAnimator.ofFloat(shownPercent, target);
+            progressAnimator.setDuration(300);
+            progressAnimator.setInterpolator(new DecelerateInterpolator());
+            progressAnimator.addUpdateListener(a -> {
+                shownPercent = (float) a.getAnimatedValue();
+                invalidate();
+            });
+            progressAnimator.start();
+        }
+        @Override protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float w = getWidth(), h = getHeight(), r = h / 2f;
+            paint.setColor(raised());
+            canvas.drawRoundRect(0, 0, w, h, r, r, paint);
+            paint.setColor(green());
+            canvas.drawRoundRect(0, 0, w * shownPercent / 100f, h, r, r, paint);
+        }
+        @Override protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (progressAnimator != null) progressAnimator.cancel();
         }
     }
 
@@ -646,7 +678,11 @@ public class MainActivity extends Activity {
         int s = dp(18);
         tick.setMinWidth(s); tick.setMinHeight(s);
         tick.setContentDescription("Installed on this device");
-        row.addView(tick);
+        // Breathing room on both sides so the tick never touches adjacent controls
+        // (e.g. the › chevron in list rows).
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+        lp.setMargins(dp(10), 0, dp(12), 0);
+        row.addView(tick, lp);
     }
     private boolean updateAvailable(JSONObject app) {
         String packageId = app.optString("package_id");
@@ -1641,25 +1677,38 @@ public class MainActivity extends Activity {
                         page.addView(text("You're up to date.", 16, ink(), true)); space(page, 8);
                         page.addView(text("Version " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ") is the latest.", 14, muted(), false));
                     } else {
-                        page.addView(text("Update available", 16, green(), true)); space(page, 8);
-                        page.addView(text("Version " + latestName + " (" + latest + ")", 15, ink(), false)); space(page, 6);
+                        selfUpdatePage = page;
+                        page.addView(text("Update available", 16, green(), true)); space(page, 10);
+                        // Card: app identity + version, looks like the app rows elsewhere in the app.
+                        LinearLayout card = vertical();
+                        card.setBackground(shape(surface(), 16));
+                        card.setPadding(dp(16), dp(16), dp(16), dp(16));
+                        LinearLayout head = new LinearLayout(this); head.setGravity(Gravity.CENTER_VERTICAL);
+                        head.addView(icon(self, 56), new LinearLayout.LayoutParams(dp(56), dp(56)));
+                        LinearLayout headCopy = vertical(); headCopy.setPadding(dp(12), 0, 0, 0);
+                        headCopy.addView(text(self.optString("title", "APK STORE"), 17, ink(), true));
+                        headCopy.addView(text("Version " + latestName + " (" + latest + ")", 13, muted(), false));
+                        head.addView(headCopy, weight());
+                        card.addView(head);
                         String notes = rel.optString("release_notes");
                         if (notes.isEmpty()) notes = rel.optString("changelog");
-                        if (!notes.isEmpty()) { page.addView(text("What's new", 14, ink(), true)); space(page, 4); page.addView(text(notes, 14, muted(), false)); space(page, 8); }
+                        if (!notes.isEmpty()) { space(card, 10); card.addView(text("What's new", 14, ink(), true)); space(card, 4); card.addView(text(notes, 14, muted(), false)); }
                         long bytes = rel.optLong("byte_size");
-                        if (bytes > 0) { page.addView(text(String.format(java.util.Locale.ROOT, "%.1f MB", bytes / 1048576.0), 13, muted(), false)); space(page, 12); }
-                        selfUpdatePage = page;
-                        selfUpdateRing = new ProgressRing();
-                        selfUpdateRing.setVisibility(View.GONE);
-                        page.addView(selfUpdateRing, new LinearLayout.LayoutParams(dp(64), dp(64)));
-                        selfUpdateStatus = text("Ready to update", 14, muted(), false);
-                        page.addView(selfUpdateStatus);
-                        selfUpdateProgress = text("", 13, green(), true);
-                        page.addView(selfUpdateProgress);
+                        if (bytes > 0) { space(card, 8); card.addView(text(String.format(java.util.Locale.ROOT, "%.1f MB", bytes / 1048576.0), 13, muted(), false)); }
+                        page.addView(card); space(page, 14);
+                        // Long horizontal progress: status line, bar, percent line, then the action button.
+                        selfUpdateStatus = text("Ready to update", 15, ink(), true);
+                        page.addView(selfUpdateStatus); space(page, 8);
+                        selfUpdateBar = new LinearProgressBar();
+                        selfUpdateBar.setVisibility(View.GONE);
+                        page.addView(selfUpdateBar, new LinearLayout.LayoutParams(-1, dp(6)));
+                        space(page, 8);
+                        selfUpdateProgress = text("", 13, muted(), false);
+                        page.addView(selfUpdateProgress); space(page, 14);
                         selfUpdateButton = new android.widget.Button(this);
                         selfUpdateButton.setText("Update now");
                         selfUpdateButton.setOnClickListener(v -> startSelfUpdate(self));
-                        page.addView(selfUpdateButton);
+                        page.addView(selfUpdateButton, new LinearLayout.LayoutParams(-1, -2));
                         updateSelfUpdateUi();
                     }
         }));
@@ -1710,7 +1759,7 @@ public class MainActivity extends Activity {
         if (installed >= target) {
             selfUpdateStatus.setText("Update installed");
             if (selfUpdateProgress != null) selfUpdateProgress.setText("Version " + BuildConfig.VERSION_NAME);
-            if (selfUpdateRing != null) selfUpdateRing.setVisibility(View.GONE);
+            if (selfUpdateBar != null) selfUpdateBar.setVisibility(View.GONE);
             if (selfUpdateButton != null) { selfUpdateButton.setText("Up to date"); selfUpdateButton.setEnabled(false); }
             getSharedPreferences("self_update", MODE_PRIVATE).edit().remove("target").apply();
             return;
@@ -1718,22 +1767,22 @@ public class MainActivity extends Activity {
         if (downloads.containsKey(slug)) {
             int progress = downloadProgress.getOrDefault(slug, 0);
             selfUpdateStatus.setText("Downloading update…");
-            if (selfUpdateProgress != null) selfUpdateProgress.setText(progress + "%  " + downloadSizes.getOrDefault(slug, ""));
-            if (selfUpdateRing != null) { selfUpdateRing.setVisibility(View.VISIBLE); selfUpdateRing.setProgress(progress); }
+            if (selfUpdateProgress != null) selfUpdateProgress.setText(progress + "% · " + downloadSizes.getOrDefault(slug, ""));
+            if (selfUpdateBar != null) { selfUpdateBar.setVisibility(View.VISIBLE); selfUpdateBar.setProgress(progress); }
             if (selfUpdateButton != null) { selfUpdateButton.setText("Downloading update"); selfUpdateButton.setEnabled(false); }
             return;
         }
         if (completedDownloads.containsKey(slug)) {
             selfUpdateStatus.setText("Installing update…");
             if (selfUpdateProgress != null) selfUpdateProgress.setText("Android will ask you to confirm installation");
-            if (selfUpdateRing != null) { selfUpdateRing.setVisibility(View.VISIBLE); selfUpdateRing.setProgress(100); }
+            if (selfUpdateBar != null) { selfUpdateBar.setVisibility(View.VISIBLE); selfUpdateBar.setProgress(100); }
             if (selfUpdateButton != null) { selfUpdateButton.setText("Installing update"); selfUpdateButton.setEnabled(false); }
             return;
         }
         String error = downloadErrors.get(slug);
         if (error != null && !error.isEmpty()) {
             selfUpdateStatus.setText(error);
-            if (selfUpdateRing != null) selfUpdateRing.setVisibility(View.GONE);
+            if (selfUpdateBar != null) selfUpdateBar.setVisibility(View.GONE);
             if (selfUpdateProgress != null) selfUpdateProgress.setText("");
             if (selfUpdateButton != null) { selfUpdateButton.setText("Retry update"); selfUpdateButton.setEnabled(true); }
         }
