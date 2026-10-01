@@ -57,6 +57,8 @@ import java.util.concurrent.Executors;
 import androidx.work.WorkManager;
 import androidx.work.PeriodicWorkRequest;
 import androidx.work.ExistingPeriodicWorkPolicy;
+import androidx.work.OneTimeWorkRequest;
+import androidx.work.ExistingWorkPolicy;
 import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends Activity {
@@ -258,6 +260,7 @@ public class MainActivity extends Activity {
         for (String slug : new java.util.ArrayList<>(downloads.keySet())) pollDownload(slug);
         if (catalog.length() > 0) load();
         scheduleUpdates();
+        maybeAskNotificationPermission();
     }
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
@@ -266,23 +269,16 @@ public class MainActivity extends Activity {
     }
     private void handleNotificationIntent(Intent intent) {
         try {
-            if (intent != null && "updates".equals(intent.getStringExtra("open_tab"))) showTab(UPDATES);
+            if (intent == null) return;
+            String tab = intent.getStringExtra("open_tab");
+            if ("updates".equals(tab)) showTab(UPDATES);
+            else if ("self_update".equals(tab)) checkSelfUpdate();
         } catch (Throwable ignored) { }
     }
     private void maybeAskNotificationPermission() {
         try {
             if (android.os.Build.VERSION.SDK_INT < 33) return;
-            if (!settingsStore.notificationsEnabled()) return;
             if (settingsStore.notifAsked()) return;
-            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
-                    == PackageManager.PERMISSION_GRANTED) return;
-            settingsStore.setNotifAsked();
-            requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 2001);
-        } catch (Throwable ignored) { }
-    }
-    private void requestNotificationPermission() {
-        try {
-            if (android.os.Build.VERSION.SDK_INT < 33) return;
             if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
                     == PackageManager.PERMISSION_GRANTED) return;
             settingsStore.setNotifAsked();
@@ -296,6 +292,12 @@ public class MainActivity extends Activity {
             int hours = WorkPolicy.normalizeUpdateHours(settingsStore.updateHours());
             PeriodicWorkRequest request = new PeriodicWorkRequest.Builder(UpdateCheckWorker.class, hours, TimeUnit.HOURS).build();
             WorkManager.getInstance(this).enqueueUniquePeriodicWork("catalog-update-check", ExistingPeriodicWorkPolicy.UPDATE, request);
+            // Also run one check shortly after every app start, so update alerts do not
+            // wait for the next periodic window. KEEP avoids stacking across restarts;
+            // the worker dedupes notifications per slug:version_code.
+            OneTimeWorkRequest once = new OneTimeWorkRequest.Builder(UpdateCheckWorker.class)
+                    .setInitialDelay(1, TimeUnit.MINUTES).build();
+            WorkManager.getInstance(this).enqueueUniqueWork("update-check-once", ExistingWorkPolicy.KEEP, once);
         } catch (Throwable ignored) { }
     }
     @Override protected void onResume() {
@@ -479,7 +481,6 @@ public class MainActivity extends Activity {
         detailApp = null;
         legalPage = false;
         tab = selected;
-        if (selected == UPDATES) maybeAskNotificationPermission();
         getWindow().setStatusBarColor(bg());
         getWindow().setNavigationBarColor(bg());
         getWindow().getDecorView().setSystemUiVisibility(light ? View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR : 0);
@@ -1528,16 +1529,6 @@ public class MainActivity extends Activity {
         }, false);
         settingsSection(body, "Updates");
         settingsCheckRow(settingsCard(body));
-        settingsSection(body, "Notifications");
-        LinearLayout notifCard = settingsCard(body);
-        boolean alertsOn = settingsStore.notificationsEnabled();
-        settingsRow(notifCard, "system_update", "Update alerts", alertsOn ? "On \u2022 Notify when updates arrive" : "Off",
-                () -> {
-                    boolean next = !settingsStore.notificationsEnabled();
-                    settingsStore.setNotificationsEnabled(next);
-                    if (next) requestNotificationPermission();
-                    showTab(SETTINGS);
-                }, false);
         settingsSection(body, "About");
         LinearLayout about = settingsCard(body);
         settingsRow(about, "info", "About", "Version, privacy, terms", this::showAbout, true);

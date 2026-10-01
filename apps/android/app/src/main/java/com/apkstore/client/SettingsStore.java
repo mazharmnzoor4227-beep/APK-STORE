@@ -12,8 +12,6 @@ final class SettingsStore {
     String theme() { return preferences.getString("theme", "system"); }
     void setTheme(String value) { preferences.edit().putString("theme", value).apply(); }
     int updateHours() { return WorkPolicy.normalizeUpdateHours(preferences.getInt("update_hours", 12)); }
-    boolean notificationsEnabled() { return preferences.getBoolean("notifications", true); }
-    void setNotificationsEnabled(boolean value) { preferences.edit().putBoolean("notifications", value).apply(); }
     boolean notifAsked() { return preferences.getBoolean("notif_asked", false); }
     void setNotifAsked() { preferences.edit().putBoolean("notif_asked", true).apply(); }
     void setUpdateHours(int value) { preferences.edit().putInt("update_hours", WorkPolicy.normalizeUpdateHours(value)).apply(); }

@@ -15,7 +15,7 @@ public final class ApkStoreApplication extends Application {
                 android.app.NotificationChannel channel = new android.app.NotificationChannel(
                         UpdateCheckWorker.CHANNEL_ID, "App updates",
                         android.app.NotificationManager.IMPORTANCE_DEFAULT);
-                channel.setDescription("Alerts when an installed app has a new update");
+                channel.setDescription("Alerts when an installed app — or APK STORE itself — has a new update");
                 getSystemService(android.app.NotificationManager.class).createNotificationChannel(channel);
             }
         } catch (Throwable ignored) { }
