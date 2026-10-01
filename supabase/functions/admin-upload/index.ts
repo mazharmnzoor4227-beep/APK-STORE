@@ -123,7 +123,8 @@ Deno.serve(async (request) => {
       }
       const { error } = await db.from('upload_candidates').update({ status: 'inspected', inspection, error: null }).eq('id', id).eq('owner_id', user.id).eq('status', 'uploaded');
       if (error) throw error;
-      return json({ inspection });
+      // Tells the admin panel (v4+) that publish accepts manual versionName/versionCode/minSdk overrides.
+      return json({ inspection, supportsManualVersion: true });
     }
     if (request.method === 'POST' && route === 'discard') {
       const { id } = await request.json();
@@ -153,6 +154,32 @@ Deno.serve(async (request) => {
       const targetAppId = typeof input.targetAppId === 'string' && /^[0-9a-f-]{36}$/.test(input.targetAppId) ? input.targetAppId : null;
       const { data: candidate } = await db.from('upload_candidates').select('inspection,status').eq('id', input.id).eq('owner_id', user.id).maybeSingle();
       if (candidate?.status !== 'inspected') return json({ error: 'Inspect the APK first' }, 409);
+      // Owner manual overrides for auto-detected metadata (admin panel v4).
+      // They are written back into the candidate inspection so publish_candidate,
+      // min_sdk and the audit trail all use the overridden values. The RPC still
+      // enforces package match, certificate match and increasing version code.
+      const ovr: Record<string, unknown> = {};
+      if (input.versionName !== undefined) {
+        const vn = String(input.versionName).trim().slice(0, 64);
+        if (!vn) return json({ error: 'Invalid version name override' }, 400);
+        ovr.versionName = vn;
+      }
+      if (input.versionCode !== undefined) {
+        const vc = Number(input.versionCode);
+        if (!Number.isSafeInteger(vc) || vc <= 0) return json({ error: 'Invalid version code override' }, 400);
+        ovr.versionCode = vc;
+      }
+      if (input.minSdk !== undefined && input.minSdk !== null) {
+        const ms = Number(input.minSdk);
+        if (!Number.isSafeInteger(ms) || ms < 1 || ms > 40) return json({ error: 'Invalid min SDK override' }, 400);
+        ovr.minSdk = ms;
+      }
+      if (Object.keys(ovr).length) {
+        const newInspection = { ...(candidate.inspection as Record<string, unknown>), ...ovr };
+        const { error: ovrError } = await db.from('upload_candidates').update({ inspection: newInspection }).eq('id', input.id).eq('owner_id', user.id).eq('status', 'inspected');
+        if (ovrError) throw ovrError;
+        (candidate as { inspection: unknown }).inspection = newInspection;
+      }
       const title = String(input.title || '').trim().slice(0, 100);
       const category = String(input.category || 'Tools').trim().slice(0, 60);
       const description = String(input.description || '').trim().slice(0, 2000);
@@ -177,7 +204,7 @@ Deno.serve(async (request) => {
       if (fdroidUrl !== undefined) extras.fdroid_url = fdroidUrl;
       const { error: updateError } = await db.from('apps').update(extras).eq('id', appId);
       if (updateError) throw updateError;
-      const { error: auditError } = await db.from('admin_audit').insert({ actor_id: user.id, action: 'publish', subject_id: appId, subject_name: title, details: { rightsConfirmed: true, packageId: candidate.inspection.packageId } });
+      const { error: auditError } = await db.from('admin_audit').insert({ actor_id: user.id, action: 'publish', subject_id: appId, subject_name: title, details: { rightsConfirmed: true, packageId: candidate.inspection.packageId, manualOverride: Object.keys(ovr).length ? ovr : undefined } });
       if (auditError) throw new Error('App published, but audit record failed: '+auditError.message);
       return json({ appId, slug });
     }
