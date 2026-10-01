@@ -2308,18 +2308,31 @@ public class MainActivity extends Activity {
             if (detailApp != null) refreshDetail();
             return;
         }
-        // Direct public flow: Android's own uninstall confirmation dialog
-        // (app name, OK/Cancel). No PackageInstaller attempt — it silently
-        // swallows the request and the system dialog never appears.
+        // Primary path: PackageInstaller.uninstall(). With REQUEST_DELETE_PACKAGES
+        // declared in the manifest this reliably raises Android's own official
+        // "Uninstall this app?" confirmation dialog (app name, OK/Cancel) on every
+        // device. ACTION_DELETE alone is silently a no-op on some OEMs, which is
+        // why the button appeared completely dead. The result (confirmed/cancelled)
+        // is reported by UninstallResultReceiver.
+        try {
+            android.content.pm.PackageInstaller installer = getPackageManager().getPackageInstaller();
+            android.content.Intent callback = new android.content.Intent(UninstallResultReceiver.ACTION)
+                    .putExtra("pkg", pkg);
+            android.app.PendingIntent pi = android.app.PendingIntent.getBroadcast(this, pkg.hashCode(), callback,
+                    android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_MUTABLE);
+            installer.uninstall(pkg, pi.getIntentSender());
+            return;
+        } catch (Exception e) {
+            // Fall through to the public ACTION_DELETE flow below.
+        }
+        // Fallback: the public ACTION_DELETE flow (official system dialog on most devices).
         try {
             android.content.Intent uninstall = new android.content.Intent(
                     Intent.ACTION_DELETE, Uri.parse("package:" + pkg));
             if (uninstall.resolveActivity(getPackageManager()) != null) {
                 startActivity(uninstall);
             } else {
-                // No system uninstaller on this device/ROM — fall back to the
-                // App info screen, where Android always offers Uninstall.
-                android.widget.Toast.makeText(this, "System uninstaller nahi mila — App info khol raha hoon",
+                android.widget.Toast.makeText(this, "System uninstaller nahi mila - App info khol raha hoon",
                         android.widget.Toast.LENGTH_LONG).show();
                 startActivity(new android.content.Intent(
                         android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
