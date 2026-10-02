@@ -54,16 +54,11 @@ android {
     }
 }
 
-// AdMob + WorkManager both need ListenableFuture. A transitive Guava dep can
-// otherwise resolve listenablefuture to 9999.0-empty-to-avoid-conflict-with-guava
-// (an EMPTY jar), breaking androidx.work compilation with
-// "cannot access ListenableFuture". Pin the real artifact and force it: even a
-// direct dependency loses to highest-wins, so force is required.
-configurations.all {
-    resolutionStrategy { force 'com.google.guava:listenablefuture:1.0' }
-}
-
 dependencies {
+    // Guava provides ListenableFuture itself; its POM redirects the standalone
+    // listenablefuture module to the (empty) 9999.0-empty-to-avoid-conflict-with-guava
+    // artifact, so androidx.work and AdMob never clash over duplicate classes.
+    implementation 'com.google.guava:guava:31.1-android'
     implementation 'androidx.work:work-runtime:2.12.0'
     implementation 'io.noties.markwon:core:4.6.2'
     // Google sign-in via Credential Manager (ID token -> Supabase Auth)
@@ -71,11 +66,6 @@ dependencies {
     implementation 'androidx.credentials:credentials-play-services-auth:1.3.0'
     implementation 'com.google.android.libraries.identity.googleid:googleid:1.1.1'
     // AdMob (banner + native ads). Version verified present on dl.google.com.
-    // AdMob + WorkManager both need ListenableFuture: a transitive Guava dep can
-    // otherwise resolve listenablefuture to 9999.0-empty-to-avoid-conflict-with-guava
-    // (an EMPTY jar), breaking androidx.work with "cannot access ListenableFuture".
-    // Pin the real artifact explicitly.
-    implementation 'com.google.guava:listenablefuture:1.0'
     implementation 'com.google.android.gms:play-services-ads:23.6.0'
     testImplementation 'junit:junit:4.13.2'
 }
