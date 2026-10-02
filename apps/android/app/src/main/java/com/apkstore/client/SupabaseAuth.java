@@ -134,6 +134,7 @@ final class SupabaseAuth {
         c.setRequestMethod(method);
         c.setRequestProperty("apikey", publishableKey);
         c.setRequestProperty("Content-Type", "application/json");
+        Net.gzip(c);
         if (accessToken != null && !accessToken.isEmpty()) {
             c.setRequestProperty("Authorization", "Bearer " + accessToken);
         }
@@ -152,6 +153,7 @@ final class SupabaseAuth {
         try {
             InputStream in = code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream();
             if (in == null) return "";
+            in = Net.wrap(c, in);
             return new String(Io.readAllBytes(in), StandardCharsets.UTF_8);
         } catch (Exception e) {
             return "";

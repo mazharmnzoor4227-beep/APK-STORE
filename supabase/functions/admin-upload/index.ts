@@ -1,5 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.58.0';
-import { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand, DeleteObjectCommand, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from 'npm:@aws-sdk/client-s3@3.901.0';
+import { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from 'npm:@aws-sdk/client-s3@3.901.0';
 import { getSignedUrl } from 'npm:@aws-sdk/s3-request-presigner@3.901.0';
 import { parseApkFile, parseApkUrl } from 'npm:simple-apk-parser@0.1.2';
 import { createHash } from 'node:crypto';
@@ -20,6 +20,18 @@ const r2 = Deno.env.get('R2_ACCOUNT_ID') && Deno.env.get('R2_ACCESS_KEY_ID') && 
   ? new S3Client({ region: 'auto', endpoint: `https://${Deno.env.get('R2_ACCOUNT_ID')}.r2.cloudflarestorage.com`, credentials: { accessKeyId: Deno.env.get('R2_ACCESS_KEY_ID')!, secretAccessKey: Deno.env.get('R2_SECRET_ACCESS_KEY')! } }) : null;
 let activeHeaders: Record<string, string> = headers;
 function json(value: unknown, status = 200) { return Response.json(value, { status, headers: activeHeaders }); }
+
+// Catalog version bump: the website caches the catalog (stale-while-revalidate)
+// and only re-downloads it when site_settings -> catalog_version changes.
+// Called after publish / manage-app / delete-app. Best-effort: a failed bump
+// must never break the admin action itself.
+async function bumpCatalogVersion() {
+  try {
+    const { error } = await db.from('site_settings')
+      .upsert({ key: 'catalog_version', value: { v: Date.now() }, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    if (error) console.warn('catalog version bump failed:', error.message);
+  } catch (e) { console.warn('catalog version bump failed:', e instanceof Error ? e.message : e); }
+}
 
 // Multipart helper for R2 large uploads. The browser uploads parts directly to
 // R2 via presigned UploadPart URLs; the server only assembles them. Used for
@@ -213,7 +225,7 @@ Deno.serve(async (request) => {
       // keeps metadata parsing within the Edge Function memory budget.
       const parsed = candidate.object_key.startsWith('r2/')
         ? await parseApkUrl(signedUrl, { locale: 'en-US' })
-        : await parseApkFile(await (await fetch(signedUrl)).blob(), { locale: 'en-US' });
+        : await parseApkFile(await (await fetch(signedUrl, { signal: AbortSignal.timeout(30_000) })).blob(), { locale: 'en-US' });
       const certificates = parsed.signatures.filter((s: { found: boolean; certificate?: { sha256?: string } }) => s.found && s.certificate?.sha256).map((s: { certificate: { sha256: string } }) => s.certificate.sha256.toLowerCase());
       if (!parsed.packageName || !Number.isSafeInteger(parsed.versionCode) || parsed.versionCode <= 0 || !certificates.length || new Set(certificates).size !== 1)
         return json({ error: 'APK package, version or signer could not be verified' }, 422);
@@ -232,7 +244,7 @@ Deno.serve(async (request) => {
           return json({ error: 'APK size changed after upload' }, 409);
         apkSha256 = clientSha256;
       } else {
-        const download = await fetch(signedUrl);
+        const download = await fetch(signedUrl, { signal: AbortSignal.timeout(30_000) });
         if (!download.ok || !download.body) throw new Error('APK could not be read for checksum');
         const hash = createHash('sha256'); let bytes = 0;
         for await (const chunk of download.body) { bytes += chunk.byteLength; if (bytes > maxApkSize) throw new Error('APK exceeds size limit'); hash.update(chunk); }
@@ -336,6 +348,7 @@ Deno.serve(async (request) => {
       if (updateError) throw updateError;
       const { error: auditError } = await db.from('admin_audit').insert({ actor_id: user.id, action: 'publish', subject_id: appId, subject_name: title, details: { rightsConfirmed: true, packageId: candidate.inspection.packageId, manualOverride: Object.keys(ovr).length ? ovr : undefined } });
       if (auditError) throw new Error('App published, but audit record failed: '+auditError.message);
+      await bumpCatalogVersion();
       return json({ appId, slug });
     }
     if (request.method === 'GET' && route === 'apps') {
@@ -419,6 +432,7 @@ Deno.serve(async (request) => {
       if (!Object.keys(changes).length) return json({ error: 'No changes' }, 400);
       const { data, error } = await db.from('apps').update({ ...changes, updated_at: new Date().toISOString() }).eq('id', id).select('id,visibility,title').single();
       if (error) throw error;
+      await bumpCatalogVersion();
       return json({ app: data });
     }
     if (request.method === 'POST' && route === 'delete-app') {
@@ -426,6 +440,7 @@ Deno.serve(async (request) => {
       if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) return json({ error: 'Invalid app' }, 400);
       const { error } = await db.rpc('owner_delete_app', { p_app_id: id, p_actor_id: user.id, p_expected_title: title });
       if (error) throw error;
+      await bumpCatalogVersion();
       return json({ status: 'deleted' });
     }
     if (request.method === 'POST' && route === 'restore-app') {
@@ -446,7 +461,7 @@ Deno.serve(async (request) => {
       const { data: pending, error: pendingError } = await db.from('upload_candidates').select('object_key').eq('target_app_id', id);
       if (pendingError) throw pendingError;
       const keys = new Set([...(releases || []).map(row => row.storage_key),...(pending || []).map(row => row.object_key)]);
-      for (const objectKey of keys) await removeApk(objectKey);
+      await removeApks(keys);
       await removeMedia('app-icons',[app.icon_url]);
       await removeMedia('app-screenshots',app.screenshots || []);
       const { error } = await db.rpc('purge_deleted_app', { p_app_id: id, p_actor_id: user.id, p_expected_title: title });
@@ -493,14 +508,40 @@ function validUrl(value: unknown): string {
   catch { throw new Error('Links must use HTTPS and be under 500 characters'); }
   return text;
 }
+// Safety guard: only delete objects this function created (pending/<owner>/<candidate>.apk,
+// optionally under the r2/ prefix for Cloudflare R2). Shared by single and batched deletes.
+const APK_OBJECT_KEY = /^(?:r2\/)?pending\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.apk$/;
 async function removeApk(objectKey: string): Promise<void> {
-  if (!objectKey || !/^(?:r2\/)?pending\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.apk$/.test(objectKey)) return;
+  if (!objectKey || !APK_OBJECT_KEY.test(objectKey)) return;
   if (objectKey.startsWith('r2/')) {
     if (!r2) throw new Error('R2 storage unavailable. Retry deletion later.');
     await r2.send(new DeleteObjectCommand({ Bucket: r2Bucket!, Key: objectKey }));
   } else {
     const { error } = await db.storage.from('apk-files').remove([objectKey]);
     if (error) throw new Error('APK storage deletion failed: '+error.message);
+  }
+}
+// Batched version of removeApk for purge: one Supabase Storage .remove([...]) call for
+// all non-R2 keys plus one R2 DeleteObjects call per 1000 keys, instead of N sequential
+// round trips. Same guard, same fail-loud semantics: any backend failure throws and the
+// purge RPC below never runs, exactly as before.
+async function removeApks(objectKeys: Iterable<string>): Promise<void> {
+  const storageKeys: string[] = [];
+  const r2Keys: string[] = [];
+  for (const key of new Set(objectKeys)) {
+    if (!key || !APK_OBJECT_KEY.test(key)) continue;
+    (key.startsWith('r2/') ? r2Keys : storageKeys).push(key);
+  }
+  if (r2Keys.length && !r2) throw new Error('R2 storage unavailable. Retry deletion later.');
+  if (storageKeys.length) {
+    const { error } = await db.storage.from('apk-files').remove(storageKeys);
+    if (error) throw new Error('APK storage deletion failed: '+error.message);
+  }
+  for (let i = 0; i < r2Keys.length; i += 1000) {
+    const chunk = r2Keys.slice(i, i + 1000);
+    const out = await r2!.send(new DeleteObjectsCommand({ Bucket: r2Bucket!, Delete: { Objects: chunk.map(Key => ({ Key })) } }));
+    const failed = (out.Errors || []).map(e => e.Key).filter(Boolean);
+    if (failed.length) throw new Error('R2 batch deletion failed for: '+failed.join(','));
   }
 }
 async function removeMedia(bucket: 'app-icons' | 'app-screenshots', urls: string[]): Promise<void> {

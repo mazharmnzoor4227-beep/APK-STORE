@@ -45,11 +45,12 @@ public final class UpdateCheckWorker extends Worker {
                 HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
                 connection.setConnectTimeout(12000); connection.setReadTimeout(12000);
                 connection.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
+                Net.gzip(connection);
                 try {
                     // One app's transient failure must not discard the whole batch and
                     // force an unbounded full retry loop — skip it and keep partial results.
                     if (connection.getResponseCode() != 200) continue;
-                    try (InputStream stream = connection.getInputStream()) {
+                    try (InputStream stream = Net.decoded(connection)) {
                         JSONArray releases = new JSONArray(new String(Io.readAllBytes(stream), StandardCharsets.UTF_8));
                         if (releases.length() == 0) continue;
                         long latest = releases.getJSONObject(0).optLong("version_code");
@@ -119,9 +120,10 @@ public final class UpdateCheckWorker extends Worker {
             c.setConnectTimeout(12000); c.setReadTimeout(12000);
             c.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
             c.setRequestProperty("Authorization", "Bearer " + BuildConfig.SUPABASE_KEY);
+            Net.gzip(c);
             if (c.getResponseCode() != 200) return null;
             JSONArray rows;
-            try (InputStream in = c.getInputStream()) {
+            try (InputStream in = Net.decoded(c)) {
                 rows = new JSONArray(new String(Io.readAllBytes(in), StandardCharsets.UTF_8));
             } finally { c.disconnect(); c = null; }
             if (rows.length() == 0) return null;
@@ -133,9 +135,10 @@ public final class UpdateCheckWorker extends Worker {
             rc.setConnectTimeout(12000); rc.setReadTimeout(12000);
             rc.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
             rc.setRequestProperty("Authorization", "Bearer " + BuildConfig.SUPABASE_KEY);
+            Net.gzip(rc);
             if (rc.getResponseCode() != 200) return null;
             JSONArray rrows;
-            try (InputStream in = rc.getInputStream()) {
+            try (InputStream in = Net.decoded(rc)) {
                 rrows = new JSONArray(new String(Io.readAllBytes(in), StandardCharsets.UTF_8));
             } finally { rc.disconnect(); rc = null; }
             if (rrows.length() == 0) return null;

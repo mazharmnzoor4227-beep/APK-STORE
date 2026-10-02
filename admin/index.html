@@ -548,8 +548,15 @@ function go(sec){
 }
 
 /* ---------- api ---------- */
+/* fetchT: fetch with a hard timeout so a hung Supabase/edge endpoint can't leave
+   the admin UI stuck forever (e.g. "Signing in…" never resolving). */
+async function fetchT(url,opts,ms){ const c=new AbortController();
+  const t=setTimeout(()=>c.abort(),ms||20000);
+  try{ return await fetch(url,Object.assign({},opts,{signal:c.signal})); }
+  catch(e){ throw e&&e.name==="AbortError"?new Error("Request timed out — check your connection and retry"):e; }
+  finally{ clearTimeout(t); } }
 async function api(action, method, body){
-  const r = await fetch(FN+"?action="+action, { method: method||"GET",
+  const r = await fetchT(FN+"?action="+action, { method: method||"GET",
     headers: { "apikey": anonKey, "Authorization": "Bearer "+token,
       "Content-Type": "application/json" },
     body: body?JSON.stringify(body):undefined });
@@ -558,7 +565,7 @@ async function api(action, method, body){
   return j;
 }
 async function sbRest(path, method, body){
-  const r = await fetch(SB_URL+"/rest/v1/"+path, { method: method||"GET",
+  const r = await fetchT(SB_URL+"/rest/v1/"+path, { method: method||"GET",
     headers: { "apikey": anonKey, "Authorization": "Bearer "+token,
       "Content-Type": "application/json", "Prefer": "return=representation" },
     body: body?JSON.stringify(body):undefined });
@@ -579,7 +586,7 @@ async function doLogin(){
   if(!email||!pass) return authErr("Enter email and password.");
   const btn=document.getElementById("loginBtn"); btn.disabled=true; btn.textContent="Signing in…";
   try{
-    const r=await fetch(SB_URL+"/auth/v1/token?grant_type=password",{ method:"POST",
+    const r=await fetchT(SB_URL+"/auth/v1/token?grant_type=password",{ method:"POST",
       headers:{ "apikey":anonKey, "Content-Type":"application/json" },
       body:JSON.stringify({email,password:pass}) });
     const j=await r.json();
@@ -943,13 +950,20 @@ function syncPublishUI(){
   document.getElementById("adToggle").classList.toggle("on",!!on);
   document.getElementById("adVisSub").textContent=on?"Published — visible on website and in the app":"Hidden — not visible anywhere";
 }
+const PUB_BUSY=new Set(), FEAT_BUSY=new Set(), CRASH_BUSY=new Set();
+let DEL_BUSY=false, EDIT_BUSY=false;
 async function togglePublish(){
-  const a=getApp(currentApp); if(!a) return;
-  const to=a.visibility==="published"?"unlisted":"published";
+  const a=getApp(currentApp); if(!a||PUB_BUSY.has(a.id)) return;
+  PUB_BUSY.add(a.id);
+  const prev=a.visibility;
+  const to=prev==="published"?"unlisted":"published";
+  a.visibility=to; syncPublishUI(); renderApps(); renderDashboard(); /* optimistic */
   try{ const j=await api("manage-app","POST",{id:a.id,visibility:to});
     a.visibility=j.app.visibility; syncPublishUI(); renderApps(); renderDashboard();
     toast(to==="published"?"Published":"Hidden"); }
-  catch(e){ toast("Failed: "+e.message); }
+  catch(e){ a.visibility=prev; syncPublishUI(); renderApps(); renderDashboard(); /* rollback */
+    toast("Couldn't change visibility — restored"); }
+  PUB_BUSY.delete(a.id);
 }
 function syncFeaturedUI(){
   const a=getApp(currentApp); const on=a&&a.is_recommended;
@@ -957,23 +971,25 @@ function syncFeaturedUI(){
   document.getElementById("adFeatSub").textContent=on?"Shown as the fallback home banner":"Not featured";
 }
 async function toggleFeatured(){
-  const a=getApp(currentApp); if(!a) return;
+  const a=getApp(currentApp); if(!a||FEAT_BUSY.has(a.id)) return;
   const to=!a.is_recommended;
   const btn=document.getElementById("adFeatToggle"); btn.disabled=true;
+  FEAT_BUSY.add(a.id);
+  const prevA=a.is_recommended;
+  const prevOthers=to?APPS.filter(o=>o.id!==a.id&&o.is_recommended):[];
+  prevOthers.forEach(o=>{ o.is_recommended=false; }); /* optimistic: UI flips instantly */
+  a.is_recommended=to; syncFeaturedUI(); renderApps(); renderDashboard();
   try{
-    if(to){
-      for(const o of APPS){
-        if(o.id!==a.id&&o.is_recommended){
-          await api("manage-app","POST",{id:o.id,is_recommended:false});
-          o.is_recommended=false;
-        }
-      }
-    }
+    for(const o of prevOthers)
+      await api("manage-app","POST",{id:o.id,is_recommended:false});
     await api("manage-app","POST",{id:a.id,is_recommended:to});
-    a.is_recommended=to; syncFeaturedUI(); renderApps();
     toast(to?"Featured on home":"Removed from featured");
-  }catch(e){ toast("Failed: "+e.message); }
-  btn.disabled=false;
+  }catch(e){
+    prevOthers.forEach(o=>{ o.is_recommended=true; }); /* rollback */
+    a.is_recommended=prevA; syncFeaturedUI(); renderApps(); renderDashboard();
+    toast("Couldn't update featured — restored");
+  }
+  FEAT_BUSY.delete(a.id); btn.disabled=false;
 }
 function goBackApps(){ go("apps"); }
 function goBackDetail(){ openAppDetail(currentApp); }
@@ -989,7 +1005,9 @@ function openEdit(){
   go("appedit");
 }
 async function saveEdit(){
-  const a=getApp(currentApp); if(!a) return;
+  const a=getApp(currentApp); if(!a||EDIT_BUSY) return;
+  EDIT_BUSY=true;
+  const btn=document.querySelector('#scr-appedit .btn.primary'); if(btn) btn.disabled=true;
   try{ const j=await api("manage-app","POST",{ id:a.id,
       title:document.getElementById("edTitle").value.trim(),
       category:catSelectValue(document.getElementById("edCatSel"),document.getElementById("edCatNew")),
@@ -999,6 +1017,7 @@ async function saveEdit(){
     Object.assign(a,{title:j.app.title,visibility:j.app.visibility});
     await loadApps(); openAppDetail(currentApp); toast("Saved"); }
   catch(e){ toast("Save failed: "+e.message); }
+  EDIT_BUSY=false; if(btn) btn.disabled=false;
 }
 function reupload(){
   const a=getApp(currentApp); if(!a) return;
@@ -1008,11 +1027,18 @@ function reupload(){
   toast("Choose the new APK for "+a.title+" (same package + signer)");
 }
 async function deleteApp(){
-  const a=getApp(currentApp); if(!a) return;
+  const a=getApp(currentApp); if(!a||DEL_BUSY) return;
   if(!confirm("Move "+a.title+" to Trash?")) return;
-  try{ await api("delete-app","POST",{id:a.id,title:a.title});
-    toast("Moved to Trash"); goBackApps(); loadApps(); renderDashboard(); }
-  catch(e){ toast("Delete failed: "+e.message); }
+  DEL_BUSY=true;
+  const idx=APPS.indexOf(a);
+  APPS.splice(idx,1); /* optimistic: gone from the list instantly */
+  goBackApps(); renderApps(); renderDashboard();
+  toast("Moved to Trash");
+  try{ await api("delete-app","POST",{id:a.id,title:a.title}); await loadApps(); }
+  catch(e){ APPS.splice(Math.min(idx,APPS.length),0,a); /* rollback */
+    renderApps(); renderDashboard(); openAppDetail(a.id);
+    toast("Couldn't delete — restored"); }
+  DEL_BUSY=false;
 }
 
 /* ---------- screenshots ---------- */
@@ -1240,8 +1266,17 @@ async function copyCrash(id){
 }
 async function resolveCrash(id){
   if(!confirm("Mark this crash report resolved?")) return;
-  try{ await api("resolve-crash","POST",{id}); toast("Resolved"); loadCrashes(); renderDashboard(); }
-  catch(e){ toast("Failed: "+e.message); }
+  const idx=CRASHES.findIndex(x=>x.id===id);
+  if(idx<0||CRASH_BUSY.has(id)) return;
+  CRASH_BUSY.add(id);
+  const removed=CRASHES.splice(idx,1)[0]; /* optimistic: disappears instantly */
+  renderCrashes(); renderDashboard();
+  toast("Resolved");
+  try{ await api("resolve-crash","POST",{id}); loadCrashes(true); }
+  catch(e){ CRASHES.splice(Math.min(idx,CRASHES.length),0,removed); /* rollback */
+    renderCrashes(); renderDashboard();
+    toast("Couldn't resolve — restored"); }
+  CRASH_BUSY.delete(id);
 }
 
 /* ---------- boot ---------- */

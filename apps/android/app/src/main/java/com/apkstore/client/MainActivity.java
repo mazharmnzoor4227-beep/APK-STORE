@@ -121,8 +121,23 @@ public class MainActivity extends Activity {
     private final HashMap<String, UpdateButton> updateButtons = new HashMap<>();
     private final HashMap<String, ProgressRing> updateRings = new HashMap<>();
     private TextView updateAllLabel;
+    // AdMob state. Banners live on the detail screen; one native ad is shared
+    // across a list's ad slots (reused per position window).
+    private com.google.android.gms.ads.AdView detailBanner;
+    private int adRowCounter = 0;
+    private com.google.android.gms.ads.nativead.NativeAd sharedNativeAd;
+    private boolean nativeAdLoading;
+    private final java.util.ArrayList<LinearLayout> pendingAdSlots = new java.util.ArrayList<>();
     private final HashMap<String, String> downloadSizes = new HashMap<>();
     private final HashMap<String, String> downloadErrors = new HashMap<>();
+    /** Slugs whose last install failed because the on-device copy was signed by a
+     * different publisher (INSTALL_FAILED_UPDATE_INCOMPATIBLE). */
+    private final java.util.HashSet<String> signatureMismatch = new java.util.HashSet<>();
+    /** Shown instead of Android's raw technical message for signature mismatches. */
+    private static final String SIGNATURE_MISMATCH_MSG =
+            "Couldn't install: the copy on your phone was signed by a different publisher " +
+            "(for example, installed from F-Droid or Play Store). Uninstall the existing app " +
+            "first, then tap Install again. Note: uninstalling removes the app's data.";
     private final HashMap<String, Long> downloadLastBytes = new HashMap<>();
     private final HashMap<String, Long> downloadLastProgressAt = new HashMap<>();
     private final HashMap<String, Integer> downloadStallRetries = new HashMap<>();
@@ -320,8 +335,13 @@ public class MainActivity extends Activity {
             WorkManager.getInstance(this).enqueueUniqueWork("update-check-once", ExistingWorkPolicy.KEEP, once);
         } catch (Throwable ignored) { }
     }
+    @Override protected void onPause() {
+        try { if (detailBanner != null) detailBanner.pause(); } catch (Throwable ignored) { }
+        super.onPause();
+    }
     @Override protected void onResume() {
         super.onResume();
+        try { if (detailBanner != null) detailBanner.resume(); } catch (Throwable ignored) { }
         handler.post(() -> {
             if (lastCatalogRefresh > 0 && android.os.SystemClock.elapsedRealtime() - lastCatalogRefresh > 15 * 60 * 1000L) load();
             if (detailApp != null) consumeInstallResult(detailApp.optString("slug"));
@@ -352,11 +372,25 @@ public class MainActivity extends Activity {
         if (result == null) return;
         prefs.edit().remove(slug).apply();
         if ("Installed".equals(result)) {
+            signatureMismatch.remove(slug);
             downloadErrors.remove(slug);
             Long id = completedDownloads.remove(slug);
             if (id != null) {
                 history.record(slug, slug, "Installed", "", id, "", 100);
                 ((DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE)).remove(id);
+                downloadPaths.remove(slug);
+            }
+        } else if ("SignatureMismatch".equals(result)) {
+            // Android refused: on-device copy signed by a different publisher.
+            // Friendly message + the detail page's existing Uninstall button guides recovery.
+            signatureMismatch.add(slug);
+            downloadErrors.put(slug, SIGNATURE_MISMATCH_MSG);
+            Long id = completedDownloads.get(slug);
+            history.record(slug, slug, "Failed", SIGNATURE_MISMATCH_MSG,
+                    id == null ? -1 : id, downloadPaths.getOrDefault(slug, ""), 100);
+            if (selfUpdateApp != null && slug.equals(selfUpdateApp.optString("slug"))) {
+                completedDownloads.remove(slug);
+                if (id != null) ((DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE)).remove(id);
                 downloadPaths.remove(slug);
             }
         } else {
@@ -660,9 +694,10 @@ public class MainActivity extends Activity {
         connection.setConnectTimeout(12000); connection.setReadTimeout(12000);
         connection.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
         connection.setRequestProperty("Authorization", "Bearer " + BuildConfig.SUPABASE_KEY);
+        Net.gzip(connection);
         try {
             if (connection.getResponseCode() != 200) throw new Exception("Release information temporarily unavailable.");
-            try (InputStream stream = connection.getInputStream()) {
+            try (InputStream stream = Net.decoded(connection)) {
                 JSONArray releases = new JSONArray(new String(Io.readAllBytes(stream), StandardCharsets.UTF_8));
                 for (int i = 0; i < releases.length(); i++) {
                     JSONObject release = releases.optJSONObject(i);
@@ -1307,6 +1342,8 @@ public class MainActivity extends Activity {
         scroller.addView(row); body.addView(scroller);
     }
     private void renderList(JSONArray apps, boolean compact) {
+        adRowCounter = 0;
+        dropSharedNativeAd(); // the list is rebuilt; never leak the previous native ad
         if (apps.length() == 0) {
             empty(tab == SEARCH ? "No matching apps" : tab == FAVORITES ? "No favorites yet" : "No apps published yet",
                     tab == SEARCH ? "Try another search term." : tab == FAVORITES ? "Tap the heart on an app to save it here." : "Approved releases will appear here.");
@@ -1359,6 +1396,60 @@ public class MainActivity extends Activity {
             row.addView(text(updateAvailable(app) ? "Update ›" : "›", updateAvailable(app) ? 13 : 22, green(), updateAvailable(app)));
             row.setOnClickListener(v -> showDetail(app));
             body.addView(row); space(body, 12);
+            // Distinct ad row roughly every 8th app item (counts only rendered rows).
+            adRowCounter++;
+            if (adRowCounter % 8 == 0) addNativeAdRow(body);
+        }
+    }
+    /**
+     * Inserts a distinct native-ad row into a vertical app list. The slot is a labeled
+     * "Ad" container that stays GONE until an ad binds — on load failure it simply never
+     * appears, so the list never shows empty gaps. One loaded ad is reused across the
+     * list's ad slots (single in-flight load at a time).
+     */
+    private void addNativeAdRow(LinearLayout parent) {
+        LinearLayout slot = vertical();
+        slot.setVisibility(View.GONE);
+        parent.addView(slot);
+        space(parent, 12);
+        if (sharedNativeAd != null) {
+            bindNativeAdSlot(slot);
+            return;
+        }
+        pendingAdSlots.add(slot);
+        if (nativeAdLoading || !Ads.enabled()) return;
+        nativeAdLoading = true;
+        Ads.loadNative(this, new Ads.NativeAdCallback() {
+            @Override public void onAd(com.google.android.gms.ads.nativead.NativeAd ad) {
+                nativeAdLoading = false;
+                runOnUiThread(() -> {
+                    java.util.ArrayList<LinearLayout> targets = new java.util.ArrayList<>();
+                    for (LinearLayout s : pendingAdSlots) if (s.getParent() != null) targets.add(s);
+                    pendingAdSlots.clear();
+                    if (targets.isEmpty()) { Ads.destroyNative(ad); return; }
+                    Ads.destroyNative(sharedNativeAd);
+                    sharedNativeAd = ad;
+                    for (LinearLayout s : targets) bindNativeAdSlot(s);
+                });
+            }
+            @Override public void onFail() {
+                nativeAdLoading = false;
+                // Slots stay GONE: no empty gaps, the list simply continues.
+            }
+        });
+    }
+    /** Binds the shared native ad into a slot and reveals it; failures keep it hidden. */
+    private void bindNativeAdSlot(LinearLayout slot) {
+        try {
+            if (sharedNativeAd == null) return;
+            com.google.android.gms.ads.nativead.NativeAdView card = Ads.nativeCard(
+                    this, sharedNativeAd, ink(), muted(), muted(), green(), bg(), surface(), dp(14), dp(14));
+            if (card == null) return;
+            slot.removeAllViews();
+            slot.addView(card, new LinearLayout.LayoutParams(-1, -2));
+            slot.setVisibility(View.VISIBLE);
+        } catch (Throwable t) {
+            slot.setVisibility(View.GONE);
         }
     }
     private void empty(String title, String detail) {
@@ -2211,6 +2302,7 @@ public class MainActivity extends Activity {
         downloadsPageOpen = false;
         downloadRowRings.clear();
         downloadRowStatus.clear();
+        dropDetailBanner(); // the page is rebuilt; never leak the previous AdView
         LinearLayout root = vertical(); root.setBackgroundColor(bg());
         applySafeArea(root); setContentView(root); root.requestApplyInsets();
         TextView back = text("‹  " + title, 20, ink(), true);
@@ -2260,9 +2352,10 @@ public class MainActivity extends Activity {
                 c.setConnectTimeout(12000); c.setReadTimeout(12000);
                 c.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
                 c.setRequestProperty("Authorization", "Bearer " + BuildConfig.SUPABASE_KEY);
+                Net.gzip(c);
                 if (c.getResponseCode() != 200) throw new Exception("Update check failed (" + c.getResponseCode() + ").");
                 String body;
-                try (java.io.InputStream in = c.getInputStream()) {
+                try (java.io.InputStream in = Net.decoded(c)) {
                     body = new String(Io.readAllBytes(in), java.nio.charset.StandardCharsets.UTF_8);
                 }
                 org.json.JSONArray rows = new org.json.JSONArray(body);
@@ -2274,9 +2367,10 @@ public class MainActivity extends Activity {
                 rc.setConnectTimeout(12000); rc.setReadTimeout(12000);
                 rc.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
                 rc.setRequestProperty("Authorization", "Bearer " + BuildConfig.SUPABASE_KEY);
+                Net.gzip(rc);
                 if (rc.getResponseCode() != 200) throw new Exception("Update check failed.");
                 String rbody;
-                try (java.io.InputStream in = rc.getInputStream()) {
+                try (java.io.InputStream in = Net.decoded(rc)) {
                     rbody = new String(Io.readAllBytes(in), java.nio.charset.StandardCharsets.UTF_8);
                 }
                 org.json.JSONArray rrows = new org.json.JSONArray(rbody);
@@ -2493,6 +2587,7 @@ public class MainActivity extends Activity {
         downloadsPageOpen = false;
         downloadRowRings.clear();
         downloadRowStatus.clear();
+        dropDetailBanner(); // the page is rebuilt; never leak the previous AdView
         LinearLayout root = vertical(); root.setBackgroundColor(bg());
         applySafeArea(root); setContentView(root); root.requestApplyInsets();
         LinearLayout top = new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL);
@@ -2616,6 +2711,17 @@ public class MainActivity extends Activity {
                 lp.setMargins(0, dp(12), dp(12), dp(18)); tiles.addView(preview, lp);
             }
             strip.addView(tiles); page.addView(strip);
+        }
+        // Policy-safe ad placement: the banner sits below the app info/screenshots
+        // section, far from the Install/Download button at the top of the page —
+        // never adjacent to download/install, so no accidental-click risk.
+        if (Ads.enabled()) {
+            detailBanner = Ads.banner(this);
+            if (detailBanner != null) {
+                space(page, 20);
+                page.addView(detailBanner, new LinearLayout.LayoutParams(-1, -2));
+                Ads.loadBanner(detailBanner);
+            }
         }
         if (app.optString("source_url").startsWith("https://"))
             informationLink(page, "Source code", app.optString("source_url"), () -> openLink(app.optString("source_url")));
@@ -2830,6 +2936,12 @@ public class MainActivity extends Activity {
         boolean running = downloads.containsKey(slug);
         boolean ready = completedDownloads.containsKey(slug);
         boolean installed = installedVersion(detailApp.optString("package_id")) >= 0;
+        // The user may have uninstalled the conflicting copy via the system popup
+        // and returned: drop the stale guidance so Install works cleanly.
+        if (signatureMismatch.contains(slug) && !installed) {
+            signatureMismatch.remove(slug);
+            downloadErrors.remove(slug);
+        }
         boolean installing = ready && INSTALLING_MARKER.equals(downloadErrors.get(slug));
         detailRing.setVisibility(running ? View.VISIBLE : View.GONE);
         detailRing.setProgress(downloadProgress.getOrDefault(slug, 0));
@@ -3188,6 +3300,20 @@ public class MainActivity extends Activity {
         for (Runnable retry : downloadRetryTasks.values()) handler.removeCallbacks(retry);
         if (installResultPoll != null) handler.removeCallbacks(installResultPoll);
         if (selfUpdateUiPoll != null) handler.removeCallbacks(selfUpdateUiPoll);
+        dropDetailBanner();
+        dropSharedNativeAd();
         worker.shutdownNow(); iconWorker.shutdownNow(); super.onDestroy();
+    }
+    /** Destroys the detail-screen banner so a rebuilt page never leaks an AdView. */
+    private void dropDetailBanner() {
+        try { if (detailBanner != null) detailBanner.destroy(); } catch (Throwable ignored) { }
+        detailBanner = null;
+    }
+    /** Destroys the cached list native ad (called when a list is rebuilt). */
+    private void dropSharedNativeAd() {
+        Ads.destroyNative(sharedNativeAd);
+        sharedNativeAd = null;
+        nativeAdLoading = false;
+        pendingAdSlots.clear();
     }
 }

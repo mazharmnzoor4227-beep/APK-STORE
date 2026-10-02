@@ -36,9 +36,18 @@ public final class InstallResultReceiver extends BroadcastReceiver {
         String message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE);
         String value = status == PackageInstaller.STATUS_SUCCESS ? "Installed" :
                 status == PackageInstaller.STATUS_FAILURE_ABORTED ? "Cancelled" :
+                isSignatureMismatch(message) ? "SignatureMismatch" :
                 "Installation failed" + (message == null || message.isEmpty() ? " (code " + status + ")" : ": " + message);
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(slug, value).apply();
         Intent update = new Intent(ACTION).setPackage(context.getPackageName()).putExtra("slug", slug);
         context.sendBroadcast(update);
+    }
+
+    /** True when Android refused the install because the copy already on the
+     * device was signed by a different publisher (e.g. F-Droid/Play Store build
+     * vs the developer's own signed APK). The raw message is technical; the UI
+     * shows a friendly explanation instead. */
+    private static boolean isSignatureMismatch(String message) {
+        return message != null && message.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE");
     }
 }

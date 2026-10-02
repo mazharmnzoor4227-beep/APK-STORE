@@ -32,6 +32,7 @@
   --amber:#e8a01c; --green:#1e7a35;
   --hdr:#ffffff; --shadow:0 2px 10px rgba(31,78,90,.08);
 }
+.aslot-wrap{margin:18px 4px;min-height:0;overflow:hidden}
 [data-theme="dark"]{
   --bg:#10181c; --surface:#182228; --surface2:#223037; --border:#2a3d44;
   --ink:#e8f1f3; --muted:#9db4ba; --faint:#637e86;
@@ -58,6 +59,8 @@ img{display:block}
 /* banner */
 #installBanner{position:fixed;top:0;left:0;right:0;z-index:200;transform:translateY(-115%);transition:transform .4s cubic-bezier(.2,.9,.25,1)}
 #installBanner.show{transform:translateY(0)}
+#wtoast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:11px 18px;font-size:13.5px;font-weight:500;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:300;max-width:88vw;text-align:center}
+#wtoast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .ib-in{max-width:1200px;margin:8px auto 0;padding:0 16px}
 .ib-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:9px 10px 9px 12px;display:flex;align-items:center;gap:12px;box-shadow:var(--shadow)}
 .ib-card img{width:42px;height:42px;border-radius:10px;flex-shrink:0}
@@ -316,6 +319,7 @@ footer{background:var(--hdr);border-top:1px solid var(--border);margin-top:48px}
   <button class="ib-go" onclick="openInstallModal()">Install</button>
   <button class="ib-x" onclick="dismissBanner()" aria-label="Dismiss">✕</button>
 </div></div></div>
+<div id="wtoast"></div>
 
 <header><div class="wrap hd">
   <button class="icobtn" onclick="openDrawer()" aria-label="Menu"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
@@ -398,8 +402,96 @@ const SB_URL="https://qfbfxencwsgryoczkdyj.supabase.co";
 const SB_KEY="sb_publishable_RiOpxFwFfj3dRt45AVn3LA_T4C0kAoJ";
 const SB_HDR={apikey:SB_KEY,Authorization:"Bearer "+SB_KEY};
 const CLIENT_DL=SB_URL+"/functions/v1/download-apk?slug=apk-store-client";
+/* ---- AdSense (monetization) ----
+   ADSENSE_CLIENT is a placeholder until Google approves the site.
+   After approval, replace "ca-pub-0000000000000000" with the real publisher ID
+   from the AdSense dashboard (and update /ads.txt). Until then no ad script is
+   loaded and ad slots render nothing. */
+const ADSENSE_CLIENT="ca-pub-0000000000000000";
+const ADSENSE_ON=ADSENSE_CLIENT!=="ca-pub-0000000000000000";
+function adSenseInit(){ if(!ADSENSE_ON||window._asInit) return; window._asInit=1;
+  const s=document.createElement("script"); s.async=true; s.crossOrigin="anonymous";
+  s.src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client="+ADSENSE_CLIENT;
+  document.head.appendChild(s); }
+/* One responsive display slot. Rendered only when AdSense is live. */
+function adSlot(){ if(!ADSENSE_ON) return "";
+  return '<div class="aslot-wrap"><ins class="adsbygoogle" style="display:block" data-ad-client="'+ADSENSE_CLIENT+'" data-ad-format="auto" data-full-width-responsive="true"></ins></div>'; }
+function adSenseRefresh(){ if(!ADSENSE_ON) return; try{
+  document.querySelectorAll('ins.adsbygoogle:not([data-ad-status])').forEach(function(){ (window.adsbygoogle=window.adsbygoogle||[]).push({}); });
+}catch(e){} }
 let APPS=[],CATALOG_STATE="loading",CATALOG_ERR="",REL_CACHE={};
-async function sbGet(path){ const r=await fetch(SB_URL+"/rest/v1/"+path,{headers:SB_HDR}); if(!r.ok) throw new Error("Catalog unavailable ("+r.status+")"); return r.json(); }
+/* netGuard:start — timeout + circuit breaker + per-origin concurrency limit.
+   If a dependency (Supabase REST, edge functions, …) gets slow or starts failing,
+   requests fail fast instead of hanging the page: 15s timeout per request, the
+   breaker trips after 3 consecutive failures/timeouts and fast-fails for 30s,
+   then lets one probe through (half-open). 4xx responses never trip the breaker.
+   Max 6 in-flight requests per origin so a struggling backend can't pile up. */
+const netGuard=(()=>{
+  const T={timeoutMs:15000,failThreshold:3,cooldownMs:30000,maxConcurrent:6};
+  const state={};
+  const sFor=o=>state[o]||(state[o]={fails:0,openedAt:0,inflight:0});
+  function noteFail(s){ s.fails++; if(s.fails>=T.failThreshold) s.openedAt=Date.now(); }
+  async function guarded(url,opts){
+    const origin=new URL(url,location.href).origin, s=sFor(origin), now=Date.now();
+    if(s.openedAt&&now-s.openedAt<T.cooldownMs)
+      throw new Error("Service temporarily unavailable — please retry shortly");
+    if(s.openedAt) { s.openedAt=0; s.fails=0; } // cooldown over: half-open probe
+    if(s.inflight>=T.maxConcurrent)
+      throw new Error("Too many pending requests — please retry shortly");
+    const ctl=new AbortController(), timer=setTimeout(()=>ctl.abort(),T.timeoutMs);
+    s.inflight++;
+    try{
+      const r=await fetch(url,Object.assign({},opts,{signal:ctl.signal}));
+      if(r.status>=500) noteFail(s); else s.fails=0;
+      return r;
+    }catch(e){ noteFail(s);
+      throw e&&e.name==="AbortError"?new Error("Request timed out — please retry"):e;
+    }finally{ clearTimeout(timer); s.inflight--; }
+  }
+  return {fetch:guarded,config:T};
+})();
+/* netGuard:end */
+async function sbGet(path){ const r=await netGuard.fetch(SB_URL+"/rest/v1/"+path,{headers:SB_HDR}); if(!r.ok) throw new Error("Catalog unavailable ("+r.status+")"); return r.json(); }
+/* ---------- Shared catalog cache: stale-while-revalidate ----------
+   The catalog (apps / releases / site_settings) is identical for every visitor
+   and changes only when the admin publishes (which bumps site_settings ->
+   catalog_version). Every page load used to re-download it; now we paint
+   instantly from localStorage and revalidate in the background:
+   - fresh (<5 min): zero catalog requests.
+   - stale (<24 h): paint instantly, then fetch the tiny catalog_version row;
+     the full payload is re-downloaded ONLY when the version actually changed.
+   - no cache / older than 24 h: network, same as before.
+   Personalized regions (auth user, favorites, downloads) are hydrated
+   separately and never go through this cache: keys are the exact REST query
+   strings, which carry no user identity, so there is nothing per-user to leak. */
+const CC_VER=1, CC_FRESH=5*60*1000, CC_STALE=24*3600*1000;
+function ccRead(key){ try{ const e=JSON.parse(localStorage.getItem("as_cc"+CC_VER+"_"+key)||"null");
+  if(e&&e.ts&&"data" in e) return e; }catch(_){} return null; }
+function ccWrite(key,data,version,fp){ try{ localStorage.setItem("as_cc"+CC_VER+"_"+key,
+  JSON.stringify({ts:Date.now(),version:version||null,fp:fp||"",data:data})); }catch(_){/* quota full: serve from network, skip persist */} }
+function ccHash(s){ let h=5381; for(let i=0;i<s.length;i++) h=((h<<5)+h+s.charCodeAt(i))>>>0; return h.toString(36); }
+async function ccVersion(){ try{ const r=await sbGet("site_settings?select=value&key=eq.catalog_version");
+  return (r&&r[0]&&r[0].value&&r[0].value.v)||null; }catch(_){ return null; } }
+/* Generic cached fetch. apply(data) must synchronously update state from the
+   payload. Background revalidation is detached and re-renders only when the
+   payload fingerprint actually changed. */
+async function ccGet(key,fetcher,apply){
+  const now=Date.now(), e=ccRead(key);
+  if(e&&now-e.ts<CC_FRESH){ apply(e.data); return; }
+  if(e&&now-e.ts<CC_STALE){ apply(e.data); ccRevalidate(key,fetcher,apply,e); return; }
+  const data=await fetcher();
+  ccWrite(key,data,null,ccHash(JSON.stringify(data)));
+  apply(data);
+}
+async function ccRevalidate(key,fetcher,apply,e){
+  try{
+    const v=await ccVersion();
+    if(v!==null&&v===e.version){ ccWrite(key,e.data,v,e.fp); return; } /* unchanged: just touch */
+    const data=await fetcher(), fp=ccHash(JSON.stringify(data));
+    ccWrite(key,data,v,fp);
+    if(fp!==e.fp){ apply(data); render(); } /* content changed: update UI */
+  }catch(_){/* offline or version check failed: keep serving stale, retry next load */}
+}
 function fmtSize(b){ b=+b||0; if(!b) return ""; const u=["B","KB","MB","GB"]; let i=0; while(b>=1024&&i<3){ b/=1024; i++; } return (b>=100?Math.round(b):b.toFixed(1))+" "+u[i]; }
 function fmtDate(s){ if(!s) return ""; try{ return new Date(s).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}); }catch(e){ return String(s).slice(0,10); } }
 function escHtml(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
@@ -410,15 +502,21 @@ function mapApp(a,rel){ return { id:a.slug, slug:a.slug, title:a.title||a.slug, 
  sha:rel?(rel.apk_sha256||""):"", notes:rel?(rel.release_notes||""):"", updated:fmtDate(a.updated_at||(rel&&rel.created_at)),
  dl:SB_URL+"/functions/v1/download-apk?slug="+encodeURIComponent(a.slug), featured:!!a.is_recommended, appid:a.id }; }
 function buildCATS(){ const s=[]; APPS.forEach(a=>{ if(a.cat&&s.indexOf(a.cat)<0) s.push(a.cat); }); CATS=["All"].concat(s.sort()); }
-async function loadCatalog(){ try{
+async function fetchCatalogMapped(){
   const q=new URLSearchParams({select:"id,slug,title,package_id,category,description,short_description,icon_url,screenshots,is_recommended,updated_at,current_release_id",visibility:"eq.published",order:"updated_at.desc",limit:"100"});
   const apps=await sbGet("apps?"+q);
   const rids=[...new Set(apps.map(a=>a.current_release_id).filter(Boolean))];
   let relMap={};
   if(rids.length){ const rq=new URLSearchParams({select:"id,version_code,version_name,byte_size,apk_sha256,release_notes,created_at",id:"in.("+rids.join(",")+")",status:"eq.published"}); (await sbGet("releases?"+rq)).forEach(r=>{ relMap[r.id]=r; }); }
-  APPS=apps.map(a=>mapApp(a,relMap[a.current_release_id]));
+  return apps.map(a=>mapApp(a,relMap[a.current_release_id]));
+}
+function applyCatalog(mapped){
+  APPS=mapped;
   const feat=APPS.find(a=>a.featured)||APPS[0]; if(feat) FEATURED_ID=feat.id;
   buildCATS(); CATALOG_STATE=APPS.length?"ready":"empty";
+}
+async function loadCatalog(){ try{
+  await ccGet("catalog",fetchCatalogMapped,applyCatalog);
  }catch(e){ CATALOG_STATE="error"; CATALOG_ERR=(e&&e.message)||"Failed to load catalog"; }
  maybeShowInstallBanner(); render(); }
 let CATS=["All"];
@@ -428,10 +526,13 @@ let FEATURED_ID="";
 /* Website CMS settings (admin panel → site_settings): hero carousel slots + announcement banner.
    Falls back to the single featured app when the settings are missing. */
 let HERO_SLOTS=null, ANNOUNCE=null;
+function applySettings(rows){
+  HERO_SLOTS=null; ANNOUNCE=null;
+  (rows||[]).forEach(r=>{ if(r.key==="hero_slots") HERO_SLOTS=(r.value&&r.value.slots)||null;
+    if(r.key==="announcement") ANNOUNCE=r.value||null; });
+}
 async function loadSiteSettings(){
-  try{ const rows=await sbGet("site_settings?select=key,value");
-    rows.forEach(r=>{ if(r.key==="hero_slots") HERO_SLOTS=(r.value&&r.value.slots)||null;
-      if(r.key==="announcement") ANNOUNCE=r.value||null; });
+  try{ await ccGet("settings",function(){ return sbGet("site_settings?select=key,value"); },applySettings);
   }catch(e){ HERO_SLOTS=null; ANNOUNCE=null; }
   render();
 }
@@ -538,7 +639,8 @@ async function openApp(id){ navPush("app:"+id);
  const a=APPS.find(x=>x.id===id);
  if(a&&a.appid&&!REL_CACHE[a.appid]){ try{
   const q=new URLSearchParams({select:"version_code,version_name,byte_size,release_notes,created_at",app_id:"eq."+a.appid,status:"eq.published",order:"version_code.desc",limit:"10"});
-  REL_CACHE[a.appid]=await sbGet("releases?"+q); if(route==="app:"+id) render();
+  await ccGet("relhist:"+a.appid,function(){ return sbGet("releases?"+q); },function(data){ REL_CACHE[a.appid]=data; });
+  if(route==="app:"+id) render();
  }catch(e){} } }
 function getDls(){ try{ return JSON.parse(localStorage.getItem("as_downloads")||"[]"); }catch(e){ return []; } }
 function trackDl(a){ if(!a||a.code==null) return; const d=getDls().filter(x=>x.slug!==a.slug);
@@ -742,18 +844,33 @@ async function authNewPass(){
  b.disabled=false; b.textContent="Save password";
 }
 /* ---------- Favorites (local + per-account cloud sync) ---------- */
+let wtoastT=null;
+function wtoast(m){ const t=document.getElementById("wtoast"); if(!t) return;
+  t.textContent=m; t.classList.add("show");
+  clearTimeout(wtoastT); wtoastT=setTimeout(()=>t.classList.remove("show"),3200); }
+const FAV_BUSY=new Set(); /* slugs with a cloud sync in flight */
 async function toggleFav(slug){
  if(!AUTH_USER){ openAuth("login","Please log in to save favorites."); return; }
+ if(FAV_BUSY.has(slug)) return; /* rapid-tap guard: one sync at a time per app */
  const s=getFavs(), has=s.has(slug);
  if(has) s.delete(slug); else s.add(slug);
- saveFavs(s); render();
- if(sbAuth){ try{
+ saveFavs(s); render(); /* optimistic: heart updates instantly */
+ if(!sbAuth) return;
+ FAV_BUSY.add(slug);
+ try{
   let fr;
   if(has) fr=await sbAuth.from("favorites").delete().eq("user_id",AUTH_USER.id).eq("app_slug",slug);
   else fr=await sbAuth.from("favorites").upsert({user_id:AUTH_USER.id,app_slug:slug},{onConflict:"user_id,app_slug"});
-  FAV_CLOUD=(fr&&fr.error)?"local":"ok";
- }catch(e){ FAV_CLOUD="local"; }
- if(route==="favs") render(); }
+  if(fr&&fr.error) throw fr.error;
+  FAV_CLOUD="ok";
+ }catch(e){
+  /* local save already succeeded (source of truth for the UI); only the cloud
+     sync failed — keep the heart as-is but say so visibly, don't mislead. */
+  FAV_CLOUD="local";
+  wtoast("Saved on this device — couldn't sync to your account. Check your connection.");
+ }
+ FAV_BUSY.delete(slug);
+ if(route==="favs") render();
 }
 async function syncFavsFromCloud(){
  if(!AUTH_USER||!sbAuth) return;
@@ -900,6 +1017,7 @@ function vHome(){
  CATS.slice(1,4).forEach(c=>{ const list=APPS.filter(a=>a.cat===c); if(list.length) h+=irow(c,list.slice(0,12),"goCat('"+c.replace(/'/g,"\\'")+"')"); });
  h+='<section class="irow"><div class="trow"><h2>Latest uploads</h2><button class="more" aria-label="See more" onclick="go(\'updates\')">'+CHEV_R+'</button></div><div class="grid">'+
   APPS.slice(0,12).map(a=>'<div class="gcard" onclick="openApp(\''+a.id+'\')">'+im(a,"width:52px;height:52px;border-radius:13px;margin-bottom:10px")+'<h3>'+a.title+'</h3><div class="c">'+a.cat+'</div><div class="m">'+(a.ver?"v"+a.ver:"")+(a.size?" · "+a.size:"")+'</div></div>').join("")+'</div></section>';
+ h+=adSlot();
  h+='<section class="irow"><div class="trow"><h2>All apps</h2><button class="more" aria-label="See more" onclick="go(\'apps\')">'+CHEV_R+'</button></div><div class="grid">'+
   APPS.map(a=>'<div class="gcard" onclick="openApp(\''+a.id+'\')">'+im(a,"width:52px;height:52px;border-radius:13px;margin-bottom:10px")+'<h3>'+a.title+'</h3><div class="c">'+a.cat+'</div><div class="m">'+a.ver+' · '+a.size+'</div></div>').join("")+'</div></section>';
  return h; }
@@ -948,7 +1066,7 @@ function vApp(id){ const a=APPS.find(x=>x.id===id); if(!a)return vHome();
  h+='<a class="ud-oldlink" href="#" onclick="document.getElementById(\'vhist\').scrollIntoView({behavior:\'smooth\'});return false">Older versions</a>';
  h+='<div class="ud-secure"><span class="sh">✓</span><span><b>Secure</b> — signature verified</span></div>';
  h+='<h2 class="ud-sec">Screenshots</h2>'+(a.shots.length?'<div class="ud-gal">'+a.shots.map((s,i)=>'<div class="shot" onclick="openShot('+i+')"><img src="'+escAttr(s)+'" loading="lazy" alt="'+escAttr(a.title+" screenshot "+(i+1))+'"></div>').join("")+'</div>':'<p class="pg-sub">No screenshots yet.</p>');
- h+='<h2 class="ud-sec">About this app</h2><p class="ud-about">'+a.desc+'</p>';
+ h+='<h2 class="ud-sec">About this app</h2><p class="ud-about">'+a.desc+'</p>'+adSlot();
  h+='<h2 class="ud-sec" id="vhist">Version history</h2>'+rel.map(r=>'<div class="ovrow"><span class="type">apk</span><div class="vv"><b>v'+r.v+(r.cur?'<span class="lt">LATEST</span>':"")+'</b><span>'+r.s+' · '+r.d+'</span></div>'+(r.cur?'<button class="g" onclick="dlApp(\''+a.id+'\')">Download</button>':"")+'</div>').join("");
  h+='<h2 class="ud-sec">Requirements <span style="font-size:12px;color:var(--muted);font-weight:400">(latest version)</span></h2><table class="ud-table">'+
   (minSdk?'<tr><td>Android</td><td>'+sdkName(minSdk)+'</td></tr>':"")+
@@ -971,7 +1089,7 @@ function render(){ clearInterval(heroTimer); heroTimer=null;
  if(route==="home")h=vHome(); else if(route==="apps")h=vApps(); else if(route==="cats")h=vCats();
  else if(route==="updates")h=vUpdates(); else if(route==="search")h=vSearch(); else if(route==="favs")h=vFavs();
  else if(route.indexOf("app:")===0)h=vApp(route.slice(4));
- $("main").innerHTML=h; fixCatScroll(); paintBanners(); heroRestart(); heroSwipe(); }
+ $("main").innerHTML=h; fixCatScroll(); paintBanners(); heroRestart(); heroSwipe(); adSenseInit(); adSenseRefresh(); }
 window.addEventListener("popstate",function(e){ const st=e.state||{}; const r=st.route||decodeURIComponent((location.hash||"").replace(/^#\/?/,""))||"home";
  route=r; syncNav(); render(); const sy=st.scroll||0; requestAnimationFrame(function(){ window.scrollTo(0,sy); }); });
 (function(){ const hr=decodeURIComponent((location.hash||"").replace(/^#\/?/,"")); if(hr) route=hr;

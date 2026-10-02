@@ -15,8 +15,8 @@ android {
         applicationId 'com.apkstore.client'
         minSdk 26
         targetSdk 35
-        versionCode 38
-        versionName '1.1.30'
+        versionCode 39
+        versionName '1.1.31'
         buildConfigField 'String', 'SUPABASE_URL', '"https://qfbfxencwsgryoczkdyj.supabase.co"'
         buildConfigField 'String', 'SITE_URL', '"' + (project.findProperty('siteUrl') ?: 'https://mazharmnzoor4227-beep.github.io/APK-STORE/') + '"'
         // Supabase publishable keys are intentionally public client credentials; RLS controls access.
@@ -24,6 +24,12 @@ android {
         // Google Web OAuth client ID (same one the website uses). Public identifier, not a secret.
         // Override with -PgoogleWebClientId=... if needed.
         buildConfigField 'String', 'GOOGLE_WEB_CLIENT_ID', '"' + (project.findProperty('googleWebClientId') ?: '288748828570-l16dt40bvheb9flapjv8rkrocao1sr4h.apps.googleusercontent.com') + '"'
+        // AdMob IDs. Defaults are GOOGLE'S OFFICIAL TEST IDs (test ads only).
+        // Inject real IDs at build time: -PadmobAppId=... -PadmobBannerId=... -PadmobNativeId=...
+        buildConfigField 'String', 'ADMOB_APP_ID', '"' + (project.findProperty('admobAppId') ?: 'ca-app-pub-3940256099942544~3347511713') + '"'
+        buildConfigField 'String', 'ADMOB_BANNER_ID', '"' + (project.findProperty('admobBannerId') ?: 'ca-app-pub-3940256099942544/6300978111') + '"'
+        buildConfigField 'String', 'ADMOB_NATIVE_ID', '"' + (project.findProperty('admobNativeId') ?: 'ca-app-pub-3940256099942544/2247696110') + '"'
+        manifestPlaceholders = [admobAppId: (project.findProperty('admobAppId') ?: 'ca-app-pub-3940256099942544~3347511713')]
     }
     buildFeatures { buildConfig true }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
@@ -55,5 +61,7 @@ dependencies {
     implementation 'androidx.credentials:credentials:1.3.0'
     implementation 'androidx.credentials:credentials-play-services-auth:1.3.0'
     implementation 'com.google.android.libraries.identity.googleid:googleid:1.1.1'
+    // AdMob (banner + native ads). Version verified present on dl.google.com.
+    implementation 'com.google.android.gms:play-services-ads:23.6.0'
     testImplementation 'junit:junit:4.13.2'
 }

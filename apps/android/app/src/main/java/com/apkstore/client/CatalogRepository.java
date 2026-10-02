@@ -39,10 +39,11 @@ final class CatalogRepository {
             connection.setConnectTimeout(12000); connection.setReadTimeout(12000);
             connection.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
             connection.setRequestProperty("Authorization", "Bearer " + BuildConfig.SUPABASE_KEY);
+            Net.gzip(connection);
             try {
                 if (connection.getResponseCode() != 200) throw new Exception("Catalog temporarily unavailable (" + connection.getResponseCode() + ").");
                 JSONArray page;
-                try (InputStream stream = connection.getInputStream()) {
+                try (InputStream stream = Net.decoded(connection)) {
                     page = new JSONArray(new String(Io.readAllBytes(stream), StandardCharsets.UTF_8));
                 }
                 for (int i = 0; i < page.length(); i++) {

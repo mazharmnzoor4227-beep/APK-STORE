@@ -30,6 +30,8 @@ Deno.serve(async (request) => {
     const upstream = await fetch(app.icon_source_url, {
       redirect: 'follow',
       headers: { 'User-Agent': 'APK-STORE/1.0 icon proxy' },
+      // Hard timeout: a slow/hung icon host must not pin the edge worker.
+      signal: AbortSignal.timeout(10_000),
     });
     if (!upstream.ok || !trustedIconSource(upstream.url)) return new Response('Icon unavailable', { status: 502 });
 

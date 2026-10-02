@@ -1,6 +1,7 @@
 package com.apkstore.client;
 
 import android.app.Application;
+import com.google.android.gms.ads.MobileAds;
 
 public final class ApkStoreApplication extends Application {
     @Override public void onCreate() {
@@ -8,6 +9,10 @@ public final class ApkStoreApplication extends Application {
         CrashReporter.install(this);
         CrashReporter.schedulePending(this);
         createUpdateChannel();
+        // Ads must never crash the app: guard the whole init.
+        try {
+            MobileAds.initialize(this);
+        } catch (Throwable ignored) { }
     }
     private void createUpdateChannel() {
         try {
