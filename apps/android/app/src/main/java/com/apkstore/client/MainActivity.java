@@ -121,13 +121,6 @@ public class MainActivity extends Activity {
     private final HashMap<String, UpdateButton> updateButtons = new HashMap<>();
     private final HashMap<String, ProgressRing> updateRings = new HashMap<>();
     private TextView updateAllLabel;
-    // AdMob state. Banners live on the detail screen; one native ad is shared
-    // across a list's ad slots (reused per position window).
-    private com.google.android.gms.ads.AdView detailBanner;
-    private int adRowCounter = 0;
-    private com.google.android.gms.ads.nativead.NativeAd sharedNativeAd;
-    private boolean nativeAdLoading;
-    private final java.util.ArrayList<LinearLayout> pendingAdSlots = new java.util.ArrayList<>();
     private final HashMap<String, String> downloadSizes = new HashMap<>();
     private final HashMap<String, String> downloadErrors = new HashMap<>();
     /** Slugs whose last install failed because the on-device copy was signed by a
@@ -176,8 +169,8 @@ public class MainActivity extends Activity {
             float stroke = dp(4), inset = stroke / 2 + dp(2);
             RectF oval = new RectF(inset, inset, getWidth() - inset, getHeight() - inset);
             paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(stroke); paint.setStrokeCap(Paint.Cap.ROUND);
-            paint.setColor(raised()); canvas.drawOval(oval, paint);
-            paint.setColor(green());
+            paint.setColor(border()); canvas.drawOval(oval, paint);
+            paint.setColor(accent());
             if (targetPercent == 0 && getVisibility() == View.VISIBLE) {
                 // One smooth revolution every 1.2 s, synced to the display refresh.
                 float start = (android.os.SystemClock.uptimeMillis() % 1200) / 1200f * 360f - 90;
@@ -199,9 +192,9 @@ public class MainActivity extends Activity {
         @Override protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
             float w = getWidth(), h = getHeight(), r = h / 2f;
-            paint.setColor(raised());
+            paint.setColor(border());
             canvas.drawRoundRect(0, 0, w, h, r, r, paint);
-            paint.setColor(green());
+            paint.setColor(accent());
             // A 32%-wide segment sweeps across once every 1.4 s with eased motion.
             float t = ((android.os.SystemClock.uptimeMillis() - born) % 1400) / 1400f;
             float eased = t < 0.5f ? 2 * t * t : 1 - (float) Math.pow(-2 * t + 2, 2) / 2;
@@ -233,9 +226,9 @@ public class MainActivity extends Activity {
         @Override protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
             float w = getWidth(), h = getHeight(), r = h / 2f;
-            paint.setColor(raised());
+            paint.setColor(border());
             canvas.drawRoundRect(0, 0, w, h, r, r, paint);
-            paint.setColor(green());
+            paint.setColor(accent());
             canvas.drawRoundRect(0, 0, w * shownPercent / 100f, h, r, r, paint);
         }
         @Override protected void onDetachedFromWindow() {
@@ -244,13 +237,20 @@ public class MainActivity extends Activity {
         }
     }
 
-    private int bg() { return light ? Color.rgb(248, 248, 251) : Color.rgb(18, 18, 18); }
-    private int surface() { return light ? Color.WHITE : Color.rgb(27, 27, 31); }
-    private int raised() { return light ? Color.rgb(235, 235, 241) : Color.rgb(35, 35, 40); }
-    private int green() { return light ? Color.rgb(69, 82, 157) : Color.rgb(183, 196, 255); }
-    private int ink() { return light ? Color.rgb(28, 28, 34) : Color.rgb(230, 225, 229); }
-    private int muted() { return light ? Color.rgb(97, 97, 108) : Color.rgb(169, 165, 173); }
-    private int danger() { return light ? Color.rgb(176, 42, 42) : Color.rgb(255, 138, 138); }
+    // ---- Clawora Admin Panel design tokens (single source of truth) ----
+    private int bg() { return light ? Color.rgb(255, 255, 255) : Color.rgb(0, 0, 0); }
+    private int surface() { return light ? Color.rgb(255, 255, 255) : Color.rgb(10, 10, 10); }
+    private int inner() { return light ? Color.rgb(250, 250, 250) : Color.rgb(15, 15, 15); }
+    private int raised() { return light ? Color.rgb(245, 245, 245) : Color.rgb(20, 20, 20); }
+    private int border() { return light ? Color.rgb(229, 229, 229) : Color.rgb(38, 38, 38); }
+    private int green() { return light ? Color.rgb(23, 163, 74) : Color.rgb(74, 222, 128); }
+    private int accent() { return light ? Color.rgb(37, 99, 235) : Color.rgb(96, 165, 250); }
+    private int amber() { return light ? Color.rgb(217, 119, 6) : Color.rgb(251, 191, 36); }
+    private int active() { return light ? Color.rgb(28, 28, 28) : Color.rgb(239, 239, 239); }
+    private int onActive() { return light ? Color.rgb(250, 250, 250) : Color.rgb(10, 10, 10); }
+    private int ink() { return light ? Color.rgb(10, 10, 10) : Color.rgb(250, 250, 250); }
+    private int muted() { return light ? Color.rgb(115, 115, 115) : Color.rgb(163, 163, 163); }
+    private int danger() { return light ? Color.rgb(220, 38, 38) : Color.rgb(248, 113, 113); }
     private int dp(int n) { return Math.round(n * getResources().getDisplayMetrics().density); }
 
     @Override public void onCreate(Bundle state) {
@@ -335,13 +335,8 @@ public class MainActivity extends Activity {
             WorkManager.getInstance(this).enqueueUniqueWork("update-check-once", ExistingWorkPolicy.KEEP, once);
         } catch (Throwable ignored) { }
     }
-    @Override protected void onPause() {
-        try { if (detailBanner != null) detailBanner.pause(); } catch (Throwable ignored) { }
-        super.onPause();
-    }
     @Override protected void onResume() {
         super.onResume();
-        try { if (detailBanner != null) detailBanner.resume(); } catch (Throwable ignored) { }
         handler.post(() -> {
             if (lastCatalogRefresh > 0 && android.os.SystemClock.elapsedRealtime() - lastCatalogRefresh > 15 * 60 * 1000L) load();
             if (detailApp != null) consumeInstallResult(detailApp.optString("slug"));
@@ -428,11 +423,45 @@ public class MainActivity extends Activity {
             default: return api < 19 ? "4.4" : "16";
         }
     }
+    private Typeface interRegular, interSemiBold, interBold;
+    private Typeface interTypeface(int style) {
+        try {
+            if (interRegular == null) {
+                interRegular = Typeface.createFromAsset(getAssets(), "inter_regular.ttf");
+                interSemiBold = Typeface.createFromAsset(getAssets(), "inter_semibold.ttf");
+                interBold = Typeface.createFromAsset(getAssets(), "inter_bold.ttf");
+            }
+        } catch (Exception ignored) { }
+        if (style == 2) return interBold != null ? interBold : Typeface.DEFAULT_BOLD;
+        if (style == 1) return interSemiBold != null ? interSemiBold : Typeface.DEFAULT_BOLD;
+        return interRegular != null ? interRegular : Typeface.DEFAULT;
+    }
     private TextView text(String value, int size, int color, boolean bold) {
         TextView t = new TextView(this);
         t.setText(value); t.setTextSize(size); t.setTextColor(color);
-        if (bold) t.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        t.setTypeface(interTypeface(bold ? 2 : 0));
+        t.setIncludeFontPadding(false);
         return t;
+    }
+    /** SemiBold Inter — the panel weight for row titles and labels. */
+    private TextView textSemi(String value, int size, int color) {
+        TextView t = new TextView(this);
+        t.setText(value); t.setTextSize(size); t.setTextColor(color);
+        t.setTypeface(interTypeface(1));
+        t.setIncludeFontPadding(false);
+        return t;
+    }
+    /** "2026-09-30T..." -> "30 Sep 2026" (falls back to the raw date part). */
+    private String fmtDate(String iso) {
+        if (iso == null || iso.length() < 10) return "";
+        String[] months = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+        try {
+            int y = Integer.parseInt(iso.substring(0, 4));
+            int m = Integer.parseInt(iso.substring(5, 7));
+            int d = Integer.parseInt(iso.substring(8, 10));
+            if (m < 1 || m > 12) return iso.substring(0, 10);
+            return d + " " + months[m - 1] + " " + y;
+        } catch (Exception e) { return iso.substring(0, 10); }
     }
     private GradientDrawable shape(int color, int radius) {
         GradientDrawable d = new GradientDrawable();
@@ -445,10 +474,70 @@ public class MainActivity extends Activity {
         d.setStroke(Math.max(2, dp(1)), strokeColor);
         return d;
     }
+    /** Panel card: filled surface with a 1px border stroke. */
+    private GradientDrawable cardShape(int fill, int radius) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(fill); d.setCornerRadius(dp(radius));
+        d.setStroke(Math.max(1, dp(1)), border());
+        return d;
+    }
+    /** Outlined pill background (transparent fill, colored stroke, full radius). */
+    private GradientDrawable pillOutline(int strokeColor) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(Color.TRANSPARENT); d.setCornerRadius(dp(999));
+        d.setStroke(Math.max(1, dp(1)), strokeColor);
+        return d;
+    }
+    /** Lucide-style stroke icon (24x24 vector drawables in res/drawable). */
+    private ImageView lucide(String name, int color) {
+        int res;
+        switch (name) {
+            case "grid": res = R.drawable.ic_lucide_grid; break;
+            case "search": res = R.drawable.ic_lucide_search; break;
+            case "download": res = R.drawable.ic_lucide_download; break;
+            case "heart": res = R.drawable.ic_lucide_heart; break;
+            case "settings": res = R.drawable.ic_lucide_settings; break;
+            case "sun": res = R.drawable.ic_lucide_sun; break;
+            case "moon": res = R.drawable.ic_lucide_moon; break;
+            case "chev": res = R.drawable.ic_lucide_chev; break;
+            case "back": res = R.drawable.ic_lucide_back; break;
+            case "shield": res = R.drawable.ic_lucide_shield; break;
+            case "refresh": res = R.drawable.ic_lucide_refresh; break;
+            case "bell": res = R.drawable.ic_lucide_bell; break;
+            case "user": res = R.drawable.ic_lucide_user; break;
+            case "info": res = R.drawable.ic_lucide_info; break;
+            case "folder": res = R.drawable.ic_lucide_folder; break;
+            case "wifi": res = R.drawable.ic_lucide_wifi; break;
+            case "globe": res = R.drawable.ic_lucide_globe; break;
+            case "clock": res = R.drawable.ic_lucide_clock; break;
+            case "trash": res = R.drawable.ic_lucide_trash; break;
+            case "share": res = R.drawable.ic_lucide_share; break;
+            case "file": res = R.drawable.ic_lucide_file; break;
+            case "check": res = R.drawable.ic_lucide_check; break;
+            case "lock": res = R.drawable.ic_lucide_lock; break;
+            case "logout": res = R.drawable.ic_lucide_logout; break;
+            case "mail": res = R.drawable.ic_lucide_mail; break;
+            case "more": res = R.drawable.ic_lucide_more; break;
+            default: res = R.drawable.ic_lucide_info; break;
+        }
+        ImageView v = new ImageView(this);
+        v.setImageResource(res);
+        v.setColorFilter(color);
+        return v;
+    }
+    /** Small tappable icon button (header / detail top bar) with a Lucide glyph. */
+    private FrameLayout iconButton(String name, String description) {
+        FrameLayout wrap = new FrameLayout(this);
+        ImageView v = lucide(name, ink());
+        v.setContentDescription(description);
+        wrap.addView(v, new FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER));
+        wrap.setContentDescription(description);
+        return wrap;
+    }
     /** Subtle rounded ripple for tappable rows on a transparent background. */
     private android.graphics.drawable.RippleDrawable rippleRow(int radius) {
         android.content.res.ColorStateList c = android.content.res.ColorStateList.valueOf(
-                light ? Color.argb(46, 69, 82, 157) : Color.argb(70, 183, 196, 255));
+                light ? Color.argb(26, 10, 10, 10) : Color.argb(36, 250, 250, 250));
         GradientDrawable mask = new GradientDrawable();
         mask.setColor(Color.WHITE); mask.setCornerRadius(dp(radius));
         return new android.graphics.drawable.RippleDrawable(c, null, mask);
@@ -555,43 +644,48 @@ public class MainActivity extends Activity {
         setContentView(root);
         root.requestApplyInsets();
         LinearLayout header = new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(16), dp(5), dp(10), dp(5));
-        String tabTitle = selected == APPS ? "Apps" : selected == SEARCH ? "Search" : selected == UPDATES ? "Updates" : selected == SETTINGS ? "Settings" : "Favorites";
-        TextView title = text(tabTitle, 20, ink(), false);
-        header.addView(title, weight());
-        if (selected != SETTINGS) {
-            TextView find = action("search", "Search apps");
-            find.setOnClickListener(v -> tap(v, () -> showTab(SEARCH)));
-            header.addView(find, new LinearLayout.LayoutParams(dp(48), dp(48)));
-            TextView refresh = symbol("refresh", 26, ink());
-            refresh.setContentDescription("Refresh app catalog");
-            refresh.setOnClickListener(v -> { refresh.animate().rotationBy(360).setDuration(500).start(); load(); });
-            header.addView(refresh, new LinearLayout.LayoutParams(dp(44), dp(48)));
-        ImageView download = new ImageView(this);
-        download.setImageResource(com.apkstore.client.R.drawable.ic_download);
-        download.setColorFilter(ink());
-        download.setPadding(dp(12), dp(12), dp(12), dp(12));
-        download.setContentDescription("Downloads");
-        download.setOnClickListener(v -> tap(v, this::showDownloads));
-            header.addView(download, new LinearLayout.LayoutParams(dp(48), dp(48)));
-            FrameLayout profileBtn = profileHeaderButton();
-            // Open instantly: the tap() scale animation delayed the menu and made it feel laggy.
-            profileBtn.setOnClickListener(v -> showProfileMenu());
-            header.addView(profileBtn, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        }
-        root.addView(header, new LinearLayout.LayoutParams(-1, dp(58)));
+        header.setBackgroundColor(surface());
+        header.setPadding(dp(16), dp(6), dp(8), dp(6));
+        FrameLayout mark = new FrameLayout(this);
+        mark.setBackground(shape(active(), 9));
+        ImageView markIcon = lucide("download", onActive());
+        mark.addView(markIcon, new FrameLayout.LayoutParams(dp(17), dp(17), Gravity.CENTER));
+        header.addView(mark, new LinearLayout.LayoutParams(dp(31), dp(31)));
+        TextView brand = textSemi("APK Store", 16, ink());
+        brand.setPadding(dp(9), 0, 0, 0);
+        header.addView(brand);
+        header.addView(new View(this), weight());
+        FrameLayout bellBtn = iconButton("bell", "Updates");
+        bellBtn.setOnClickListener(v -> showTab(UPDATES));
+        header.addView(bellBtn, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        FrameLayout refreshBtn = iconButton("refresh", "Refresh app catalog");
+        refreshBtn.setOnClickListener(v -> { refreshBtn.animate().rotationBy(360).setDuration(500).start(); load(); });
+        header.addView(refreshBtn, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        FrameLayout dlBtn = iconButton("download", "Downloads");
+        dlBtn.setOnClickListener(v -> showDownloads());
+        header.addView(dlBtn, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        FrameLayout profileBtn = profileHeaderButton();
+        // Open instantly: the tap() scale animation delayed the menu and made it feel laggy.
+        profileBtn.setOnClickListener(v -> showProfileMenu());
+        header.addView(profileBtn, new LinearLayout.LayoutParams(dp(44), dp(40)));
+        root.addView(header, new LinearLayout.LayoutParams(-1, dp(52)));
+        View headerLine = new View(this); headerLine.setBackgroundColor(border());
+        root.addView(headerLine, new LinearLayout.LayoutParams(-1, Math.max(1, dp(1))));
 
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true);
         scroll.setVerticalScrollBarEnabled(false);
-        body = vertical(); body.setPadding(dp(16), dp(7), dp(16), dp(24));
+        body = vertical(); body.setPadding(dp(16), dp(14), dp(16), dp(24));
         scroll.addView(body);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        LinearLayout nav = new LinearLayout(this); nav.setGravity(Gravity.CENTER); nav.setBackgroundColor(surface());
-        addNav(nav, "apps_custom", "Apps", APPS);
+        View navLine = new View(this); navLine.setBackgroundColor(border());
+        root.addView(navLine, new LinearLayout.LayoutParams(-1, Math.max(1, dp(1))));
+        LinearLayout nav = new LinearLayout(this); nav.setGravity(Gravity.CENTER); nav.setBackgroundColor(bg());
+        addNav(nav, "grid", "Apps", APPS);
         addNav(nav, "search", "Search", SEARCH);
-        addNav(nav, "autorenew", "Updates", UPDATES);
-        addNav(nav, "tune", "Settings", SETTINGS);
-        root.addView(nav, new LinearLayout.LayoutParams(-1, dp(76)));
+        addNav(nav, "download", "Updates", UPDATES);
+        addNav(nav, "heart", "Favorites", FAVORITES);
+        addNav(nav, "settings", "Settings", SETTINGS);
+        root.addView(nav, new LinearLayout.LayoutParams(-1, dp(64)));
 
         if (selected == SEARCH) {
             makeSearch();
@@ -607,27 +701,48 @@ public class MainActivity extends Activity {
         }
         firstScreen = false;
     }
-    private void addNav(LinearLayout nav, String iconKey, String title, int target) {
+    private void addNav(LinearLayout nav, String iconName, String title, int target) {
+        boolean selectedState = target == tab;
         LinearLayout item = vertical(); item.setGravity(Gravity.CENTER);
-        TextView icon = symbol(iconKey, 26, target == tab ? green() : muted());
-        if (target == tab) {
-            icon.setBackground(shape(raised(), 19));
-            icon.setLayoutParams(new LinearLayout.LayoutParams(dp(72), dp(36)));
-        }
-        item.addView(icon);
-        space(item, 3);
+        View indicator = new View(this);
+        indicator.setBackground(shape(selectedState ? ink() : Color.TRANSPARENT, 2));
+        item.addView(indicator, new LinearLayout.LayoutParams(dp(22), dp(3)));
+        space(item, 5);
+        FrameLayout iconWrap = new FrameLayout(this);
+        ImageView icon = lucide(iconName, selectedState ? ink() : muted());
+        iconWrap.addView(icon, new FrameLayout.LayoutParams(dp(21), dp(21), Gravity.CENTER));
         int badge = target == UPDATES ? pendingUpdates().length() : 0;
-        TextView caption = text(badge > 0 ? title + "  " + badge : title, 13, target == tab ? green() : muted(), target == tab);
+        if (badge > 0) {
+            TextView dot = text(String.valueOf(Math.min(badge, 99)), 9, Color.WHITE, true);
+            dot.setGravity(Gravity.CENTER);
+            GradientDrawable dotBg = new GradientDrawable();
+            dotBg.setShape(GradientDrawable.OVAL); dotBg.setColor(green());
+            dot.setBackground(dotBg);
+            dot.setMinWidth(dp(15)); dot.setMinHeight(dp(15));
+            FrameLayout.LayoutParams dotLp = new FrameLayout.LayoutParams(-2, dp(15), Gravity.TOP | Gravity.END);
+            dotLp.setMargins(0, 0, dp(4), 0);
+            iconWrap.addView(dot, dotLp);
+        }
+        item.addView(iconWrap, new LinearLayout.LayoutParams(dp(44), dp(24)));
+        space(item, 3);
+        TextView caption = text(title, 11, selectedState ? ink() : muted(), selectedState);
         caption.setGravity(Gravity.CENTER); item.addView(caption);
-        item.setOnClickListener(v -> { if (target != tab) { item.animate().scaleX(.93f).scaleY(.93f).setDuration(90).withEndAction(() -> showTab(target)).start(); } });
+        item.setOnClickListener(v -> { if (target != tab) showTab(target); });
         nav.addView(item, new LinearLayout.LayoutParams(0, -1, 1));
     }
     private void makeSearch() {
+        body.addView(text("Search", 21, ink(), true));
+        body.addView(text("Find apps in the catalog", 13, muted(), false));
+        space(body, 12);
         searchBox = new EditText(this);
         searchBox.setSingleLine(true); searchBox.setHint("Search apps");
         searchBox.setHintTextColor(muted()); searchBox.setTextColor(ink());
-        searchBox.setTextSize(16); searchBox.setPadding(dp(17), dp(11), dp(17), dp(11));
-        searchBox.setBackground(shape(surface(), 13)); searchBox.setText(query);
+        searchBox.setTextSize(15); searchBox.setPadding(dp(18), dp(12), dp(18), dp(12));
+        searchBox.setTypeface(interTypeface(0));
+        GradientDrawable searchBg = new GradientDrawable();
+        searchBg.setColor(inner()); searchBg.setCornerRadius(dp(999));
+        searchBg.setStroke(Math.max(1, dp(1)), border());
+        searchBox.setBackground(searchBg); searchBox.setText(query);
         body.addView(searchBox);
         space(body, 20);
         searchBox.addTextChangedListener(new TextWatcher() {
@@ -727,12 +842,12 @@ public class MainActivity extends Activity {
     /** Appends a green ✓ badge to a list row when the app is installed on this device. */
     private void addInstalledTick(LinearLayout row, JSONObject app) {
         if (installedVersion(app.optString("package_id")) < 0) return;
-        TextView tick = text("✓", 11, 0xFF2196F3, true);
+        TextView tick = text("✓", 11, accent(), true);
         tick.setGravity(Gravity.CENTER);
         GradientDrawable ring = new GradientDrawable();
         ring.setShape(GradientDrawable.OVAL);
         ring.setColor(Color.TRANSPARENT);
-        ring.setStroke(Math.max(1, Math.round(1.5f * getResources().getDisplayMetrics().density)), 0xFF2196F3);
+        ring.setStroke(Math.max(1, Math.round(1.5f * getResources().getDisplayMetrics().density)), accent());
         tick.setBackground(ring);
         int s = dp(18);
         tick.setMinWidth(s); tick.setMinHeight(s);
@@ -746,12 +861,12 @@ public class MainActivity extends Activity {
     /** Red cancelled badge (same 18dp ring language as the installed tick): shown in Downloads
      * history for attempts the user cancelled or that failed, i.e. "not installed". */
     private void addCancelledMark(LinearLayout row) {
-        TextView mark = symbol("close", 11, 0xFFF44336);
+        TextView mark = symbol("close", 11, danger());
         mark.setGravity(Gravity.CENTER);
         GradientDrawable ring = new GradientDrawable();
         ring.setShape(GradientDrawable.OVAL);
         ring.setColor(Color.TRANSPARENT);
-        ring.setStroke(Math.max(1, Math.round(1.5f * getResources().getDisplayMetrics().density)), 0xFFF44336);
+        ring.setStroke(Math.max(1, Math.round(1.5f * getResources().getDisplayMetrics().density)), danger());
         mark.setBackground(ring);
         int s = dp(18);
         mark.setMinWidth(s); mark.setMinHeight(s);
@@ -768,7 +883,7 @@ public class MainActivity extends Activity {
         // download runs it becomes a circle so the icon never pokes out of the ring.
         android.widget.FrameLayout iconFrame = new android.widget.FrameLayout(this);
         iconFrame.setClipToOutline(true);
-        iconFrame.setBackground(shape(raised(), 13));
+        iconFrame.setBackground(shape(inner(), 13));
         iconFrame.setTag(Boolean.FALSE);
         iconFrame.addView(icon(app, iconDp),
                 new android.widget.FrameLayout.LayoutParams(-1, -1));
@@ -787,7 +902,7 @@ public class MainActivity extends Activity {
         android.widget.FrameLayout iconFrame = (android.widget.FrameLayout) tag;
         if (Boolean.valueOf(circular).equals(iconFrame.getTag())) return;
         iconFrame.setTag(circular);
-        iconFrame.setBackground(shape(raised(), circular ? iconDp / 2 : 13));
+        iconFrame.setBackground(shape(inner(), circular ? iconDp / 2 : 13));
     }
     /** In-place progress update for the Downloads manager page — no full re-render, no flicker. */
     private void updateDownloadsRow(String slug) {
@@ -834,17 +949,23 @@ public class MainActivity extends Activity {
     private void render() {
         if (body == null) return;
         if (tab == SEARCH) {
-            while (body.getChildCount() > 2) body.removeViewAt(2);
+            while (body.getChildCount() > 5) body.removeViewAt(5);
             if (query.trim().isEmpty()) renderRecentSearches();
             renderList(filtered(query), false);
         } else if (tab == FAVORITES) {
             body.removeAllViews();
+            body.addView(text("Favorites", 21, ink(), true));
+            body.addView(text("Your saved apps", 13, muted(), false));
+            space(body, 6);
             renderList(favoriteApps(), false);
         } else if (tab == UPDATES) {
             while (body.getChildCount() > 0) body.removeViewAt(0);
             updateButtons.clear();
             updateRings.clear();
             updateAllLabel = null;
+            body.addView(text("Updates", 21, ink(), true));
+            body.addView(text("Installed apps checked against the catalog", 13, muted(), false));
+            space(body, 12);
             JSONArray pending = pendingUpdates();
             // Reference-style header: "N updates available" left, "Update all"/"Cancel all" right.
             LinearLayout updateHeader = new LinearLayout(this);
@@ -853,10 +974,10 @@ public class MainActivity extends Activity {
                     : pending.length() + " updates available", 17, ink(), true);
             updateHeader.addView(updateCount, weight());
             if (pending.length() > 0) {
-                updateAllLabel = text("Update all", 15, green(), true);
-                updateAllLabel.setMinHeight(dp(48));
-                updateAllLabel.setGravity(Gravity.CENTER_VERTICAL);
-                updateAllLabel.setPadding(dp(8), 0, dp(4), 0);
+                updateAllLabel = textSemi("Update all", 12, green());
+                updateAllLabel.setGravity(Gravity.CENTER);
+                updateAllLabel.setPadding(dp(13), dp(7), dp(13), dp(7));
+                updateAllLabel.setBackground(pillOutline(green()));
                 updateAllLabel.setOnClickListener(v -> {
                     if (updateAllLabel != null && "Cancel all".contentEquals(updateAllLabel.getText())) {
                         updateQueue.clear();
@@ -893,7 +1014,22 @@ public class MainActivity extends Activity {
             body.removeAllViews();
             if (catalog.length() == 0) { empty("The store is getting ready", "Approved apps will appear here."); return; }
             previousHomeSlugs.clear();
-            homeSection("Recommended", "Recommended", listingApps("Recommended"), 8);
+            body.addView(text("Apps", 21, ink(), true));
+            body.addView(text("Curated open-source apps — every APK signature verified", 13, muted(), false));
+            space(body, 6);
+            JSONArray recommended = listingApps("Recommended");
+            if (recommended.length() >= 3) {
+                sectionTitle("Recommended", () -> showListing("Recommended", false));
+                int recLimit = Math.min(5, recommended.length());
+                for (int i = 0; i < recLimit; i++) {
+                    JSONObject recApp = recommended.optJSONObject(i);
+                    if (recApp != null && !blacklisted(recApp)) {
+                        body.addView(appRow(recApp));
+                        previousHomeSlugs.add(recApp.optString("slug"));
+                    }
+                }
+                space(body, 22);
+            }
             homeSection("Recently added", "Recently added", catalog, 12);
             homeSection("Recently updated", "Recently updated", sortedUpdates(), 12);
             homeSection("Most starred on GitHub", "Most starred", sortedCatalog("stars"), 12);
@@ -928,18 +1064,17 @@ public class MainActivity extends Activity {
         private final JSONObject app;
         private final String slug;
         private final TextView label;
-        private final int darkOnFill = Color.rgb(0x1F, 0x25, 0x2E);
 
         UpdateButton(JSONObject app) {
             super(MainActivity.this);
             this.app = app;
             this.slug = app.optString("slug");
-            label = text("", 14, darkOnFill, true);
+            label = textSemi("", 13, green());
             label.setGravity(Gravity.CENTER);
-            label.setPadding(dp(20), 0, dp(20), 0);
+            label.setPadding(dp(16), 0, dp(16), 0);
             addView(label, new FrameLayout.LayoutParams(-2, -1, Gravity.CENTER));
             setLayoutParams(new LinearLayout.LayoutParams(-2, dp(44)));
-            setMinimumWidth(dp(108));
+            setMinimumWidth(dp(96));
             setOnClickListener(v -> onTap());
             sync();
         }
@@ -954,16 +1089,16 @@ public class MainActivity extends Activity {
             boolean ready = completedDownloads.containsKey(slug);
             GradientDrawable background = new GradientDrawable();
             background.setCornerRadius(dp(22));
+            background.setColor(Color.TRANSPARENT);
             if (running) {
-                background.setColor(Color.TRANSPARENT);
-                background.setStroke(Math.max(1, Math.round(1.5f * getResources().getDisplayMetrics().density)), muted());
+                background.setStroke(Math.max(1, dp(1)), border());
                 label.setText("Cancel");
                 label.setTextColor(ink());
             } else {
                 boolean installing = INSTALLING_MARKER.equals(downloadErrors.get(slug));
-                background.setColor(installing ? raised() : green());
+                background.setStroke(Math.max(1, dp(1)), installing ? border() : green());
                 label.setText(installing ? "Installing…" : ready ? "Install" : "Update");
-                label.setTextColor(installing ? muted() : darkOnFill);
+                label.setTextColor(installing ? muted() : green());
             }
             setBackground(background);
         }
@@ -977,7 +1112,7 @@ public class MainActivity extends Activity {
         if (ring != null) updateRings.put(slug, ring);
         row.addView(iconWrap, new LinearLayout.LayoutParams(dp(64), dp(64)));
         LinearLayout info = vertical(); info.setPadding(dp(12), 0, dp(8), 0);
-        TextView title = text(app.optString("title"), 15, ink(), true); title.setSingleLine(true);
+        TextView title = textSemi(app.optString("title"), 14, ink()); title.setSingleLine(true);
         info.addView(title);
         JSONObject release = app.optJSONObject("release");
         String size = release == null ? "" : String.format(java.util.Locale.ROOT, "%.1f MB", release.optLong("byte_size") / 1048576.0);
@@ -988,7 +1123,10 @@ public class MainActivity extends Activity {
         UpdateButton button = new UpdateButton(app);
         updateButtons.put(slug, button);
         row.addView(button); row.setOnClickListener(v -> showDetail(app));
-        body.addView(row); space(body, 12);
+        body.addView(row);
+        View updateLine = new View(this); updateLine.setBackgroundColor(border());
+        body.addView(updateLine, new LinearLayout.LayoutParams(-1, Math.max(1, dp(1))));
+        space(body, 10);
     }
     private JSONArray filtered(String value) {
         JSONArray found = new JSONArray();
@@ -1063,7 +1201,7 @@ public class MainActivity extends Activity {
         clear.setOnClickListener(v -> { getPreferences(0).edit().remove("recent_searches").apply(); render(); });
         row.addView(clear); body.addView(row);
         for (String term : saved.split("\n")) {
-            TextView item = text("◷  " + term, 15, muted(), false);
+            TextView item = text(term, 15, muted(), false);
             item.setMinHeight(dp(48)); item.setOnClickListener(v -> searchBox.setText(term));
             body.addView(item);
         }
@@ -1177,7 +1315,7 @@ public class MainActivity extends Activity {
     }
     private void sectionTitle(String title, Runnable more) {
         LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
-        row.addView(text(title, 17, ink(), true), weight());
+        row.addView(text(title, 15, ink(), true), weight());
         if (more != null) {
             TextView arrow = action("chevron_right", "View all " + title);
             arrow.setGravity(Gravity.CENTER); arrow.setContentDescription("View all " + title);
@@ -1236,7 +1374,7 @@ public class MainActivity extends Activity {
     private View icon(JSONObject app, int size) {
         String title = app.optString("title", "?");
         TextView fallback = text(title.isEmpty() ? "?" : title.substring(0, 1).toUpperCase(), size / 2, green(), true);
-        fallback.setGravity(Gravity.CENTER); fallback.setBackground(shape(raised(), 13));
+        fallback.setGravity(Gravity.CENTER); fallback.setBackground(shape(inner(), 13));
         String url = app.optString("icon_url", "");
         // icon_url is owner-controlled catalog data and may live on Supabase Storage,
         // the app-icon Edge Function, R2, F-Droid or GitHub. Require TLS, then rely on
@@ -1246,7 +1384,7 @@ public class MainActivity extends Activity {
         frame.addView(fallback, new android.widget.FrameLayout.LayoutParams(-1, -1));
         ImageView image = new ImageView(this);
         image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        image.setBackground(shape(raised(), 13));
+        image.setBackground(shape(inner(), 13));
         image.setClipToOutline(true);
         frame.addView(image, new android.widget.FrameLayout.LayoutParams(-1, -1));
         Bitmap cached = iconCache.get(url);
@@ -1341,9 +1479,61 @@ public class MainActivity extends Activity {
         }
         scroller.addView(row); body.addView(scroller);
     }
+    /** Panel-style app row: real icon, name, category • version • size, favorite heart,
+     * and an outlined state pill (Install = blue, Update = green, Installed = grey). */
+    private LinearLayout appRow(JSONObject app) {
+        LinearLayout wrap = vertical();
+        LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(11), 0, dp(11));
+        row.addView(icon(app, 48), new LinearLayout.LayoutParams(dp(48), dp(48)));
+        LinearLayout copy = vertical(); copy.setPadding(dp(12), 0, dp(8), 0);
+        TextView title = textSemi(app.optString("title"), 14, ink()); title.setSingleLine(true);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        copy.addView(title);
+        JSONObject release = app.optJSONObject("release");
+        String version = release == null ? "" : release.optString("version_name");
+        String size = release == null ? "" : String.format(java.util.Locale.ROOT, "%.1f MB", release.optLong("byte_size") / 1048576.0);
+        StringBuilder meta = new StringBuilder(app.optString("category"));
+        if (!version.isEmpty()) meta.append("  •  v").append(version);
+        if (!size.isEmpty()) meta.append("  •  ").append(size);
+        TextView sub = text(meta.toString(), 12, muted(), false); sub.setSingleLine(true);
+        sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        copy.addView(sub);
+        row.addView(copy, weight());
+        boolean fav = isFavorite(app);
+        ImageView heart = lucide("heart", fav ? danger() : muted());
+        FrameLayout heartWrap = new FrameLayout(this);
+        heartWrap.addView(heart, new FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER));
+        heartWrap.setContentDescription(fav ? "Remove from favorites" : "Add to favorites");
+        heartWrap.setOnClickListener(v -> {
+            toggleFavoriteSilent(app);
+            heart.setColorFilter(isFavorite(app) ? danger() : muted());
+            if (tab == FAVORITES) render();
+        });
+        row.addView(heartWrap, new LinearLayout.LayoutParams(dp(34), dp(34)));
+        boolean update = updateAvailable(app);
+        boolean installed = installedVersion(app.optString("package_id")) >= 0;
+        TextView pill = textSemi(update ? "Update" : installed ? "Installed" : "Install", 12,
+                update ? green() : installed ? muted() : accent());
+        pill.setGravity(Gravity.CENTER);
+        pill.setPadding(dp(13), dp(6), dp(13), dp(6));
+        pill.setBackground(pillOutline(update ? green() : installed ? border() : accent()));
+        pill.setOnClickListener(v -> showDetail(app));
+        row.addView(pill);
+        row.setOnClickListener(v -> showDetail(app));
+        wrap.addView(row);
+        View line = new View(this); line.setBackgroundColor(border());
+        wrap.addView(line, new LinearLayout.LayoutParams(-1, Math.max(1, dp(1))));
+        return wrap;
+    }
+    /** Same local favorites write as the detail-page toggle, without leaving the list. */
+    private void toggleFavoriteSilent(JSONObject app) {
+        java.util.Set<String> saved = settingsStore.entries("favorites");
+        String slug = app.optString("slug");
+        if (!saved.add(slug)) saved.remove(slug);
+        settingsStore.setEntries("favorites", saved);
+    }
     private void renderList(JSONArray apps, boolean compact) {
-        adRowCounter = 0;
-        dropSharedNativeAd(); // the list is rebuilt; never leak the previous native ad
         if (apps.length() == 0) {
             empty(tab == SEARCH ? "No matching apps" : tab == FAVORITES ? "No favorites yet" : "No apps published yet",
                     tab == SEARCH ? "Try another search term." : tab == FAVORITES ? "Tap the heart on an app to save it here." : "Approved releases will appear here.");
@@ -1364,10 +1554,11 @@ public class MainActivity extends Activity {
                 LinearLayout chip = new LinearLayout(this); chip.setGravity(Gravity.CENTER_VERTICAL);
                 chip.setPadding(dp(10), dp(8), dp(13), dp(8));
                 chip.setMinimumHeight(dp(48));
-                chip.addView(symbol(categoryIcon(name), 18, selected ? bg() : ink()), new LinearLayout.LayoutParams(dp(22), dp(22)));
-                TextView caption = text(name, 12, selected ? bg() : ink(), true);
+                chip.addView(symbol(categoryIcon(name), 18, selected ? onActive() : ink()), new LinearLayout.LayoutParams(dp(22), dp(22)));
+                TextView caption = text(name, 12, selected ? onActive() : ink(), true);
                 caption.setPadding(dp(5), 0, 0, 0); chip.addView(caption);
-                chip.setBackground(shape(selected ? green() : raised(), 16));
+                if (selected) chip.setBackground(shape(active(), 999));
+                else { GradientDrawable chipBg = new GradientDrawable(); chipBg.setColor(Color.TRANSPARENT); chipBg.setCornerRadius(dp(999)); chipBg.setStroke(Math.max(1, dp(1)), border()); chip.setBackground(chipBg); }
                 int approximate = Math.min(250, 42 + name.length() * 8);
                 int screen = Math.round(getResources().getDisplayMetrics().widthPixels / getResources().getDisplayMetrics().density) - 32;
                 if (width > 0 && width + approximate > screen) {
@@ -1384,77 +1575,12 @@ public class MainActivity extends Activity {
         for (int i = 0; i < limit; i++) {
             JSONObject app = apps.optJSONObject(i);
             if (app == null || blacklisted(app) || (!activeCategory.isEmpty() && !activeCategory.equals(app.optString("category")))) continue;
-            LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
-            row.addView(icon(app, 70), new LinearLayout.LayoutParams(dp(70), dp(70)));
-            LinearLayout copy = vertical(); copy.setPadding(dp(11), 0, 0, 0);
-            TextView title = text(app.optString("title"), 14, ink(), true); title.setSingleLine(true);
-            copy.addView(title);
-            TextView subtitle = text(updateAvailable(app) ? "UPDATE AVAILABLE" : app.optString("category") + "  ·  APK", 11, updateAvailable(app) ? green() : muted(), false);
-            copy.addView(subtitle);
-            row.addView(copy, weight());
-            addInstalledTick(row, app);
-            row.addView(text(updateAvailable(app) ? "Update ›" : "›", updateAvailable(app) ? 13 : 22, green(), updateAvailable(app)));
-            row.setOnClickListener(v -> showDetail(app));
-            body.addView(row); space(body, 12);
-            // Distinct ad row roughly every 8th app item (counts only rendered rows).
-            adRowCounter++;
-            if (adRowCounter % 8 == 0) addNativeAdRow(body);
-        }
-    }
-    /**
-     * Inserts a distinct native-ad row into a vertical app list. The slot is a labeled
-     * "Ad" container that stays GONE until an ad binds — on load failure it simply never
-     * appears, so the list never shows empty gaps. One loaded ad is reused across the
-     * list's ad slots (single in-flight load at a time).
-     */
-    private void addNativeAdRow(LinearLayout parent) {
-        LinearLayout slot = vertical();
-        slot.setVisibility(View.GONE);
-        parent.addView(slot);
-        space(parent, 12);
-        if (sharedNativeAd != null) {
-            bindNativeAdSlot(slot);
-            return;
-        }
-        pendingAdSlots.add(slot);
-        if (nativeAdLoading || !Ads.enabled()) return;
-        nativeAdLoading = true;
-        Ads.loadNative(this, new Ads.NativeAdCallback() {
-            @Override public void onAd(com.google.android.gms.ads.nativead.NativeAd ad) {
-                nativeAdLoading = false;
-                runOnUiThread(() -> {
-                    java.util.ArrayList<LinearLayout> targets = new java.util.ArrayList<>();
-                    for (LinearLayout s : pendingAdSlots) if (s.getParent() != null) targets.add(s);
-                    pendingAdSlots.clear();
-                    if (targets.isEmpty()) { Ads.destroyNative(ad); return; }
-                    Ads.destroyNative(sharedNativeAd);
-                    sharedNativeAd = ad;
-                    for (LinearLayout s : targets) bindNativeAdSlot(s);
-                });
-            }
-            @Override public void onFail() {
-                nativeAdLoading = false;
-                // Slots stay GONE: no empty gaps, the list simply continues.
-            }
-        });
-    }
-    /** Binds the shared native ad into a slot and reveals it; failures keep it hidden. */
-    private void bindNativeAdSlot(LinearLayout slot) {
-        try {
-            if (sharedNativeAd == null) return;
-            com.google.android.gms.ads.nativead.NativeAdView card = Ads.nativeCard(
-                    this, sharedNativeAd, ink(), muted(), muted(), green(), bg(), surface(), dp(14), dp(14));
-            if (card == null) return;
-            slot.removeAllViews();
-            slot.addView(card, new LinearLayout.LayoutParams(-1, -2));
-            slot.setVisibility(View.VISIBLE);
-        } catch (Throwable t) {
-            slot.setVisibility(View.GONE);
+            body.addView(appRow(app));
         }
     }
     private void empty(String title, String detail) {
         LinearLayout card = vertical(); card.setPadding(dp(18), dp(20), dp(18), dp(20));
-        card.setBackground(shape(surface(), 15));
+        card.setBackground(cardShape(surface(), 16));
         card.addView(text(title, 18, ink(), true)); space(card, 7);
         card.addView(text(detail, 13, muted(), false)); body.addView(card);
     }
@@ -1540,14 +1666,16 @@ public class MainActivity extends Activity {
         }
         if (matched == 0) rows.addView(text("No matching apps. Try another filter or search term.", 15, muted(), false));
         if (matched > listCount) {
-            TextView more = text("Load more", 15, green(), true); more.setGravity(Gravity.CENTER); more.setMinHeight(dp(56));
+            TextView more = text("Load more", 15, accent(), true); more.setGravity(Gravity.CENTER); more.setMinHeight(dp(56));
             more.setOnClickListener(v -> { listCount += 30; renderListing(heading); }); rows.addView(more);
         }
     }
     private void listingChip(LinearLayout row, String label, boolean selected, Runnable click) {
-        TextView chip = text(label, 13, selected ? bg() : ink(), selected);
-        chip.setGravity(Gravity.CENTER); chip.setPadding(dp(15), dp(8), dp(15), dp(8)); chip.setMinHeight(dp(48));
-        chip.setBackground(shape(selected ? green() : raised(), 24)); chip.setOnClickListener(v -> click.run());
+        TextView chip = textSemi(label, 13, selected ? onActive() : ink());
+        chip.setGravity(Gravity.CENTER); chip.setPadding(dp(15), dp(8), dp(15), dp(8)); chip.setMinHeight(dp(40));
+        if (selected) chip.setBackground(shape(active(), 999));
+        else { GradientDrawable chipBg = new GradientDrawable(); chipBg.setColor(Color.TRANSPARENT); chipBg.setCornerRadius(dp(999)); chipBg.setStroke(Math.max(1, dp(1)), border()); chip.setBackground(chipBg); }
+        chip.setOnClickListener(v -> click.run());
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2); lp.setMargins(0, 0, dp(8), 0); row.addView(chip, lp);
     }
     private void showChoiceSheet(String title, String[] choices, String selected, java.util.function.Consumer<String> onChoose) {
@@ -1594,8 +1722,8 @@ public class MainActivity extends Activity {
         if (signedIn) {
             String em = authSession.email == null ? "" : authSession.email.trim();
             String initial = em.isEmpty() ? "A" : em.substring(0, 1).toUpperCase(java.util.Locale.ROOT);
-            badge = text(initial, 15, light ? Color.WHITE : Color.rgb(20, 22, 18), true);
-            badge.setBackground(shape(green(), d / 2));
+            badge = text(initial, 15, onActive(), true);
+            badge.setBackground(shape(active(), d / 2));
         } else {
             badge = symbol("person", 20, ink());
             badge.setBackground(shape(raised(), d / 2));
@@ -1625,8 +1753,8 @@ public class MainActivity extends Activity {
         TextView avatar;
         if (signedIn) {
             String initial = email.isEmpty() ? "A" : email.substring(0, 1).toUpperCase(java.util.Locale.ROOT);
-            avatar = text(initial, 22, light ? Color.WHITE : Color.rgb(20, 22, 18), true);
-            avatar.setBackground(shape(green(), ad / 2));
+            avatar = text(initial, 22, onActive(), true);
+            avatar.setBackground(shape(active(), ad / 2));
         } else {
             avatar = symbol("person", 28, ink());
             avatar.setBackground(shape(raised(), ad / 2));
@@ -1769,23 +1897,74 @@ public class MainActivity extends Activity {
         }
     }
     private void renderSettingsPage() {
-        space(body, 4);
-        settingsSection(body, "Account");
+        body.addView(text("Settings", 21, ink(), true));
+        body.addView(text("App preferences and account", 13, muted(), false));
+        space(body, 14);
         renderAccountRow(settingsCard(body));
-        settingsSection(body, "Options");
-        LinearLayout opts = settingsCard(body);
-        String themeName = settingsStore.theme();
-        String themeLabel = "system".equals(themeName) ? "System" : "dark".equals(themeName) ? "Dark" : "Light";
-        settingsRow(opts, "palette", "Theme", themeLabel + " · Tap to change", this::themeDialog, true);
-        settingsRow(opts, "schedule", "Update check interval", "Every " + settingsStore.updateHours() + " hours", this::intervalDialog, true);
-        settingsRow(opts, "delete", "Clear catalog cache", "Reload listings from the network", () -> {
+        settingsSection(body, "Appearance");
+        themeSegmentRow(settingsCard(body));
+        settingsSection(body, "Downloads & updates");
+        LinearLayout updates = settingsCard(body);
+        settingsRow(updates, "clock", "Update check interval", "Every " + settingsStore.updateHours() + " hours · Tap to change", this::intervalDialog, true);
+        verificationRow(updates);
+        settingsSection(body, "Storage");
+        LinearLayout storage = settingsCard(body);
+        settingsRow(storage, "folder", "Downloaded APKs", "Watch progress, cancel, install", this::showDownloads, true);
+        settingsRow(storage, "trash", "Clear catalog cache", "Reload listings from the network", () -> {
             new File(getFilesDir(), "catalog.json").delete(); load(); showTab(SETTINGS);
         }, false);
-        settingsSection(body, "Updates");
-        settingsCheckRow(settingsCard(body));
         settingsSection(body, "About");
         LinearLayout about = settingsCard(body);
-        settingsRow(about, "info", "About", "Version, privacy, terms", this::showAbout, true);
+        settingsRow(about, "info", "About APK Store", "Version, privacy, terms", this::showAbout, true);
+        settingsCheckRow(about);
+        settingsRow(about, "shield", "Privacy Policy", "How your data is handled", () -> showLegal("Privacy Policy", privacyPolicy()), true);
+        settingsRow(about, "file", "Terms of Use", "Rules for using APK STORE", () -> showLegal("Terms of Use", termsOfUse()), true);
+    }
+    /** Appearance row: panel-style segmented Theme control (System / Light / Dark), live. */
+    private void themeSegmentRow(LinearLayout card) {
+        LinearLayout row = settingsRowShell(card);
+        row.addView(settingsTile("moon"), new LinearLayout.LayoutParams(dp(34), dp(34)));
+        LinearLayout copy = vertical(); copy.setPadding(dp(12), 0, dp(8), 0);
+        copy.addView(textSemi("Theme", 14, ink()));
+        copy.addView(text("Light, dark or system default", 12, muted(), false));
+        row.addView(copy, weight());
+        LinearLayout seg = new LinearLayout(this);
+        seg.setBackground(cardShape(inner(), 999));
+        seg.setPadding(dp(3), dp(3), dp(3), dp(3));
+        String current = settingsStore.theme();
+        String[][] options = {{"system", "System"}, {"light", "Light"}, {"dark", "Dark"}};
+        for (String[] opt : options) {
+            boolean on = opt[0].equals(current);
+            TextView b = textSemi(opt[1], 12, on ? onActive() : muted());
+            b.setGravity(Gravity.CENTER);
+            b.setPadding(dp(11), dp(6), dp(11), dp(6));
+            if (on) b.setBackground(shape(active(), 999));
+            final String value = opt[0];
+            b.setOnClickListener(v -> {
+                settingsStore.setTheme(value);
+                light = "light".equals(value) || ("system".equals(value) &&
+                        (getResources().getConfiguration().uiMode & 0x30) == 0x10);
+                showTab(SETTINGS);
+            });
+            seg.addView(b);
+        }
+        row.addView(seg);
+        card.addView(row);
+    }
+    /** APK verification is mandatory — shown as an "Always on" pill, never a switch. */
+    private void verificationRow(LinearLayout card) {
+        LinearLayout row = settingsRowShell(card);
+        row.addView(settingsTile("shield"), new LinearLayout.LayoutParams(dp(34), dp(34)));
+        LinearLayout copy = vertical(); copy.setPadding(dp(12), 0, dp(8), 0);
+        copy.addView(textSemi("APK verification", 14, ink()));
+        copy.addView(text("SHA-256 hash + signer certificate check", 12, muted(), false));
+        row.addView(copy, weight());
+        TextView pill = textSemi("Always on", 12, green());
+        pill.setGravity(Gravity.CENTER);
+        pill.setPadding(dp(12), dp(6), dp(12), dp(6));
+        pill.setBackground(pillOutline(green()));
+        row.addView(pill);
+        card.addView(row);
     }
     // ---- Account / Auth ----
     private void initAuth() {
@@ -1815,7 +1994,7 @@ public class MainActivity extends Activity {
     private void renderAccountRow(LinearLayout card) {
         boolean signedIn = authSession != null && authSession.isSignedIn();
         String email = signedIn ? authSession.email : "";
-        settingsRow(card, "person",
+        settingsRow(card, "user",
                 signedIn ? (email.isEmpty() ? "Account" : email) : "Sign in",
                 signedIn ? "Signed in · Tap to manage" : "Sync favorites across devices",
                 () -> { if (signedIn) showAccount(); else authDialog(false); }, true);
@@ -1829,7 +2008,7 @@ public class MainActivity extends Activity {
         f.setTextColor(ink());
         f.setHintTextColor(muted());
         f.setPadding(dp(14), dp(14), dp(14), dp(14));
-        f.setBackground(shape(raised(), 12));
+        f.setBackground(shape(inner(), 12));
         return f;
     }
 
@@ -1883,9 +2062,9 @@ public class MainActivity extends Activity {
         LinearLayout head = new LinearLayout(this);
         head.setGravity(Gravity.CENTER_VERTICAL);
         int ad = dp(52);
-        TextView avatar = symbol("person", 28, light ? Color.WHITE : Color.rgb(20, 22, 18));
+        TextView avatar = symbol("person", 28, onActive());
         avatar.setGravity(Gravity.CENTER);
-        avatar.setBackground(shape(green(), ad / 2));
+        avatar.setBackground(shape(active(), ad / 2));
         head.addView(avatar, new LinearLayout.LayoutParams(ad, ad));
         LinearLayout titles = vertical(); titles.setPadding(dp(14), 0, dp(8), 0);
         TextView title = text(signupMode[0] ? "Create account" : "Welcome back", 20, ink(), true);
@@ -1930,10 +2109,10 @@ public class MainActivity extends Activity {
         space(panel, 14);
 
         TextView primary = text(signupMode[0] ? "Create account" : "Login", 16,
-                light ? Color.WHITE : Color.rgb(20, 22, 18), true);
+                onActive(), true);
         primary.setGravity(Gravity.CENTER);
         primary.setPadding(dp(16), dp(15), dp(16), dp(15));
-        primary.setBackground(shape(green(), 16));
+        primary.setBackground(shape(active(), 12));
         panel.addView(primary, new LinearLayout.LayoutParams(-1, -2));
         space(panel, 10);
 
@@ -2018,7 +2197,7 @@ public class MainActivity extends Activity {
             LinearLayout google = new LinearLayout(this);
             google.setGravity(Gravity.CENTER);
             google.setPadding(dp(16), dp(12), dp(16), dp(12));
-            google.setBackground(outline(16, muted()));
+            google.setBackground(outline(12, border()));
             TextView gBadge = text("G", 17, Color.rgb(66, 133, 244), true);
             gBadge.setGravity(Gravity.CENTER);
             GradientDrawable gBg = new GradientDrawable();
@@ -2085,9 +2264,9 @@ public class MainActivity extends Activity {
         panel.setBackground(shape(surface(), 24));
         panel.setPadding(dp(24), dp(24), dp(24), dp(20));
         panel.setGravity(Gravity.CENTER_HORIZONTAL);
-        TextView avatar = text(initial, 24, light ? Color.WHITE : Color.rgb(20, 22, 18), true);
+        TextView avatar = text(initial, 24, onActive(), true);
         avatar.setGravity(Gravity.CENTER);
-        avatar.setBackground(shape(green(), dp(30)));
+        avatar.setBackground(shape(active(), dp(30)));
         panel.addView(avatar, new LinearLayout.LayoutParams(dp(60), dp(60)));
         space(panel, 14);
         TextView title = text("Sign out?", 19, ink(), true);
@@ -2150,13 +2329,13 @@ public class MainActivity extends Activity {
         String method = "google".equals(provider) ? "Google" : ("email".equals(provider) ? "Email" : "—");
         LinearLayout page = informationPage("Account", () -> showTab(tab));
         LinearLayout head = vertical();
-        head.setBackground(shape(surface(), 20));
+        head.setBackground(cardShape(surface(), 16));
         head.setPadding(dp(20), dp(20), dp(20), dp(20));
         head.setGravity(Gravity.CENTER_HORIZONTAL);
         String initial = email.isEmpty() ? "A" : email.substring(0, 1).toUpperCase(java.util.Locale.ROOT);
-        TextView avatar = text(initial, 30, light ? Color.WHITE : Color.rgb(20, 22, 18), true);
+        TextView avatar = text(initial, 30, onActive(), true);
         avatar.setGravity(Gravity.CENTER);
-        avatar.setBackground(shape(green(), dp(38)));
+        avatar.setBackground(shape(active(), dp(38)));
         head.addView(avatar, new LinearLayout.LayoutParams(dp(76), dp(76)));
         space(head, 12);
         TextView em = text(email.isEmpty() ? "Account" : email, 17, ink(), true);
@@ -2170,7 +2349,8 @@ public class MainActivity extends Activity {
         TextView pill = text("✓ Synced", 12, green(), true);
         GradientDrawable pillBg = new GradientDrawable();
         pillBg.setCornerRadius(dp(20));
-        pillBg.setColor(raised());
+        pillBg.setColor(inner());
+        pillBg.setStroke(Math.max(1, dp(1)), border());
         pill.setBackground(pillBg);
         pill.setPadding(dp(12), dp(6), dp(12), dp(6));
         head.addView(pill);
@@ -2186,57 +2366,81 @@ public class MainActivity extends Activity {
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setMinimumHeight(dp(64));
         row.setPadding(dp(10), dp(8), dp(10), dp(8));
-        TextView tile = symbol("logout", 24, danger());
-        tile.setBackground(shape(raised(), 14));
-        row.addView(tile, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        FrameLayout tile = new FrameLayout(this);
+        tile.setBackground(cardShape(inner(), 10));
+        tile.addView(lucide("logout", danger()), new FrameLayout.LayoutParams(dp(17), dp(17), Gravity.CENTER));
+        row.addView(tile, new LinearLayout.LayoutParams(dp(34), dp(34)));
         LinearLayout copy = vertical(); copy.setPadding(dp(12), 0, dp(8), 0);
-        copy.addView(text("Sign out", 16, danger(), true));
-        copy.addView(text("Sign out on this device", 13, muted(), false));
+        copy.addView(textSemi("Sign out", 14, danger()));
+        copy.addView(text("Sign out on this device", 12, muted(), false));
         row.addView(copy, weight());
         manage.addView(row);
         row.setOnClickListener(v -> tap(row, () -> signOutDialog(() -> showTab(tab))));
     }
 
     private void settingsSection(LinearLayout parent, String title) {
-        TextView t = text(title, 13, muted(), true);
-        t.setPadding(dp(4), dp(4), dp(4), dp(10));
+        TextView t = text(title.toUpperCase(java.util.Locale.ROOT), 12, muted(), true);
+        t.setLetterSpacing(0.06f);
+        t.setPadding(dp(4), dp(2), dp(4), dp(8));
         parent.addView(t);
     }
     private LinearLayout settingsCard(LinearLayout parent) {
         LinearLayout card = vertical();
-        card.setBackground(shape(surface(), 20));
-        card.setPadding(dp(6), dp(6), dp(6), dp(6));
+        card.setBackground(cardShape(surface(), 16));
         parent.addView(card);
         space(parent, 16);
         return card;
     }
-    private LinearLayout settingsRow(LinearLayout card, String iconKey, String title, String subtitle, Runnable onTap, boolean chevron) {
+    /** Row scaffolding shared by settings rows: hairline divider above (except first). */
+    private LinearLayout settingsRowShell(LinearLayout card) {
+        if (card.getChildCount() > 0) {
+            View div = new View(this); div.setBackgroundColor(border());
+            LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(-1, Math.max(1, dp(1)));
+            dlp.setMargins(dp(60), 0, 0, 0);
+            card.addView(div, dlp);
+        }
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setMinimumHeight(dp(64));
-        row.setPadding(dp(10), dp(8), dp(10), dp(8));
-        TextView tile = symbol(iconKey, 24, ink());
-        tile.setBackground(shape(raised(), 14));
-        row.addView(tile, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        row.setMinimumHeight(dp(56));
+        row.setPadding(dp(14), dp(10), dp(14), dp(10));
+        return row;
+    }
+    /** Panel icon tile: inner fill, border, 10px radius, Lucide glyph. */
+    private FrameLayout settingsTile(String iconName) {
+        FrameLayout tile = new FrameLayout(this);
+        tile.setBackground(cardShape(inner(), 10));
+        ImageView iv = lucide(iconName, ink());
+        tile.addView(iv, new FrameLayout.LayoutParams(dp(17), dp(17), Gravity.CENTER));
+        return tile;
+    }
+    private LinearLayout settingsRow(LinearLayout card, String iconKey, String title, String subtitle, Runnable onTap, boolean chevron) {
+        return settingsRow(card, iconKey, title, subtitle, onTap, chevron, null);
+    }
+    private LinearLayout settingsRow(LinearLayout card, String iconKey, String title, String subtitle, Runnable onTap, boolean chevron, String pillText) {
+        LinearLayout row = settingsRowShell(card);
+        row.addView(settingsTile(iconKey), new LinearLayout.LayoutParams(dp(34), dp(34)));
         LinearLayout copy = vertical(); copy.setPadding(dp(12), 0, dp(8), 0);
-        copy.addView(text(title, 16, ink(), true));
-        copy.addView(text(subtitle, 13, muted(), false));
+        copy.addView(textSemi(title, 14, ink()));
+        if (subtitle != null && !subtitle.isEmpty()) copy.addView(text(subtitle, 12, muted(), false));
         row.addView(copy, weight());
-        if (chevron) row.addView(symbol("chevron_right", 22, muted()), new LinearLayout.LayoutParams(dp(32), dp(32)));
+        if (pillText != null) {
+            TextView pill = textSemi(pillText, 12, ink());
+            pill.setGravity(Gravity.CENTER);
+            pill.setPadding(dp(12), dp(6), dp(12), dp(6));
+            pill.setBackground(pillOutline(border()));
+            row.addView(pill);
+        }
+        if (chevron) {
+            FrameLayout chevWrap = new FrameLayout(this);
+            chevWrap.addView(lucide("chev", muted()), new FrameLayout.LayoutParams(dp(17), dp(17), Gravity.CENTER));
+            row.addView(chevWrap, new LinearLayout.LayoutParams(dp(24), dp(24)));
+        }
         if (onTap != null) {
             row.setBackground(rippleRow(16));
             row.setOnClickListener(v -> onTap.run());
         }
         card.addView(row);
         return row;
-    }
-    private void themeDialog() {
-        new AlertDialog.Builder(this)
-                .setItems(new String[]{"System", "Dark", "Light"}, (dialog, which) -> {
-                    settingsStore.setTheme(new String[]{"system", "dark", "light"}[which]);
-                    light = which == 2 || (which == 0 && (getResources().getConfiguration().uiMode & 0x30) == 0x10);
-                    showTab(SETTINGS);
-                }).show();
     }
     private void intervalDialog() {
         new AlertDialog.Builder(this)
@@ -2245,17 +2449,12 @@ public class MainActivity extends Activity {
                 }).show();
     }
     private void settingsCheckRow(LinearLayout card) {
-        LinearLayout row = new LinearLayout(this);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setMinimumHeight(dp(64));
+        LinearLayout row = settingsRowShell(card);
         row.setBackground(rippleRow(16));
-        row.setPadding(dp(10), dp(8), dp(10), dp(8));
-        TextView tile = symbol("system_update", 24, ink());
-        tile.setBackground(shape(raised(), 14));
-        row.addView(tile, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        row.addView(settingsTile("refresh"), new LinearLayout.LayoutParams(dp(34), dp(34)));
         LinearLayout copy = vertical(); copy.setPadding(dp(12), 0, dp(8), 0);
-        copy.addView(text("Check for updates", 16, ink(), true));
-        TextView sub = text("Tap to check now", 13, muted(), false);
+        copy.addView(textSemi("Check for app update", 14, ink()));
+        TextView sub = text("APK Store itself · Tap to check now", 12, muted(), false);
         copy.addView(sub);
         LinearLoadingBar bar = new LinearLoadingBar();
         bar.setVisibility(View.GONE);
@@ -2263,7 +2462,9 @@ public class MainActivity extends Activity {
         barLp.topMargin = dp(8);
         copy.addView(bar, barLp);
         row.addView(copy, weight());
-        row.addView(symbol("autorenew", 22, muted()), new LinearLayout.LayoutParams(dp(32), dp(32)));
+        FrameLayout checkChev = new FrameLayout(this);
+        checkChev.addView(lucide("chev", muted()), new FrameLayout.LayoutParams(dp(17), dp(17), Gravity.CENTER));
+        row.addView(checkChev, new LinearLayout.LayoutParams(dp(24), dp(24)));
         card.addView(row);
         row.setOnClickListener(v -> runInlineSelfCheck(row, sub, bar));
     }
@@ -2302,7 +2503,6 @@ public class MainActivity extends Activity {
         downloadsPageOpen = false;
         downloadRowRings.clear();
         downloadRowStatus.clear();
-        dropDetailBanner(); // the page is rebuilt; never leak the previous AdView
         LinearLayout root = vertical(); root.setBackgroundColor(bg());
         applySafeArea(root); setContentView(root); root.requestApplyInsets();
         TextView back = text("‹  " + title, 20, ink(), true);
@@ -2324,13 +2524,13 @@ public class MainActivity extends Activity {
         settingsSection(page, "About");
         LinearLayout card = settingsCard(page);
         settingsRow(card, "info", "Version", BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")", null, false);
-        settingsRow(card, "privacy_tip", "Privacy Policy", "How your data is handled", () -> showLegal("Privacy Policy", privacyPolicy()), true);
-        settingsRow(card, "description", "Terms of Use", "Rules for using APK STORE", () -> showLegal("Terms of Use", termsOfUse()), true);
-        settingsRow(card, "help", "How this works", "What APK STORE does", () -> showLegal("How this works", howItWorks()), true);
+        settingsRow(card, "shield", "Privacy Policy", "How your data is handled", () -> showLegal("Privacy Policy", privacyPolicy()), true);
+        settingsRow(card, "file", "Terms of Use", "Rules for using APK STORE", () -> showLegal("Terms of Use", termsOfUse()), true);
+        settingsRow(card, "info", "How this works", "What APK STORE does", () -> showLegal("How this works", howItWorks()), true);
         settingsSection(page, "Project");
         LinearLayout proj = settingsCard(page);
         settingsRow(proj, "share", "Project and contact", "Open the GitHub repository", () -> openLink("https://github.com/mazharmnzoor4227-beep/APK-STORE"), true);
-        settingsRow(proj, "info", "Supabase privacy", "Hosting provider's notice", () -> openLink("https://supabase.com/privacy"), true);
+        settingsRow(proj, "globe", "Supabase privacy", "Hosting provider's notice", () -> openLink("https://supabase.com/privacy"), true);
     }
     private String howItWorks() {
         return "What APK STORE does\n\n"
@@ -2417,7 +2617,7 @@ public class MainActivity extends Activity {
                         page.addView(text("Update available", 16, green(), true)); space(page, 10);
                         // Card: app identity + version, looks like the app rows elsewhere in the app.
                         LinearLayout card = vertical();
-                        card.setBackground(shape(surface(), 16));
+                        card.setBackground(cardShape(surface(), 16));
                         card.setPadding(dp(16), dp(16), dp(16), dp(16));
                         LinearLayout head = new LinearLayout(this); head.setGravity(Gravity.CENTER_VERTICAL);
                         head.addView(icon(self, 56), new LinearLayout.LayoutParams(dp(56), dp(56)));
@@ -2587,20 +2787,18 @@ public class MainActivity extends Activity {
         downloadsPageOpen = false;
         downloadRowRings.clear();
         downloadRowStatus.clear();
-        dropDetailBanner(); // the page is rebuilt; never leak the previous AdView
         LinearLayout root = vertical(); root.setBackgroundColor(bg());
         applySafeArea(root); setContentView(root); root.requestApplyInsets();
         LinearLayout top = new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL);
-        TextView back = action("arrow_back", "Back to Apps");
-        back.setPadding(dp(16), dp(16), dp(16), dp(16));
-        back.setOnClickListener(v -> { detailApp = null; if (detailBack != null) detailBack.run(); else showTab(tab); }); top.addView(back, new LinearLayout.LayoutParams(dp(64), dp(52)));
+        FrameLayout back = iconButton("back", "Back to Apps");
+        back.setOnClickListener(v -> { detailApp = null; if (detailBack != null) detailBack.run(); else showTab(tab); });
+        top.addView(back, new LinearLayout.LayoutParams(dp(48), dp(52)));
         top.addView(new View(this), new LinearLayout.LayoutParams(0, dp(52), 1));
-        TextView heart = action("favorite", "Toggle favorite");
-        heart.setTextColor(isFavorite(app) ? green() : ink());
-        heart.setFontVariationSettings(isFavorite(app) ? "'FILL' 1" : "'FILL' 0");
+        FrameLayout heart = iconButton("heart", "Toggle favorite");
+        ((ImageView) heart.getChildAt(0)).setColorFilter(isFavorite(app) ? danger() : ink());
         heart.setOnClickListener(v -> toggleFavorite(app));
-        top.addView(heart, new LinearLayout.LayoutParams(dp(56), dp(52)));
-        TextView share = action("share", "Share app");
+        top.addView(heart, new LinearLayout.LayoutParams(dp(48), dp(52)));
+        FrameLayout share = iconButton("share", "Share app");
         share.setOnClickListener(v -> {
             String slug = app.optString("slug");
             String link = BuildConfig.SITE_URL + (slug.isEmpty() ? "/" : "/app/" + slug);
@@ -2608,8 +2806,8 @@ public class MainActivity extends Activity {
                     .putExtra(Intent.EXTRA_TEXT, app.optString("title") + " · " + link);
             startActivity(Intent.createChooser(intent, "Share app"));
         });
-        top.addView(share, new LinearLayout.LayoutParams(dp(52), dp(52)));
-        TextView more = action("more_vert", "More app options");
+        top.addView(share, new LinearLayout.LayoutParams(dp(48), dp(52)));
+        FrameLayout more = iconButton("more", "More app options");
         more.setOnClickListener(v -> {
             android.widget.PopupMenu menu = new android.widget.PopupMenu(this, more);
             menu.getMenu().add(0, 0, 0, "Blacklist");
@@ -2630,14 +2828,14 @@ public class MainActivity extends Activity {
             });
             menu.show();
         });
-        top.addView(more, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        top.addView(more, new LinearLayout.LayoutParams(dp(48), dp(52)));
         root.addView(top);
         ScrollView scroll = new ScrollView(this); scroll.setVerticalScrollBarEnabled(false); root.addView(scroll);
         LinearLayout page = vertical(); page.setPadding(dp(20), dp(22), dp(20), dp(30)); scroll.addView(page);
         LinearLayout appHeader = new LinearLayout(this); appHeader.setGravity(Gravity.CENTER_VERTICAL);
         FrameLayout iconFrame = new FrameLayout(this);
         detailIconContainer = new FrameLayout(this);
-        detailIconContainer.setBackground(shape(surface(), 16));
+        detailIconContainer.setBackground(shape(inner(), 19));
         detailIconContainer.setClipToOutline(true);
         detailIconContainer.addView(icon(app, 82), new FrameLayout.LayoutParams(-1, -1));
         iconFrame.addView(detailIconContainer, new FrameLayout.LayoutParams(dp(82), dp(82), Gravity.CENTER));
@@ -2647,7 +2845,7 @@ public class MainActivity extends Activity {
         LinearLayout identity = vertical(); identity.setPadding(dp(12), 0, 0, 0);
         TextView appName = text(app.optString("title"), 22, ink(), true);
         appName.setMaxLines(2); identity.addView(appName);
-        identity.addView(text(app.optString("github_owner", "Developer"), 14, green(), false));
+        identity.addView(text(app.optString("github_owner", "Developer"), 14, muted(), false));
         JSONObject currentRelease = app.optJSONObject("release");
         identity.addView(text((currentRelease == null ? "" : currentRelease.optString("version_name") + " · ") + "GitHub", 12, muted(), false));
         appHeader.addView(identity, weight()); page.addView(appHeader);
@@ -2655,10 +2853,10 @@ public class MainActivity extends Activity {
         detailPercent = text("", 13, green(), true); page.addView(detailPercent);
         detailStatus = text("", 12, muted(), false); page.addView(detailStatus); space(page, 9);
         LinearLayout actions = new LinearLayout(this); actions.setGravity(Gravity.CENTER_VERTICAL);
-        detailPrimary = text("Install", 16, bg(), true);
+        detailPrimary = text("Install", 15, onActive(), true);
         detailPrimary.setGravity(Gravity.CENTER); detailPrimary.setPadding(dp(14), dp(15), dp(14), dp(15));
         detailPrimary.setMinHeight(dp(54));
-        detailPrimary.setBackground(shape(green(), 16));
+        detailPrimary.setBackground(shape(active(), 12));
         detailPrimary.setOnClickListener(v -> {
             String slug = app.optString("slug");
             if (downloads.containsKey(slug)) cancelDownload(slug);
@@ -2666,10 +2864,10 @@ public class MainActivity extends Activity {
             else startDownload(app);
             refreshDetail();
         });
-        detailSecondary = text("", 14, ink(), true);
+        detailSecondary = textSemi("", 13, ink());
         detailSecondary.setGravity(Gravity.CENTER); detailSecondary.setPadding(dp(12), dp(15), dp(12), dp(15));
         detailSecondary.setMinHeight(dp(54));
-        detailSecondary.setBackground(outline(16, green()));
+        detailSecondary.setBackground(outline(12, border()));
         LinearLayout.LayoutParams secondaryLp = new LinearLayout.LayoutParams(0, -2, 1);
         secondaryLp.setMarginEnd(dp(12));
         actions.addView(detailSecondary, secondaryLp);
@@ -2683,6 +2881,7 @@ public class MainActivity extends Activity {
         HorizontalScrollView chipScroll = new HorizontalScrollView(this);
         chipScroll.setHorizontalScrollBarEnabled(false);
         LinearLayout chipRow = new LinearLayout(this);
+        if (release != null && !release.optString("version_name").isEmpty()) detailChip(chipRow, "v" + release.optString("version_name"));
         detailChip(chipRow, "★ " + app.optInt("stars"));
         if (!app.optString("category").isEmpty()) detailChip(chipRow, app.optString("category"));
         if (!size.isEmpty()) detailChip(chipRow, size);
@@ -2690,7 +2889,27 @@ public class MainActivity extends Activity {
         if (minSdk > 0) detailChip(chipRow, "Android " + apiToVersion(minSdk) + "+");
         String license = app.optString("license");
         if (!license.isEmpty()) detailChip(chipRow, license);
+        LinearLayout sigPill = new LinearLayout(this); sigPill.setGravity(Gravity.CENTER_VERTICAL);
+        sigPill.setPadding(dp(12), dp(6), dp(12), dp(6));
+        sigPill.setBackground(pillOutline(green()));
+        ImageView sigIcon = lucide("shield", green()); sigIcon.setPadding(0, 0, dp(6), 0);
+        sigPill.addView(sigIcon, new LinearLayout.LayoutParams(dp(14), dp(14)));
+        sigPill.addView(textSemi("Signature verified", 12, green()));
+        LinearLayout.LayoutParams sigLp = new LinearLayout.LayoutParams(-2, dp(32));
+        sigLp.setMargins(0, 0, dp(8), 0);
+        chipRow.addView(sigPill, Math.min(1, chipRow.getChildCount()), sigLp);
         chipScroll.addView(chipRow); page.addView(chipScroll);
+        LinearLayout stats = new LinearLayout(this);
+        stats.setBackground(cardShape(surface(), 16));
+        String statSize = release == null ? "—" : String.format(java.util.Locale.ROOT, "%.1f MB", release.optLong("byte_size") / 1048576.0);
+        String statDate = release == null ? "" : fmtDate(release.optString("published_at", app.optString("updated_at")));
+        if (statDate.isEmpty()) statDate = fmtDate(app.optString("updated_at"));
+        addStat(stats, release == null ? "—" : release.optString("version_name"), "VERSION", true);
+        addStat(stats, statSize, "SIZE", true);
+        addStat(stats, statDate.isEmpty() ? "—" : statDate, "UPDATED", false);
+        LinearLayout.LayoutParams statsLp = new LinearLayout.LayoutParams(-1, -2);
+        statsLp.topMargin = dp(16);
+        page.addView(stats, statsLp);
         space(page, 20);
         expandable(page, "More about this app", app.optString("description"));
         if (release != null) expandable(page, "Changelog", release.optString("changelog", release.optString("release_notes")));
@@ -2712,16 +2931,19 @@ public class MainActivity extends Activity {
             }
             strip.addView(tiles); page.addView(strip);
         }
-        // Policy-safe ad placement: the banner sits below the app info/screenshots
-        // section, far from the Install/Download button at the top of the page —
-        // never adjacent to download/install, so no accidental-click risk.
-        if (Ads.enabled()) {
-            detailBanner = Ads.banner(this);
-            if (detailBanner != null) {
-                space(page, 20);
-                page.addView(detailBanner, new LinearLayout.LayoutParams(-1, -2));
-                Ads.loadBanner(detailBanner);
-            }
+        if (release != null) {
+            space(page, 8);
+            TextView infoTitle = text("INFORMATION", 12, muted(), true);
+            infoTitle.setLetterSpacing(0.06f);
+            page.addView(infoTitle);
+            space(page, 4);
+            infoRow(page, "Package", app.optString("package_id"));
+            infoRow(page, "Category", app.optString("category"));
+            infoRow(page, "Version", release.optString("version_name"));
+            String sha = release.optString("apk_sha256");
+            infoRow(page, "APK hash (SHA-256)", sha.length() > 16 ? sha.substring(0, 16) + "…" : (sha.isEmpty() ? "Verified on download" : sha));
+            String cert = release.optString("certificate_sha256");
+            infoRow(page, "Signer certificate", cert.isEmpty() ? "Verified on download" : "Verified · matches release");
         }
         if (app.optString("source_url").startsWith("https://"))
             informationLink(page, "Source code", app.optString("source_url"), () -> openLink(app.optString("source_url")));
@@ -2767,7 +2989,7 @@ public class MainActivity extends Activity {
         header.setMinimumHeight(dp(56));
         String key = title.startsWith("Changelog") ? "history" : title.startsWith("Permissions") ? "shield" :
                 title.startsWith("Sources") ? "inventory_2" : "info";
-        header.addView(symbol(key, 23, green()), new LinearLayout.LayoutParams(dp(40), dp(48)));
+        header.addView(symbol(key, 23, ink()), new LinearLayout.LayoutParams(dp(40), dp(48)));
         header.addView(text(title, 16, ink(), true), weight());
         TextView chevron = symbol("expand_more", 22, muted());
         header.addView(chevron, new LinearLayout.LayoutParams(dp(40), dp(48)));
@@ -2782,10 +3004,34 @@ public class MainActivity extends Activity {
         });
         page.addView(header); page.addView(detail);
     }
+    private void addStat(LinearLayout parent, String value, String label, boolean dividerAfter) {
+        LinearLayout col = vertical(); col.setGravity(Gravity.CENTER);
+        col.setPadding(dp(6), dp(12), dp(6), dp(12));
+        TextView v = textSemi(value, 13, ink()); v.setGravity(Gravity.CENTER); col.addView(v);
+        TextView l = text(label, 10, muted(), true); l.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(-2, -2);
+        llp.topMargin = dp(3); col.addView(l, llp);
+        parent.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
+        if (dividerAfter) {
+            View div = new View(this); div.setBackgroundColor(border());
+            parent.addView(div, new LinearLayout.LayoutParams(Math.max(1, dp(1)), -1));
+        }
+    }
+    /** Detail Information row: muted label left, semibold value right, hairline below. */
+    private void infoRow(LinearLayout page, String label, String value) {
+        LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(9), 0, dp(9));
+        row.addView(text(label, 13, muted(), false), weight());
+        TextView v = textSemi(value, 13, ink()); v.setGravity(Gravity.END);
+        row.addView(v, weight());
+        page.addView(row);
+        View line = new View(this); line.setBackgroundColor(border());
+        page.addView(line, new LinearLayout.LayoutParams(-1, Math.max(1, dp(1))));
+    }
     private void detailChip(LinearLayout row, String value) {
         TextView chip = text(value, 12, ink(), false);
-        chip.setGravity(Gravity.CENTER); chip.setPadding(dp(10), dp(5), dp(10), dp(5));
-        chip.setMinHeight(dp(32)); chip.setBackground(shape(raised(), 8));
+        chip.setGravity(Gravity.CENTER); chip.setPadding(dp(12), dp(6), dp(12), dp(6));
+        chip.setMinHeight(dp(32)); chip.setBackground(pillOutline(border()));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(32));
         lp.setMargins(0, 0, dp(8), 0); row.addView(chip, lp);
     }
@@ -2945,7 +3191,7 @@ public class MainActivity extends Activity {
         boolean installing = ready && INSTALLING_MARKER.equals(downloadErrors.get(slug));
         detailRing.setVisibility(running ? View.VISIBLE : View.GONE);
         detailRing.setProgress(downloadProgress.getOrDefault(slug, 0));
-        if (detailIconContainer != null) detailIconContainer.setBackground(shape(surface(), running ? 52 : 16));
+        if (detailIconContainer != null) detailIconContainer.setBackground(shape(inner(), running ? 52 : 19));
         detailPercent.setText(running ? "Downloading " + downloadProgress.getOrDefault(slug, 0) + "%" : "");
         detailPercent.setVisibility(running ? View.VISIBLE : View.GONE);
         detailStatus.setText(downloadErrors.getOrDefault(slug,
@@ -2954,12 +3200,12 @@ public class MainActivity extends Activity {
         detailStatus.setVisibility(detailStatus.getText().length() == 0 ? View.GONE : View.VISIBLE);
         detailPrimary.setText(running ? "Updating…" : installing ? "Installing…" : ready ? "Install" : updateAvailable(detailApp) ? "Update" : "Install");
         detailPrimary.setEnabled(!running && !installing);
-        detailPrimary.setBackground(shape(running || installing ? raised() : green(), 16));
-        detailPrimary.setTextColor(running || installing ? muted() : bg());
+        detailPrimary.setBackground(shape(running || installing ? raised() : active(), 12));
+        detailPrimary.setTextColor(running || installing ? muted() : onActive());
         detailSecondary.setVisibility(running || installed ? View.VISIBLE : View.GONE);
         detailSecondary.setText(running ? "Cancel" : "Uninstall");
         detailSecondary.setEnabled(true);
-        detailSecondary.setBackground(outline(16, green()));
+        detailSecondary.setBackground(outline(12, border()));
         detailSecondary.setOnClickListener(v -> {
             if (downloads.containsKey(slug)) cancelDownload(slug);
             else requestSystemUninstall(detailApp.optString("package_id"));
@@ -3300,20 +3546,6 @@ public class MainActivity extends Activity {
         for (Runnable retry : downloadRetryTasks.values()) handler.removeCallbacks(retry);
         if (installResultPoll != null) handler.removeCallbacks(installResultPoll);
         if (selfUpdateUiPoll != null) handler.removeCallbacks(selfUpdateUiPoll);
-        dropDetailBanner();
-        dropSharedNativeAd();
         worker.shutdownNow(); iconWorker.shutdownNow(); super.onDestroy();
-    }
-    /** Destroys the detail-screen banner so a rebuilt page never leaks an AdView. */
-    private void dropDetailBanner() {
-        try { if (detailBanner != null) detailBanner.destroy(); } catch (Throwable ignored) { }
-        detailBanner = null;
-    }
-    /** Destroys the cached list native ad (called when a list is rebuilt). */
-    private void dropSharedNativeAd() {
-        Ads.destroyNative(sharedNativeAd);
-        sharedNativeAd = null;
-        nativeAdLoading = false;
-        pendingAdSlots.clear();
     }
 }

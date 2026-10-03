@@ -13,8 +13,5 @@
         </activity>
         <receiver android:name=".InstallResultReceiver" android:exported="false" />
         <receiver android:name=".UninstallResultReceiver" android:exported="false" />
-        <!-- AdMob: application ID is injected via the admobAppId manifest placeholder
-             (defaults to Google's official test app ID; override with -PadmobAppId=...). -->
-        <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="${admobAppId}" />
     </application>
 </manifest>
