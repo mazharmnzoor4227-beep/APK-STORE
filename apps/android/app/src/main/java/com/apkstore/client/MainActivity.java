@@ -238,11 +238,11 @@ public class MainActivity extends Activity {
     }
 
     // ---- Clawora Admin Panel design tokens (single source of truth) ----
-    private int bg() { return light ? Color.rgb(255, 255, 255) : Color.rgb(0, 0, 0); }
-    private int surface() { return light ? Color.rgb(255, 255, 255) : Color.rgb(10, 10, 10); }
-    private int inner() { return light ? Color.rgb(250, 250, 250) : Color.rgb(15, 15, 15); }
-    private int raised() { return light ? Color.rgb(245, 245, 245) : Color.rgb(20, 20, 20); }
-    private int border() { return light ? Color.rgb(229, 229, 229) : Color.rgb(38, 38, 38); }
+    private int bg() { return light ? Color.rgb(246, 246, 249) : Color.rgb(7, 7, 11); }
+    private int surface() { return light ? Color.rgb(255, 255, 255) : Color.rgb(13, 13, 19); }
+    private int inner() { return light ? Color.rgb(250, 250, 251) : Color.rgb(19, 19, 27); }
+    private int raised() { return light ? Color.rgb(244, 244, 247) : Color.rgb(27, 27, 37); }
+    private int border() { return light ? Color.rgb(230, 230, 234) : Color.rgb(47, 47, 59); }
     private int green() { return light ? Color.rgb(23, 163, 74) : Color.rgb(74, 222, 128); }
     private int accent() { return light ? Color.rgb(37, 99, 235) : Color.rgb(96, 165, 250); }
     private int amber() { return light ? Color.rgb(217, 119, 6) : Color.rgb(251, 191, 36); }
@@ -463,9 +463,40 @@ public class MainActivity extends Activity {
             return d + " " + months[m - 1] + " " + y;
         } catch (Exception e) { return iso.substring(0, 10); }
     }
+    // (v1.1.33) Liquid Glass helpers — sheen gradient har surface par, koi heavy blur nahi
+    private int sheenC(int color, int amt) {
+        return Color.argb(Color.alpha(color), Math.min(255, Color.red(color) + amt),
+                Math.min(255, Color.green(color) + amt), Math.min(255, Color.blue(color) + amt));
+    }
+    private int shadeC(int color, int amt) {
+        return Color.argb(Color.alpha(color), Math.max(0, Color.red(color) - amt),
+                Math.max(0, Color.green(color) - amt), Math.max(0, Color.blue(color) - amt));
+    }
+    private int mixC(int a, int b, float t) {
+        return Color.argb(Color.alpha(a), (int) (Color.red(a) + (Color.red(b) - Color.red(a)) * t),
+                (int) (Color.green(a) + (Color.green(b) - Color.green(a)) * t),
+                (int) (Color.blue(a) + (Color.blue(b) - Color.blue(a)) * t));
+    }
+    private int glassEdge() { return light ? border() : Color.argb(92, 255, 255, 255); }
+    /** Glass surface: sheen gradient + chamakti edge. radius dp mein. */
+    private GradientDrawable glass(int color, int radius) {
+        GradientDrawable d = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{sheenC(color, 20), color, shadeC(color, 7)});
+        d.setCornerRadius(dp(radius));
+        d.setStroke(Math.max(1, dp(1)), glassEdge());
+        return d;
+    }
+    /** Accent ka premium gradient (logo mark, Install/Update CTA, hero tile). */
+    private GradientDrawable accentGrad(int radius) {
+        GradientDrawable d = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{sheenC(accent(), 32), accent(), mixC(accent(), Color.rgb(124, 58, 237), 0.35f)});
+        d.setCornerRadius(dp(radius));
+        return d;
+    }
     private GradientDrawable shape(int color, int radius) {
-        GradientDrawable d = new GradientDrawable();
-        d.setColor(color); d.setCornerRadius(dp(radius));
+        GradientDrawable d = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{sheenC(color, 20), color, shadeC(color, 7)});
+        d.setCornerRadius(dp(radius));
         return d;
     }
     private GradientDrawable outline(int radius, int strokeColor) {
@@ -476,9 +507,10 @@ public class MainActivity extends Activity {
     }
     /** Panel card: filled surface with a 1px border stroke. */
     private GradientDrawable cardShape(int fill, int radius) {
-        GradientDrawable d = new GradientDrawable();
-        d.setColor(fill); d.setCornerRadius(dp(radius));
-        d.setStroke(Math.max(1, dp(1)), border());
+        GradientDrawable d = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{sheenC(fill, 18), fill, shadeC(fill, 6)});
+        d.setCornerRadius(dp(radius));
+        d.setStroke(Math.max(1, dp(1)), glassEdge());
         return d;
     }
     /** Outlined pill background (transparent fill, colored stroke, full radius). */
@@ -528,6 +560,7 @@ public class MainActivity extends Activity {
     /** Small tappable icon button (header / detail top bar) with a Lucide glyph. */
     private FrameLayout iconButton(String name, String description) {
         FrameLayout wrap = new FrameLayout(this);
+        wrap.setBackground(glass(surface(), 20)); // (v1.1.33) glass icon button
         ImageView v = lucide(name, ink());
         v.setContentDescription(description);
         wrap.addView(v, new FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER));
@@ -644,10 +677,10 @@ public class MainActivity extends Activity {
         setContentView(root);
         root.requestApplyInsets();
         LinearLayout header = new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setBackgroundColor(surface());
+        header.setBackground(glass(surface(), 0));
         header.setPadding(dp(16), dp(6), dp(8), dp(6));
         FrameLayout mark = new FrameLayout(this);
-        mark.setBackground(shape(active(), 9));
+        mark.setBackground(accentGrad(10));
         ImageView markIcon = lucide("download", onActive());
         mark.addView(markIcon, new FrameLayout.LayoutParams(dp(17), dp(17), Gravity.CENTER));
         header.addView(mark, new LinearLayout.LayoutParams(dp(31), dp(31)));
@@ -677,15 +710,20 @@ public class MainActivity extends Activity {
         body = vertical(); body.setPadding(dp(16), dp(14), dp(16), dp(24));
         scroll.addView(body);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        View navLine = new View(this); navLine.setBackgroundColor(border());
-        root.addView(navLine, new LinearLayout.LayoutParams(-1, Math.max(1, dp(1))));
-        LinearLayout nav = new LinearLayout(this); nav.setGravity(Gravity.CENTER); nav.setBackgroundColor(bg());
+        FrameLayout navWrap = new FrameLayout(this);
+        navWrap.setBackgroundColor(bg());
+        navWrap.setPadding(dp(14), dp(6), dp(14), dp(10));
+        root.addView(navWrap, new LinearLayout.LayoutParams(-1, dp(78)));
+        LinearLayout nav = new LinearLayout(this); nav.setGravity(Gravity.CENTER);
+        nav.setBackground(glass(raised(), 28)); // (v1.1.33) floating liquid-glass nav pill
+        nav.setElevation(dp(12));
+        navWrap.addView(nav, new FrameLayout.LayoutParams(-1, -1));
         addNav(nav, "grid", "Apps", APPS);
         addNav(nav, "search", "Search", SEARCH);
         addNav(nav, "download", "Updates", UPDATES);
         addNav(nav, "heart", "Favorites", FAVORITES);
         addNav(nav, "settings", "Settings", SETTINGS);
-        root.addView(nav, new LinearLayout.LayoutParams(-1, dp(64)));
+        
 
         if (selected == SEARCH) {
             makeSearch();
@@ -704,12 +742,9 @@ public class MainActivity extends Activity {
     private void addNav(LinearLayout nav, String iconName, String title, int target) {
         boolean selectedState = target == tab;
         LinearLayout item = vertical(); item.setGravity(Gravity.CENTER);
-        View indicator = new View(this);
-        indicator.setBackground(shape(selectedState ? ink() : Color.TRANSPARENT, 2));
-        item.addView(indicator, new LinearLayout.LayoutParams(dp(22), dp(3)));
-        space(item, 5);
+        // (v1.1.33) top indicator hata — selected tab ab glass pill highlight hai
         FrameLayout iconWrap = new FrameLayout(this);
-        ImageView icon = lucide(iconName, selectedState ? ink() : muted());
+        ImageView icon = lucide(iconName, selectedState ? accent() : muted());
         iconWrap.addView(icon, new FrameLayout.LayoutParams(dp(21), dp(21), Gravity.CENTER));
         int badge = target == UPDATES ? pendingUpdates().length() : 0;
         if (badge > 0) {
@@ -723,7 +758,8 @@ public class MainActivity extends Activity {
             dotLp.setMargins(0, 0, dp(4), 0);
             iconWrap.addView(dot, dotLp);
         }
-        item.addView(iconWrap, new LinearLayout.LayoutParams(dp(44), dp(24)));
+        if (selectedState) iconWrap.setBackground(glass(inner(), 18));
+        item.addView(iconWrap, new LinearLayout.LayoutParams(dp(48), dp(26)));
         space(item, 3);
         TextView caption = text(title, 11, selectedState ? ink() : muted(), selectedState);
         caption.setGravity(Gravity.CENTER); item.addView(caption);
@@ -739,9 +775,7 @@ public class MainActivity extends Activity {
         searchBox.setHintTextColor(muted()); searchBox.setTextColor(ink());
         searchBox.setTextSize(15); searchBox.setPadding(dp(18), dp(12), dp(18), dp(12));
         searchBox.setTypeface(interTypeface(0));
-        GradientDrawable searchBg = new GradientDrawable();
-        searchBg.setColor(inner()); searchBg.setCornerRadius(dp(999));
-        searchBg.setStroke(Math.max(1, dp(1)), border());
+        GradientDrawable searchBg = glass(inner(), 999);
         searchBox.setBackground(searchBg); searchBox.setText(query);
         body.addView(searchBox);
         space(body, 20);
@@ -1016,7 +1050,9 @@ public class MainActivity extends Activity {
             previousHomeSlugs.clear();
             body.addView(text("Apps", 21, ink(), true));
             body.addView(text("Curated open-source apps — every APK signature verified", 13, muted(), false));
-            space(body, 6);
+            space(body, 10);
+            body.addView(homeHero());
+            space(body, 16);
             JSONArray recommended = listingApps("Recommended");
             if (recommended.length() >= 3) {
                 sectionTitle("Recommended", () -> showListing("Recommended", false));
@@ -1035,6 +1071,29 @@ public class MainActivity extends Activity {
             homeSection("Most starred on GitHub", "Most starred", sortedCatalog("stars"), 12);
             homeSection("Random picks", "Random picks", sortedCatalog("random"), 12);
         }
+    }
+    /** (v1.1.33) Glass hero strip — sirf asal catalog data: app count + pending updates. */
+    private View homeHero() {
+        LinearLayout card = new LinearLayout(this);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setBackground(glass(raised(), 22));
+        card.setElevation(dp(6));
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        card.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
+        FrameLayout tile = new FrameLayout(this);
+        tile.setBackground(accentGrad(13));
+        ImageView tileIcon = lucide("download", onActive());
+        tile.addView(tileIcon, new FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER));
+        card.addView(tile, new LinearLayout.LayoutParams(dp(46), dp(46)));
+        LinearLayout texts = vertical();
+        texts.setPadding(dp(13), 0, 0, 0);
+        texts.addView(textSemi("APK Store", 16, ink()));
+        int pending = pendingUpdates().length();
+        texts.addView(text(catalog.length() + (catalog.length() == 1 ? " app" : " apps") + " · signature verified", 12, muted(), false));
+        if (pending > 0) texts.addView(textSemi(pending + (pending == 1 ? " update available" : " updates available"), 12, green()));
+        card.addView(texts, weight());
+        card.setOnClickListener(v -> { if (pendingUpdates().length() > 0) showTab(UPDATES); });
+        return card;
     }
     private void refreshUpdateButtons() {
         for (java.util.Map.Entry<String, UpdateButton> entry : updateButtons.entrySet()) {
@@ -1096,6 +1155,7 @@ public class MainActivity extends Activity {
                 label.setTextColor(ink());
             } else {
                 boolean installing = INSTALLING_MARKER.equals(downloadErrors.get(slug));
+                if (!installing) background.setColor(Color.argb(28, Color.red(green()), Color.green(green()), Color.blue(green())));
                 background.setStroke(Math.max(1, dp(1)), installing ? border() : green());
                 label.setText(installing ? "Installing…" : ready ? "Install" : "Update");
                 label.setTextColor(installing ? muted() : green());
@@ -1580,7 +1640,9 @@ public class MainActivity extends Activity {
     }
     private void empty(String title, String detail) {
         LinearLayout card = vertical(); card.setPadding(dp(18), dp(20), dp(18), dp(20));
-        card.setBackground(cardShape(surface(), 16));
+        card.setBackground(glass(surface(), 18));
+        card.setAlpha(0f); card.setTranslationY(dp(8));
+        card.animate().alpha(1f).translationY(0).setDuration(260).start();
         card.addView(text(title, 18, ink(), true)); space(card, 7);
         card.addView(text(detail, 13, muted(), false)); body.addView(card);
     }
@@ -2112,7 +2174,8 @@ public class MainActivity extends Activity {
                 onActive(), true);
         primary.setGravity(Gravity.CENTER);
         primary.setPadding(dp(16), dp(15), dp(16), dp(15));
-        primary.setBackground(shape(active(), 12));
+        primary.setBackground(accentGrad(14));
+        primary.setElevation(dp(6));
         panel.addView(primary, new LinearLayout.LayoutParams(-1, -2));
         space(panel, 10);
 
@@ -2835,7 +2898,8 @@ public class MainActivity extends Activity {
         LinearLayout appHeader = new LinearLayout(this); appHeader.setGravity(Gravity.CENTER_VERTICAL);
         FrameLayout iconFrame = new FrameLayout(this);
         detailIconContainer = new FrameLayout(this);
-        detailIconContainer.setBackground(shape(inner(), 19));
+        detailIconContainer.setBackground(glass(inner(), 20));
+        detailIconContainer.setElevation(dp(6));
         detailIconContainer.setClipToOutline(true);
         detailIconContainer.addView(icon(app, 82), new FrameLayout.LayoutParams(-1, -1));
         iconFrame.addView(detailIconContainer, new FrameLayout.LayoutParams(dp(82), dp(82), Gravity.CENTER));
@@ -2856,7 +2920,8 @@ public class MainActivity extends Activity {
         detailPrimary = text("Install", 15, onActive(), true);
         detailPrimary.setGravity(Gravity.CENTER); detailPrimary.setPadding(dp(14), dp(15), dp(14), dp(15));
         detailPrimary.setMinHeight(dp(54));
-        detailPrimary.setBackground(shape(active(), 12));
+        detailPrimary.setBackground(accentGrad(14));
+        detailPrimary.setElevation(dp(6));
         detailPrimary.setOnClickListener(v -> {
             String slug = app.optString("slug");
             if (downloads.containsKey(slug)) cancelDownload(slug);
