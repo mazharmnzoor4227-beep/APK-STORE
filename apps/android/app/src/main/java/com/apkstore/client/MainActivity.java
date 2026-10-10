@@ -657,9 +657,9 @@ public class MainActivity extends Activity {
         skeletonViews.clear();
         for (int i = 0; i < 5; i++) {
             LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(0, dp(11), 0, dp(11));
+            row.setPadding(0, dp(12), 0, dp(12));
             View avatar = new View(this); avatar.setBackground(shape(raised(), 13));
-            row.addView(avatar, new LinearLayout.LayoutParams(dp(48), dp(48)));
+            row.addView(avatar, new LinearLayout.LayoutParams(dp(58), dp(58)));
             skeletonViews.add(avatar);
             LinearLayout lines = vertical(); lines.setPadding(dp(12), 0, 0, 0);
             View line1 = new View(this); line1.setBackground(shape(raised(), 5));
@@ -696,10 +696,10 @@ public class MainActivity extends Activity {
         card.setPadding(dp(16), dp(14), dp(16), dp(14));
         card.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
         FrameLayout tile = new FrameLayout(this);
-        tile.setBackground(shape(active(), 13));
+        tile.setBackground(shape(active(), 12));
         ImageView tileIcon = lucide("download", onActive());
-        tile.addView(tileIcon, new FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER));
-        card.addView(tile, new LinearLayout.LayoutParams(dp(46), dp(46)));
+        tile.addView(tileIcon, new FrameLayout.LayoutParams(dp(26), dp(26), Gravity.CENTER));
+        card.addView(tile, new LinearLayout.LayoutParams(dp(52), dp(52)));
         LinearLayout texts = vertical();
         texts.setPadding(dp(13), 0, 0, 0);
         texts.addView(textSemi("APK Store", 16, ink()));
@@ -986,7 +986,7 @@ public class MainActivity extends Activity {
         // download runs it becomes a circle so the icon never pokes out of the ring.
         android.widget.FrameLayout iconFrame = new android.widget.FrameLayout(this);
         iconFrame.setClipToOutline(true);
-        iconFrame.setBackground(shape(inner(), 13));
+        iconFrame.setBackground(shape(inner(), Math.max(8, Math.round(iconDp * 0.22f))));
         iconFrame.setTag(Boolean.FALSE);
         iconFrame.addView(icon(app, iconDp),
                 new android.widget.FrameLayout.LayoutParams(-1, -1));
@@ -1005,7 +1005,7 @@ public class MainActivity extends Activity {
         android.widget.FrameLayout iconFrame = (android.widget.FrameLayout) tag;
         if (Boolean.valueOf(circular).equals(iconFrame.getTag())) return;
         iconFrame.setTag(circular);
-        iconFrame.setBackground(shape(inner(), circular ? iconDp / 2 : 13));
+        iconFrame.setBackground(shape(inner(), circular ? iconDp / 2 : Math.max(8, Math.round(iconDp * 0.22f))));
     }
     /** In-place progress update for the Downloads manager page — no full re-render, no flicker. */
     private void updateDownloadsRow(String slug) {
@@ -1337,12 +1337,12 @@ public class MainActivity extends Activity {
                 final JSONObject rowApp = app != null ? app : new JSONObject();
                 if (app == null) { try { rowApp.put("title", slug); } catch (Exception ignored) { } }
                 LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
-                android.widget.FrameLayout dlWrap = iconWithRing(rowApp, 48, downloadProgress.getOrDefault(slug, 0));
-                setIconFrameCircular(dlWrap, true, 48);
+                android.widget.FrameLayout dlWrap = iconWithRing(rowApp, 56, downloadProgress.getOrDefault(slug, 0));
+                setIconFrameCircular(dlWrap, true, 56);
                 ProgressRing dlRing = findRing(dlWrap);
                 if (dlRing != null) downloadRowRings.put(slug, dlRing);
                 row.addView(dlWrap,
-                        new LinearLayout.LayoutParams(dp(56), dp(56)));
+                        new LinearLayout.LayoutParams(dp(64), dp(64)));
                 LinearLayout labels = vertical(); labels.setPadding(dp(12), 0, 0, 0);
                 TextView title = text(app != null ? app.optString("title") : slug, 16, ink(), true); title.setSingleLine(true);
                 labels.addView(title);
@@ -1389,7 +1389,7 @@ public class MainActivity extends Activity {
                 String status = attempt.optString("status");
                 LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
                 JSONObject app = appForDownload(slug);
-                if (app != null) row.addView(icon(app, 48), new LinearLayout.LayoutParams(dp(48), dp(48)));
+                if (app != null) row.addView(icon(app, 56), new LinearLayout.LayoutParams(dp(56), dp(56)));
                 LinearLayout labels = vertical(); labels.setPadding(dp(12), 0, 0, 0);
                 TextView title = text(attempt.optString("title"), 16, ink(), true); title.setSingleLine(true);
                 labels.addView(title);
@@ -1415,7 +1415,7 @@ public class MainActivity extends Activity {
     /** App row for the Downloads manager: icon + name + status, tap opens the detail page. */
     private LinearLayout downloadAppRow(JSONObject app, String status) {
         LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
-        row.addView(icon(app, 48), new LinearLayout.LayoutParams(dp(48), dp(48)));
+        row.addView(icon(app, 56), new LinearLayout.LayoutParams(dp(56), dp(56)));
         LinearLayout labels = vertical(); labels.setPadding(dp(12), 0, 0, 0);
         TextView title = text(app.optString("title"), 16, ink(), true); title.setSingleLine(true);
         labels.addView(title);
@@ -1428,7 +1428,7 @@ public class MainActivity extends Activity {
     }
     private void sectionTitle(String title, Runnable more) {
         LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
-        row.addView(text(title, 15, ink(), true), weight());
+        row.addView(textSemi(title, 17, ink()), weight());
         if (more != null) {
             TextView arrow = action("chevron_right", "View all " + title);
             arrow.setGravity(Gravity.CENTER); arrow.setContentDescription("View all " + title);
@@ -1466,8 +1466,8 @@ public class MainActivity extends Activity {
                 JSONObject app = apps.optJSONObject(column * 3 + rowIndex);
                 if (app == null || blacklisted(app)) continue;
                 LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
-                row.addView(icon(app, 48), new LinearLayout.LayoutParams(dp(48), dp(48)));
-                LinearLayout copy = vertical(); copy.setPadding(dp(10), 0, 0, 0);
+                row.addView(icon(app, 56), new LinearLayout.LayoutParams(dp(56), dp(56)));
+                LinearLayout copy = vertical(); copy.setPadding(dp(12), 0, 0, 0);
                 TextView name = text(app.optString("title"), 14, ink(), true); name.setSingleLine(true); copy.addView(name);
                 TextView description = text(app.optString("short_description"), 12, muted(), false);
                 description.setSingleLine(true); description.setEllipsize(android.text.TextUtils.TruncateAt.END); copy.addView(description);
@@ -1477,7 +1477,7 @@ public class MainActivity extends Activity {
                 copy.addView(text(meta, 12, muted(), false));
                 row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
                 addInstalledTick(row, app);
-                row.setMinimumHeight(dp(72)); row.setOnClickListener(v -> showDetail(app)); pressable(row);
+                row.setMinimumHeight(dp(80)); row.setOnClickListener(v -> showDetail(app)); pressable(row);
                 group.addView(row); animateIn(row, column * 3 + rowIndex);
             }
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(260), -2);
@@ -1487,8 +1487,9 @@ public class MainActivity extends Activity {
     }
     private View icon(JSONObject app, int size) {
         String title = app.optString("title", "?");
+        int radius = Math.max(8, Math.round(size * 0.22f));
         TextView fallback = text(title.isEmpty() ? "?" : title.substring(0, 1).toUpperCase(), size / 2, green(), true);
-        fallback.setGravity(Gravity.CENTER); fallback.setBackground(shape(inner(), 13));
+        fallback.setGravity(Gravity.CENTER); fallback.setBackground(shape(inner(), radius));
         String url = app.optString("icon_url", "");
         // icon_url is owner-controlled catalog data and may live on Supabase Storage,
         // the app-icon Edge Function, R2, F-Droid or GitHub. Require TLS, then rely on
@@ -1498,7 +1499,7 @@ public class MainActivity extends Activity {
         frame.addView(fallback, new android.widget.FrameLayout.LayoutParams(-1, -1));
         ImageView image = new ImageView(this);
         image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        image.setBackground(shape(inner(), 13));
+        image.setBackground(shape(inner(), radius));
         image.setClipToOutline(true);
         frame.addView(image, new android.widget.FrameLayout.LayoutParams(-1, -1));
         Bitmap cached = iconCache.get(url);
@@ -1578,9 +1579,9 @@ public class MainActivity extends Activity {
             JSONObject app = apps.optJSONObject(i);
             if (app == null || blacklisted(app)) continue;
             LinearLayout tile = vertical(); tile.setGravity(Gravity.CENTER_HORIZONTAL);
-            tile.addView(icon(app, 72), new LinearLayout.LayoutParams(dp(72), dp(72)));
+            tile.addView(icon(app, 88), new LinearLayout.LayoutParams(dp(88), dp(88)));
             space(tile, 7);
-            TextView title = text(app.optString("title"), 12, ink(), false);
+            TextView title = textSemi(app.optString("title"), 13, ink());
             title.setSingleLine(true); title.setEllipsize(android.text.TextUtils.TruncateAt.END);
             tile.addView(title);
             JSONObject release = app.optJSONObject("release");
@@ -1589,8 +1590,8 @@ public class MainActivity extends Activity {
             stats.setSingleLine(true); tile.addView(stats);
             tile.setOnClickListener(v -> showDetail(app));
             pressable(tile);
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(88), -2);
-            params.setMargins(0, 0, dp(8), 0); row.addView(tile, params); animateIn(tile, i);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(104), -2);
+            params.setMargins(0, 0, dp(10), 0); row.addView(tile, params); animateIn(tile, i);
         }
         scroller.addView(row); body.addView(scroller);
     }
@@ -1599,9 +1600,9 @@ public class MainActivity extends Activity {
     private LinearLayout appRow(JSONObject app) {
         LinearLayout wrap = vertical();
         LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(0, dp(11), 0, dp(11));
-        row.addView(icon(app, 48), new LinearLayout.LayoutParams(dp(48), dp(48)));
-        LinearLayout copy = vertical(); copy.setPadding(dp(12), 0, dp(8), 0);
+        row.setPadding(0, dp(12), 0, dp(12));
+        row.addView(icon(app, 58), new LinearLayout.LayoutParams(dp(58), dp(58)));
+        LinearLayout copy = vertical(); copy.setPadding(dp(14), 0, dp(8), 0);
         TextView title = textSemi(app.optString("title"), 14, ink()); title.setSingleLine(true);
         title.setEllipsize(android.text.TextUtils.TruncateAt.END);
         copy.addView(title);
@@ -1778,8 +1779,8 @@ public class MainActivity extends Activity {
             matched++;
             if (matched > listCount) continue;
             LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setMinimumHeight(dp(80));
-            row.addView(icon(app, 48), new LinearLayout.LayoutParams(dp(48), dp(48)));
-            LinearLayout info = vertical(); info.setPadding(dp(12), 0, 0, 0);
+            row.addView(icon(app, 58), new LinearLayout.LayoutParams(dp(58), dp(58)));
+            LinearLayout info = vertical(); info.setPadding(dp(14), 0, 0, 0);
             TextView name = text(app.optString("title"), 15, ink(), true); name.setSingleLine(true); info.addView(name);
             TextView description = text(app.optString("short_description", app.optString("description")), 12, muted(), false);
             description.setSingleLine(true); description.setEllipsize(android.text.TextUtils.TruncateAt.END); info.addView(description);
@@ -1994,8 +1995,8 @@ public class MainActivity extends Activity {
         for (int i = 0; i < catalog.length(); i++) {
             JSONObject app = catalog.optJSONObject(i);
             if (app != null && installedVersion(app.optString("package_id")) >= 0) {
-                LinearLayout item = new LinearLayout(this); item.setGravity(Gravity.CENTER_VERTICAL); item.setMinimumHeight(dp(64));
-                item.addView(icon(app, 44), new LinearLayout.LayoutParams(dp(44), dp(44)));
+                LinearLayout item = new LinearLayout(this); item.setGravity(Gravity.CENTER_VERTICAL); item.setMinimumHeight(dp(76));
+                item.addView(icon(app, 56), new LinearLayout.LayoutParams(dp(56), dp(56)));
                 TextView label = text(app.optString("title"), 16, ink(), true);
                 label.setPadding(dp(12), 0, 0, 0); item.addView(label);
                 item.setOnClickListener(v -> showDetail(app, this::showMyApps));
@@ -2966,14 +2967,14 @@ public class MainActivity extends Activity {
         LinearLayout appHeader = new LinearLayout(this); appHeader.setGravity(Gravity.CENTER_VERTICAL);
         FrameLayout iconFrame = new FrameLayout(this);
         detailIconContainer = new FrameLayout(this);
-        detailIconContainer.setBackground(shape(inner(), 19));
+        detailIconContainer.setBackground(shape(inner(), 23));
         detailIconContainer.setClipToOutline(true);
-        detailIconContainer.addView(icon(app, 82), new FrameLayout.LayoutParams(-1, -1));
-        iconFrame.addView(detailIconContainer, new FrameLayout.LayoutParams(dp(82), dp(82), Gravity.CENTER));
+        detailIconContainer.addView(icon(app, 104), new FrameLayout.LayoutParams(-1, -1));
+        iconFrame.addView(detailIconContainer, new FrameLayout.LayoutParams(dp(104), dp(104), Gravity.CENTER));
         detailRing = new ProgressRing();
-        iconFrame.addView(detailRing, new FrameLayout.LayoutParams(dp(96), dp(96), Gravity.CENTER));
-        appHeader.addView(iconFrame, new LinearLayout.LayoutParams(dp(96), dp(96)));
-        LinearLayout identity = vertical(); identity.setPadding(dp(12), 0, 0, 0);
+        iconFrame.addView(detailRing, new FrameLayout.LayoutParams(dp(120), dp(120), Gravity.CENTER));
+        appHeader.addView(iconFrame, new LinearLayout.LayoutParams(dp(120), dp(120)));
+        LinearLayout identity = vertical(); identity.setPadding(dp(16), 0, 0, 0);
         TextView appName = text(app.optString("title"), 22, ink(), true);
         appName.setMaxLines(2); identity.addView(appName);
         identity.addView(text(app.optString("github_owner", "Developer"), 14, muted(), false));
@@ -3332,7 +3333,7 @@ public class MainActivity extends Activity {
         boolean installing = ready && INSTALLING_MARKER.equals(downloadErrors.get(slug));
         detailRing.setVisibility(running ? View.VISIBLE : View.GONE);
         detailRing.setProgress(downloadProgress.getOrDefault(slug, 0));
-        if (detailIconContainer != null) detailIconContainer.setBackground(shape(inner(), running ? 52 : 19));
+        if (detailIconContainer != null) detailIconContainer.setBackground(shape(inner(), running ? 52 : 23));
         detailPercent.setText(running ? "Downloading " + downloadProgress.getOrDefault(slug, 0) + "%" : "");
         detailPercent.setVisibility(running ? View.VISIBLE : View.GONE);
         detailStatus.setText(downloadErrors.getOrDefault(slug,
