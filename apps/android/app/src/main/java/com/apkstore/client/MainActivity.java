@@ -89,6 +89,12 @@ public class MainActivity extends Activity {
     private Runnable pendingSearch;
     private boolean legalPage;
     private boolean firstScreen = true;
+    // (v1.1.34) Motion/skeleton state
+    private boolean catalogLoading;
+    private int animIndex;
+    private long animWindowEnd;
+    private ValueAnimator skeletonAnimator;
+    private final java.util.ArrayList<View> skeletonViews = new java.util.ArrayList<>();
     /** True while an information page (Downloads/About/legal/My apps) is showing instead of a tab. */
     private boolean infoPageOpen;
     /** True while the Downloads manager page is showing (subset of infoPageOpen). */
@@ -238,11 +244,11 @@ public class MainActivity extends Activity {
     }
 
     // ---- Clawora Admin Panel design tokens (single source of truth) ----
-    private int bg() { return light ? Color.rgb(246, 246, 249) : Color.rgb(7, 7, 11); }
-    private int surface() { return light ? Color.rgb(255, 255, 255) : Color.rgb(13, 13, 19); }
-    private int inner() { return light ? Color.rgb(250, 250, 251) : Color.rgb(19, 19, 27); }
-    private int raised() { return light ? Color.rgb(244, 244, 247) : Color.rgb(27, 27, 37); }
-    private int border() { return light ? Color.rgb(230, 230, 234) : Color.rgb(47, 47, 59); }
+    private int bg() { return light ? Color.rgb(255, 255, 255) : Color.rgb(0, 0, 0); }
+    private int surface() { return light ? Color.rgb(255, 255, 255) : Color.rgb(10, 10, 10); }
+    private int inner() { return light ? Color.rgb(250, 250, 250) : Color.rgb(15, 15, 15); }
+    private int raised() { return light ? Color.rgb(245, 245, 245) : Color.rgb(20, 20, 20); }
+    private int border() { return light ? Color.rgb(229, 229, 229) : Color.rgb(38, 38, 38); }
     private int green() { return light ? Color.rgb(23, 163, 74) : Color.rgb(74, 222, 128); }
     private int accent() { return light ? Color.rgb(37, 99, 235) : Color.rgb(96, 165, 250); }
     private int amber() { return light ? Color.rgb(217, 119, 6) : Color.rgb(251, 191, 36); }
@@ -463,40 +469,9 @@ public class MainActivity extends Activity {
             return d + " " + months[m - 1] + " " + y;
         } catch (Exception e) { return iso.substring(0, 10); }
     }
-    // (v1.1.33) Liquid Glass helpers — sheen gradient har surface par, koi heavy blur nahi
-    private int sheenC(int color, int amt) {
-        return Color.argb(Color.alpha(color), Math.min(255, Color.red(color) + amt),
-                Math.min(255, Color.green(color) + amt), Math.min(255, Color.blue(color) + amt));
-    }
-    private int shadeC(int color, int amt) {
-        return Color.argb(Color.alpha(color), Math.max(0, Color.red(color) - amt),
-                Math.max(0, Color.green(color) - amt), Math.max(0, Color.blue(color) - amt));
-    }
-    private int mixC(int a, int b, float t) {
-        return Color.argb(Color.alpha(a), (int) (Color.red(a) + (Color.red(b) - Color.red(a)) * t),
-                (int) (Color.green(a) + (Color.green(b) - Color.green(a)) * t),
-                (int) (Color.blue(a) + (Color.blue(b) - Color.blue(a)) * t));
-    }
-    private int glassEdge() { return light ? border() : Color.argb(92, 255, 255, 255); }
-    /** Glass surface: sheen gradient + chamakti edge. radius dp mein. */
-    private GradientDrawable glass(int color, int radius) {
-        GradientDrawable d = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{sheenC(color, 20), color, shadeC(color, 7)});
-        d.setCornerRadius(dp(radius));
-        d.setStroke(Math.max(1, dp(1)), glassEdge());
-        return d;
-    }
-    /** Accent ka premium gradient (logo mark, Install/Update CTA, hero tile). */
-    private GradientDrawable accentGrad(int radius) {
-        GradientDrawable d = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{sheenC(accent(), 32), accent(), mixC(accent(), Color.rgb(124, 58, 237), 0.35f)});
-        d.setCornerRadius(dp(radius));
-        return d;
-    }
     private GradientDrawable shape(int color, int radius) {
-        GradientDrawable d = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{sheenC(color, 20), color, shadeC(color, 7)});
-        d.setCornerRadius(dp(radius));
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(color); d.setCornerRadius(dp(radius));
         return d;
     }
     private GradientDrawable outline(int radius, int strokeColor) {
@@ -507,10 +482,9 @@ public class MainActivity extends Activity {
     }
     /** Panel card: filled surface with a 1px border stroke. */
     private GradientDrawable cardShape(int fill, int radius) {
-        GradientDrawable d = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{sheenC(fill, 18), fill, shadeC(fill, 6)});
-        d.setCornerRadius(dp(radius));
-        d.setStroke(Math.max(1, dp(1)), glassEdge());
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(fill); d.setCornerRadius(dp(radius));
+        d.setStroke(Math.max(1, dp(1)), border());
         return d;
     }
     /** Outlined pill background (transparent fill, colored stroke, full radius). */
@@ -560,7 +534,6 @@ public class MainActivity extends Activity {
     /** Small tappable icon button (header / detail top bar) with a Lucide glyph. */
     private FrameLayout iconButton(String name, String description) {
         FrameLayout wrap = new FrameLayout(this);
-        wrap.setBackground(glass(surface(), 20)); // (v1.1.33) glass icon button
         ImageView v = lucide(name, ink());
         v.setContentDescription(description);
         wrap.addView(v, new FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER));
@@ -645,6 +618,92 @@ public class MainActivity extends Activity {
             next.run();
         }).start();
     }
+    // ---- (v1.1.34) Premium motion kit: ek hi easing, sirf alpha/translation/scale ----
+    /** Navigation ke waqt chhoti si window kholo — sirf usi dauraan list animations
+     * chalti hain. Download poll har 500ms render() call karta hai; window band ho to
+     * woh re-renders bina animation ke hote hain (warna items flicker karenge). */
+    private void openAnimWindow() { animWindowEnd = android.os.SystemClock.uptimeMillis() + 700; }
+    /** List item ki staggered entrance: fade + halka upar slide, index ke hisaab se delay. */
+    private void animateIn(View v, int index) {
+        if (v == null || !ValueAnimator.areAnimatorsEnabled()) return;
+        if (android.os.SystemClock.uptimeMillis() > animWindowEnd) return;
+        v.setAlpha(0f); v.setTranslationY(dp(10));
+        v.animate().alpha(1f).translationY(0)
+                .setStartDelay(Math.min(index, 8) * 35L)
+                .setDuration(240).setInterpolator(new DecelerateInterpolator()).start();
+    }
+    /** Halka press feedback (scale .98) — maujooda click listeners ko disturb nahi karta. */
+    private void pressable(View v) {
+        v.setOnTouchListener((view, event) -> {
+            if (!ValueAnimator.areAnimatorsEnabled()) return false;
+            int action = event.getAction();
+            if (action == MotionEvent.ACTION_DOWN)
+                view.animate().scaleX(.98f).scaleY(.98f).setDuration(100).start();
+            else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL)
+                view.animate().scaleX(1f).scaleY(1f).setDuration(160).start();
+            return false;
+        });
+    }
+    /** Catalog load hote waqt shimmer skeleton rows (pulsing placeholders). */
+    private void showSkeleton() {
+        stopSkeletonPulse();
+        skeletonViews.clear();
+        for (int i = 0; i < 5; i++) {
+            LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(0, dp(11), 0, dp(11));
+            View avatar = new View(this); avatar.setBackground(shape(raised(), 13));
+            row.addView(avatar, new LinearLayout.LayoutParams(dp(48), dp(48)));
+            skeletonViews.add(avatar);
+            LinearLayout lines = vertical(); lines.setPadding(dp(12), 0, 0, 0);
+            View line1 = new View(this); line1.setBackground(shape(raised(), 5));
+            lines.addView(line1, new LinearLayout.LayoutParams(dp(150), dp(13)));
+            View line2 = new View(this); line2.setBackground(shape(raised(), 5));
+            LinearLayout.LayoutParams l2 = new LinearLayout.LayoutParams(dp(100), dp(11)); l2.topMargin = dp(7);
+            lines.addView(line2, l2);
+            skeletonViews.add(line1); skeletonViews.add(line2);
+            row.addView(lines);
+            body.addView(row);
+            View divider = new View(this); divider.setBackgroundColor(border());
+            body.addView(divider, new LinearLayout.LayoutParams(-1, Math.max(1, dp(1))));
+        }
+        skeletonAnimator = ValueAnimator.ofFloat(0.45f, 0.95f);
+        skeletonAnimator.setDuration(900);
+        skeletonAnimator.setRepeatCount(ValueAnimator.INFINITE);
+        skeletonAnimator.setRepeatMode(ValueAnimator.REVERSE);
+        skeletonAnimator.addUpdateListener(a -> {
+            float alpha = (float) a.getAnimatedValue();
+            for (View v : skeletonViews) v.setAlpha(alpha);
+        });
+        if (ValueAnimator.areAnimatorsEnabled()) skeletonAnimator.start();
+    }
+    private void stopSkeletonPulse() {
+        if (skeletonAnimator != null) { skeletonAnimator.cancel(); skeletonAnimator = null; }
+    }
+    /** (v1.1.34) Opaque hero card — asal catalog data: app count + pending updates.
+     * Solid surface + halki elevation depth; koi glass/gradient nahi. */
+    private View homeHero() {
+        LinearLayout card = new LinearLayout(this);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setBackground(cardShape(surface(), 16));
+        card.setElevation(dp(3));
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        card.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
+        FrameLayout tile = new FrameLayout(this);
+        tile.setBackground(shape(active(), 13));
+        ImageView tileIcon = lucide("download", onActive());
+        tile.addView(tileIcon, new FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER));
+        card.addView(tile, new LinearLayout.LayoutParams(dp(46), dp(46)));
+        LinearLayout texts = vertical();
+        texts.setPadding(dp(13), 0, 0, 0);
+        texts.addView(textSemi("APK Store", 16, ink()));
+        int pending = pendingUpdates().length();
+        texts.addView(text(catalog.length() + (catalog.length() == 1 ? " app" : " apps") + " · signature verified", 12, muted(), false));
+        if (pending > 0) texts.addView(textSemi(pending + (pending == 1 ? " update available" : " updates available"), 12, green()));
+        card.addView(texts, weight());
+        pressable(card);
+        card.setOnClickListener(v -> { if (pendingUpdates().length() > 0) showTab(UPDATES); });
+        return card;
+    }
     private void applySafeArea(LinearLayout root) {
         root.setOnApplyWindowInsetsListener((view, insets) -> {
             int top, bottom;
@@ -677,10 +736,10 @@ public class MainActivity extends Activity {
         setContentView(root);
         root.requestApplyInsets();
         LinearLayout header = new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setBackground(glass(surface(), 0));
+        header.setBackgroundColor(surface());
         header.setPadding(dp(16), dp(6), dp(8), dp(6));
         FrameLayout mark = new FrameLayout(this);
-        mark.setBackground(accentGrad(10));
+        mark.setBackground(shape(active(), 9));
         ImageView markIcon = lucide("download", onActive());
         mark.addView(markIcon, new FrameLayout.LayoutParams(dp(17), dp(17), Gravity.CENTER));
         header.addView(mark, new LinearLayout.LayoutParams(dp(31), dp(31)));
@@ -710,24 +769,20 @@ public class MainActivity extends Activity {
         body = vertical(); body.setPadding(dp(16), dp(14), dp(16), dp(24));
         scroll.addView(body);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        FrameLayout navWrap = new FrameLayout(this);
-        navWrap.setBackgroundColor(bg());
-        navWrap.setPadding(dp(14), dp(6), dp(14), dp(10));
-        root.addView(navWrap, new LinearLayout.LayoutParams(-1, dp(78)));
-        LinearLayout nav = new LinearLayout(this); nav.setGravity(Gravity.CENTER);
-        nav.setBackground(glass(raised(), 28)); // (v1.1.33) floating liquid-glass nav pill
-        nav.setElevation(dp(12));
-        navWrap.addView(nav, new FrameLayout.LayoutParams(-1, -1));
+        View navLine = new View(this); navLine.setBackgroundColor(border());
+        root.addView(navLine, new LinearLayout.LayoutParams(-1, Math.max(1, dp(1))));
+        LinearLayout nav = new LinearLayout(this); nav.setGravity(Gravity.CENTER); nav.setBackgroundColor(bg());
         addNav(nav, "grid", "Apps", APPS);
         addNav(nav, "search", "Search", SEARCH);
         addNav(nav, "download", "Updates", UPDATES);
         addNav(nav, "heart", "Favorites", FAVORITES);
         addNav(nav, "settings", "Settings", SETTINGS);
-        
+        root.addView(nav, new LinearLayout.LayoutParams(-1, dp(64)));
 
         if (selected == SEARCH) {
             makeSearch();
         }
+        openAnimWindow();
         render();
         if (catalog.length() == 0) load();
         if (!firstScreen && ValueAnimator.areAnimatorsEnabled()) {
@@ -742,9 +797,12 @@ public class MainActivity extends Activity {
     private void addNav(LinearLayout nav, String iconName, String title, int target) {
         boolean selectedState = target == tab;
         LinearLayout item = vertical(); item.setGravity(Gravity.CENTER);
-        // (v1.1.33) top indicator hata — selected tab ab glass pill highlight hai
+        View indicator = new View(this);
+        indicator.setBackground(shape(selectedState ? ink() : Color.TRANSPARENT, 2));
+        item.addView(indicator, new LinearLayout.LayoutParams(dp(22), dp(3)));
+        space(item, 5);
         FrameLayout iconWrap = new FrameLayout(this);
-        ImageView icon = lucide(iconName, selectedState ? accent() : muted());
+        ImageView icon = lucide(iconName, selectedState ? ink() : muted());
         iconWrap.addView(icon, new FrameLayout.LayoutParams(dp(21), dp(21), Gravity.CENTER));
         int badge = target == UPDATES ? pendingUpdates().length() : 0;
         if (badge > 0) {
@@ -758,8 +816,7 @@ public class MainActivity extends Activity {
             dotLp.setMargins(0, 0, dp(4), 0);
             iconWrap.addView(dot, dotLp);
         }
-        if (selectedState) iconWrap.setBackground(glass(inner(), 18));
-        item.addView(iconWrap, new LinearLayout.LayoutParams(dp(48), dp(26)));
+        item.addView(iconWrap, new LinearLayout.LayoutParams(dp(44), dp(24)));
         space(item, 3);
         TextView caption = text(title, 11, selectedState ? ink() : muted(), selectedState);
         caption.setGravity(Gravity.CENTER); item.addView(caption);
@@ -775,7 +832,9 @@ public class MainActivity extends Activity {
         searchBox.setHintTextColor(muted()); searchBox.setTextColor(ink());
         searchBox.setTextSize(15); searchBox.setPadding(dp(18), dp(12), dp(18), dp(12));
         searchBox.setTypeface(interTypeface(0));
-        GradientDrawable searchBg = glass(inner(), 999);
+        GradientDrawable searchBg = new GradientDrawable();
+        searchBg.setColor(inner()); searchBg.setCornerRadius(dp(999));
+        searchBg.setStroke(Math.max(1, dp(1)), border());
         searchBox.setBackground(searchBg); searchBox.setText(query);
         body.addView(searchBox);
         space(body, 20);
@@ -795,6 +854,7 @@ public class MainActivity extends Activity {
         });
     }
     private void load() {
+        catalogLoading = true;
         final int request = ++generation;
         worker.execute(() -> {
             try {
@@ -803,6 +863,7 @@ public class MainActivity extends Activity {
                     HashMap<String, Long> versions = loadReleaseVersions(apps);
                     try { repository.save(apps); } catch (Exception ignored) { }
                     runOnUiThread(() -> { if (request == generation) {
+                        catalogLoading = false; stopSkeletonPulse();
                         boolean initial = catalog.length() == 0;
                         catalog = apps;
                         lastCatalogRefresh = android.os.SystemClock.elapsedRealtime();
@@ -813,6 +874,7 @@ public class MainActivity extends Activity {
                     } });
             } catch (Exception error) {
                 runOnUiThread(() -> { if (request == generation && body != null) {
+                    catalogLoading = false; stopSkeletonPulse();
                     if (catalog.length() == 0) {
                         render();
                         empty("Catalog unavailable", error.getMessage());
@@ -1000,6 +1062,7 @@ public class MainActivity extends Activity {
             body.addView(text("Updates", 21, ink(), true));
             body.addView(text("Installed apps checked against the catalog", 13, muted(), false));
             space(body, 12);
+            animIndex = 0;
             JSONArray pending = pendingUpdates();
             // Reference-style header: "N updates available" left, "Update all"/"Cancel all" right.
             LinearLayout updateHeader = new LinearLayout(this);
@@ -1046,12 +1109,16 @@ public class MainActivity extends Activity {
             renderSettingsPage();
         } else {
             body.removeAllViews();
-            if (catalog.length() == 0) { empty("The store is getting ready", "Approved apps will appear here."); return; }
+            if (catalog.length() == 0) {
+                if (catalogLoading) { showSkeleton(); return; }
+                empty("The store is getting ready", "Approved apps will appear here."); return;
+            }
             previousHomeSlugs.clear();
             body.addView(text("Apps", 21, ink(), true));
             body.addView(text("Curated open-source apps — every APK signature verified", 13, muted(), false));
             space(body, 10);
-            body.addView(homeHero());
+            View hero = homeHero();
+            body.addView(hero); animateIn(hero, 0);
             space(body, 16);
             JSONArray recommended = listingApps("Recommended");
             if (recommended.length() >= 3) {
@@ -1060,7 +1127,8 @@ public class MainActivity extends Activity {
                 for (int i = 0; i < recLimit; i++) {
                     JSONObject recApp = recommended.optJSONObject(i);
                     if (recApp != null && !blacklisted(recApp)) {
-                        body.addView(appRow(recApp));
+                        LinearLayout recRow = appRow(recApp);
+                        body.addView(recRow); animateIn(recRow, i + 1);
                         previousHomeSlugs.add(recApp.optString("slug"));
                     }
                 }
@@ -1071,29 +1139,6 @@ public class MainActivity extends Activity {
             homeSection("Most starred on GitHub", "Most starred", sortedCatalog("stars"), 12);
             homeSection("Random picks", "Random picks", sortedCatalog("random"), 12);
         }
-    }
-    /** (v1.1.33) Glass hero strip — sirf asal catalog data: app count + pending updates. */
-    private View homeHero() {
-        LinearLayout card = new LinearLayout(this);
-        card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setBackground(glass(raised(), 22));
-        card.setElevation(dp(6));
-        card.setPadding(dp(16), dp(14), dp(16), dp(14));
-        card.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
-        FrameLayout tile = new FrameLayout(this);
-        tile.setBackground(accentGrad(13));
-        ImageView tileIcon = lucide("download", onActive());
-        tile.addView(tileIcon, new FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER));
-        card.addView(tile, new LinearLayout.LayoutParams(dp(46), dp(46)));
-        LinearLayout texts = vertical();
-        texts.setPadding(dp(13), 0, 0, 0);
-        texts.addView(textSemi("APK Store", 16, ink()));
-        int pending = pendingUpdates().length();
-        texts.addView(text(catalog.length() + (catalog.length() == 1 ? " app" : " apps") + " · signature verified", 12, muted(), false));
-        if (pending > 0) texts.addView(textSemi(pending + (pending == 1 ? " update available" : " updates available"), 12, green()));
-        card.addView(texts, weight());
-        card.setOnClickListener(v -> { if (pendingUpdates().length() > 0) showTab(UPDATES); });
-        return card;
     }
     private void refreshUpdateButtons() {
         for (java.util.Map.Entry<String, UpdateButton> entry : updateButtons.entrySet()) {
@@ -1135,6 +1180,7 @@ public class MainActivity extends Activity {
             setLayoutParams(new LinearLayout.LayoutParams(-2, dp(44)));
             setMinimumWidth(dp(96));
             setOnClickListener(v -> onTap());
+            pressable(this);
             sync();
         }
         private void onTap() {
@@ -1155,7 +1201,6 @@ public class MainActivity extends Activity {
                 label.setTextColor(ink());
             } else {
                 boolean installing = INSTALLING_MARKER.equals(downloadErrors.get(slug));
-                if (!installing) background.setColor(Color.argb(28, Color.red(green()), Color.green(green()), Color.blue(green())));
                 background.setStroke(Math.max(1, dp(1)), installing ? border() : green());
                 label.setText(installing ? "Installing…" : ready ? "Install" : "Update");
                 label.setTextColor(installing ? muted() : green());
@@ -1183,7 +1228,8 @@ public class MainActivity extends Activity {
         UpdateButton button = new UpdateButton(app);
         updateButtons.put(slug, button);
         row.addView(button); row.setOnClickListener(v -> showDetail(app));
-        body.addView(row);
+        pressable(row);
+        body.addView(row); animateIn(row, animIndex++);
         View updateLine = new View(this); updateLine.setBackgroundColor(border());
         body.addView(updateLine, new LinearLayout.LayoutParams(-1, Math.max(1, dp(1))));
         space(body, 10);
@@ -1424,7 +1470,8 @@ public class MainActivity extends Activity {
                 copy.addView(text(meta, 12, muted(), false));
                 row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
                 addInstalledTick(row, app);
-                row.setMinimumHeight(dp(72)); row.setOnClickListener(v -> showDetail(app)); group.addView(row);
+                row.setMinimumHeight(dp(72)); row.setOnClickListener(v -> showDetail(app)); pressable(row);
+                group.addView(row); animateIn(row, column * 3 + rowIndex);
             }
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(260), -2);
             lp.setMargins(0, 0, dp(14), 0); columns.addView(group, lp);
@@ -1534,8 +1581,9 @@ public class MainActivity extends Activity {
             TextView stats = text(size, 12, muted(), false);
             stats.setSingleLine(true); tile.addView(stats);
             tile.setOnClickListener(v -> showDetail(app));
+            pressable(tile);
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(88), -2);
-            params.setMargins(0, 0, dp(8), 0); row.addView(tile, params);
+            params.setMargins(0, 0, dp(8), 0); row.addView(tile, params); animateIn(tile, i);
         }
         scroller.addView(row); body.addView(scroller);
     }
@@ -1581,6 +1629,7 @@ public class MainActivity extends Activity {
         pill.setOnClickListener(v -> showDetail(app));
         row.addView(pill);
         row.setOnClickListener(v -> showDetail(app));
+        pressable(row);
         wrap.addView(row);
         View line = new View(this); line.setBackgroundColor(border());
         wrap.addView(line, new LinearLayout.LayoutParams(-1, Math.max(1, dp(1))));
@@ -1632,17 +1681,24 @@ public class MainActivity extends Activity {
             body.addView(rows); space(body, 13);
         }
         int limit = compact ? Math.min(6, apps.length()) : apps.length();
+        int shown = 0;
         for (int i = 0; i < limit; i++) {
             JSONObject app = apps.optJSONObject(i);
             if (app == null || blacklisted(app) || (!activeCategory.isEmpty() && !activeCategory.equals(app.optString("category")))) continue;
-            body.addView(appRow(app));
+            LinearLayout row = appRow(app);
+            if (tab == FAVORITES) animateIn(row, shown);
+            shown++;
+            body.addView(row);
         }
     }
     private void empty(String title, String detail) {
         LinearLayout card = vertical(); card.setPadding(dp(18), dp(20), dp(18), dp(20));
-        card.setBackground(glass(surface(), 18));
-        card.setAlpha(0f); card.setTranslationY(dp(8));
-        card.animate().alpha(1f).translationY(0).setDuration(260).start();
+        card.setBackground(cardShape(surface(), 16));
+        if (ValueAnimator.areAnimatorsEnabled()) {
+            card.setAlpha(0f); card.setTranslationY(dp(8));
+            card.animate().alpha(1f).translationY(0).setDuration(260)
+                    .setInterpolator(new DecelerateInterpolator()).start();
+        }
         card.addView(text(title, 18, ink(), true)); space(card, 7);
         card.addView(text(detail, 13, muted(), false)); body.addView(card);
     }
@@ -1665,6 +1721,7 @@ public class MainActivity extends Activity {
         return catalog;
     }
     private void renderListing(String heading) {
+        openAnimWindow();
         LinearLayout root = vertical(); root.setBackgroundColor(bg()); applySafeArea(root);
         setContentView(root); root.requestApplyInsets();
         LinearLayout top = new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL); top.setPadding(dp(12), 0, dp(12), 0);
@@ -1724,12 +1781,17 @@ public class MainActivity extends Activity {
                     String.format(java.util.Locale.ROOT, "%.1f MB", release.optLong("byte_size") / 1048576.0);
             info.addView(text(meta, 12, muted(), false)); row.addView(info, weight());
             addInstalledTick(row, app);
-            row.setOnClickListener(v -> showDetail(app)); rows.addView(row);
+            row.setOnClickListener(v -> showDetail(app)); pressable(row); rows.addView(row); animateIn(row, matched);
         }
         if (matched == 0) rows.addView(text("No matching apps. Try another filter or search term.", 15, muted(), false));
         if (matched > listCount) {
             TextView more = text("Load more", 15, accent(), true); more.setGravity(Gravity.CENTER); more.setMinHeight(dp(56));
             more.setOnClickListener(v -> { listCount += 30; renderListing(heading); }); rows.addView(more);
+        }
+        if (ValueAnimator.areAnimatorsEnabled()) {
+            scroll.setAlpha(0f); scroll.setTranslationY(dp(10));
+            scroll.animate().alpha(1f).translationY(0).setDuration(260)
+                    .setInterpolator(new DecelerateInterpolator()).start();
         }
     }
     private void listingChip(LinearLayout row, String label, boolean selected, Runnable click) {
@@ -2174,8 +2236,7 @@ public class MainActivity extends Activity {
                 onActive(), true);
         primary.setGravity(Gravity.CENTER);
         primary.setPadding(dp(16), dp(15), dp(16), dp(15));
-        primary.setBackground(accentGrad(14));
-        primary.setElevation(dp(6));
+        primary.setBackground(shape(active(), 12));
         panel.addView(primary, new LinearLayout.LayoutParams(-1, -2));
         space(panel, 10);
 
@@ -2898,8 +2959,7 @@ public class MainActivity extends Activity {
         LinearLayout appHeader = new LinearLayout(this); appHeader.setGravity(Gravity.CENTER_VERTICAL);
         FrameLayout iconFrame = new FrameLayout(this);
         detailIconContainer = new FrameLayout(this);
-        detailIconContainer.setBackground(glass(inner(), 20));
-        detailIconContainer.setElevation(dp(6));
+        detailIconContainer.setBackground(shape(inner(), 19));
         detailIconContainer.setClipToOutline(true);
         detailIconContainer.addView(icon(app, 82), new FrameLayout.LayoutParams(-1, -1));
         iconFrame.addView(detailIconContainer, new FrameLayout.LayoutParams(dp(82), dp(82), Gravity.CENTER));
@@ -2920,8 +2980,7 @@ public class MainActivity extends Activity {
         detailPrimary = text("Install", 15, onActive(), true);
         detailPrimary.setGravity(Gravity.CENTER); detailPrimary.setPadding(dp(14), dp(15), dp(14), dp(15));
         detailPrimary.setMinHeight(dp(54));
-        detailPrimary.setBackground(accentGrad(14));
-        detailPrimary.setElevation(dp(6));
+        detailPrimary.setBackground(shape(active(), 12));
         detailPrimary.setOnClickListener(v -> {
             String slug = app.optString("slug");
             if (downloads.containsKey(slug)) cancelDownload(slug);
@@ -2929,10 +2988,12 @@ public class MainActivity extends Activity {
             else startDownload(app);
             refreshDetail();
         });
+        pressable(detailPrimary);
         detailSecondary = textSemi("", 13, ink());
         detailSecondary.setGravity(Gravity.CENTER); detailSecondary.setPadding(dp(12), dp(15), dp(12), dp(15));
         detailSecondary.setMinHeight(dp(54));
         detailSecondary.setBackground(outline(12, border()));
+        pressable(detailSecondary);
         LinearLayout.LayoutParams secondaryLp = new LinearLayout.LayoutParams(0, -2, 1);
         secondaryLp.setMarginEnd(dp(12));
         actions.addView(detailSecondary, secondaryLp);
@@ -3045,6 +3106,14 @@ public class MainActivity extends Activity {
                 params.setMargins(0, dp(12), dp(10), 0); row.addView(tile, params);
             }
             suggestions.addView(row); page.addView(suggestions);
+        }
+        // (v1.1.34) Detail entrance: icon scale-fade + sections ki halki stagger.
+        openAnimWindow();
+        if (ValueAnimator.areAnimatorsEnabled()) {
+            iconFrame.setAlpha(0f); iconFrame.setScaleX(.85f); iconFrame.setScaleY(.85f);
+            iconFrame.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(280)
+                    .setInterpolator(new DecelerateInterpolator()).start();
+            for (int i = 1; i < page.getChildCount(); i++) animateIn(page.getChildAt(i), i + 1);
         }
         refreshDetail();
         if (downloads.containsKey(app.optString("slug"))) pollDownload(app.optString("slug"));
