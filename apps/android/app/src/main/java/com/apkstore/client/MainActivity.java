@@ -259,6 +259,16 @@ public class MainActivity extends Activity {
     private int ink() { return light ? Color.rgb(10, 10, 10) : Color.rgb(250, 250, 250); }
     private int muted() { return light ? Color.rgb(115, 115, 115) : Color.rgb(163, 163, 163); }
     private int danger() { return light ? Color.rgb(220, 38, 38) : Color.rgb(248, 113, 113); }
+    /* (v1.1.36) M3 navigation roles — app-store-design skill/spec. */
+    private int navPill() { return light ? Color.rgb(219, 234, 254) : Color.rgb(23, 41, 63); }
+    private int badgeBg() { return light ? Color.rgb(186, 26, 26) : Color.rgb(255, 180, 171); }
+    private int badgeInk() { return light ? Color.WHITE : Color.rgb(104, 0, 10); }
+    private GradientDrawable searchPillBg() {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(inner()); d.setCornerRadius(dp(999));
+        d.setStroke(Math.max(1, dp(1)), border());
+        return d;
+    }
     private int dp(int n) { return Math.round(n * getResources().getDisplayMetrics().density); }
 
     @Override public void onCreate(Bundle state) {
@@ -742,32 +752,39 @@ public class MainActivity extends Activity {
         applySafeArea(root);
         setContentView(root);
         root.requestApplyInsets();
+        /* (v1.1.36) Professional header — app-store-design spec (Play pattern):
+           search pill + avatar only. No brand strip / icon cluster. The bell was
+           a duplicate of the Updates tab; refresh moved to the Updates screen;
+           Downloads lives in Settings > Storage and the profile sheet. */
         LinearLayout header = new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL);
         header.setBackgroundColor(surface());
-        header.setPadding(dp(16), dp(6), dp(8), dp(6));
-        FrameLayout mark = new FrameLayout(this);
-        mark.setBackground(shape(active(), 9));
-        ImageView markIcon = lucide("download", onActive());
-        mark.addView(markIcon, new FrameLayout.LayoutParams(dp(17), dp(17), Gravity.CENTER));
-        header.addView(mark, new LinearLayout.LayoutParams(dp(31), dp(31)));
-        TextView brand = textSemi("APK Store", 16, ink());
-        brand.setPadding(dp(9), 0, 0, 0);
-        header.addView(brand);
-        header.addView(new View(this), weight());
-        FrameLayout bellBtn = iconButton("bell", "Updates");
-        bellBtn.setOnClickListener(v -> showTab(UPDATES));
-        header.addView(bellBtn, new LinearLayout.LayoutParams(dp(40), dp(40)));
-        FrameLayout refreshBtn = iconButton("refresh", "Refresh app catalog");
-        refreshBtn.setOnClickListener(v -> { refreshBtn.animate().rotationBy(360).setDuration(500).start(); load(); });
-        header.addView(refreshBtn, new LinearLayout.LayoutParams(dp(40), dp(40)));
-        FrameLayout dlBtn = iconButton("download", "Downloads");
-        dlBtn.setOnClickListener(v -> showDownloads());
-        header.addView(dlBtn, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        header.setPadding(dp(16), dp(10), dp(16), dp(10));
+        if (selected == SEARCH) {
+            TextView brand = textSemi("APK Store", 20, ink());
+            header.addView(brand);
+            header.addView(new View(this), weight());
+        } else {
+            LinearLayout searchPill = new LinearLayout(this);
+            searchPill.setGravity(Gravity.CENTER_VERTICAL);
+            searchPill.setBackground(searchPillBg());
+            searchPill.setPadding(dp(16), 0, dp(16), 0);
+            searchPill.setContentDescription("Search apps");
+            ImageView searchGlyph = lucide("search", muted());
+            searchPill.addView(searchGlyph, new LinearLayout.LayoutParams(dp(20), dp(20)));
+            TextView searchHint = text("Search apps", 15, muted(), false);
+            searchHint.setPadding(dp(10), 0, 0, 0);
+            searchPill.addView(searchHint);
+            searchPill.setOnClickListener(v -> showTab(SEARCH));
+            pressable(searchPill);
+            header.addView(searchPill, new LinearLayout.LayoutParams(0, dp(52), 1));
+            View hGap = new View(this);
+            header.addView(hGap, new LinearLayout.LayoutParams(dp(12), 1));
+        }
         FrameLayout profileBtn = profileHeaderButton();
         // Open instantly: the tap() scale animation delayed the menu and made it feel laggy.
         profileBtn.setOnClickListener(v -> showProfileMenu());
-        header.addView(profileBtn, new LinearLayout.LayoutParams(dp(44), dp(40)));
-        root.addView(header, new LinearLayout.LayoutParams(-1, dp(52)));
+        header.addView(profileBtn, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        root.addView(header, new LinearLayout.LayoutParams(-1, -2));
         View headerLine = new View(this); headerLine.setBackgroundColor(border());
         root.addView(headerLine, new LinearLayout.LayoutParams(-1, Math.max(1, dp(1))));
 
@@ -778,13 +795,13 @@ public class MainActivity extends Activity {
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         View navLine = new View(this); navLine.setBackgroundColor(border());
         root.addView(navLine, new LinearLayout.LayoutParams(-1, Math.max(1, dp(1))));
-        LinearLayout nav = new LinearLayout(this); nav.setGravity(Gravity.CENTER); nav.setBackgroundColor(bg());
+        LinearLayout nav = new LinearLayout(this); nav.setGravity(Gravity.CENTER); nav.setBackgroundColor(raised());
         addNav(nav, "grid", "Apps", APPS);
         addNav(nav, "search", "Search", SEARCH);
         addNav(nav, "download", "Updates", UPDATES);
         addNav(nav, "heart", "Favorites", FAVORITES);
         addNav(nav, "settings", "Settings", SETTINGS);
-        root.addView(nav, new LinearLayout.LayoutParams(-1, dp(64)));
+        root.addView(nav, new LinearLayout.LayoutParams(-1, dp(80)));
 
         if (selected == SEARCH) {
             makeSearch();
@@ -802,42 +819,46 @@ public class MainActivity extends Activity {
         firstScreen = false;
     }
     private void addNav(LinearLayout nav, String iconName, String title, int target) {
+        /* (v1.1.36) Material 3 Navigation Bar — app-store-design spec:
+           pill indicator 64x32, icon 24dp, label 12sp, badge = error role. */
         boolean selectedState = target == tab;
         LinearLayout item = vertical(); item.setGravity(Gravity.CENTER);
-        View indicator = new View(this);
-        indicator.setBackground(shape(selectedState ? ink() : Color.TRANSPARENT, 2));
-        item.addView(indicator, new LinearLayout.LayoutParams(dp(22), dp(3)));
-        space(item, 5);
-        FrameLayout iconWrap = new FrameLayout(this);
-        ImageView icon = lucide(iconName, selectedState ? ink() : muted());
-        iconWrap.addView(icon, new FrameLayout.LayoutParams(dp(21), dp(21), Gravity.CENTER));
+        FrameLayout pillWrap = new FrameLayout(this);
+        View pillBg = new View(this);
+        pillBg.setBackground(shape(selectedState ? navPill() : Color.TRANSPARENT, 999));
+        pillWrap.addView(pillBg, new FrameLayout.LayoutParams(dp(64), dp(32), Gravity.CENTER));
+        ImageView icon = lucide(iconName, selectedState ? accent() : muted());
+        pillWrap.addView(icon, new FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER));
         int badge = target == UPDATES ? pendingUpdates().length() : 0;
         if (badge > 0) {
-            TextView dot = text(String.valueOf(Math.min(badge, 99)), 9, Color.WHITE, true);
+            TextView dot = textSemi(String.valueOf(Math.min(badge, 99)), 11, badgeInk());
             dot.setGravity(Gravity.CENTER);
-            GradientDrawable dotBg = new GradientDrawable();
-            dotBg.setShape(GradientDrawable.OVAL); dotBg.setColor(green());
-            dot.setBackground(dotBg);
-            dot.setMinWidth(dp(15)); dot.setMinHeight(dp(15));
-            FrameLayout.LayoutParams dotLp = new FrameLayout.LayoutParams(-2, dp(15), Gravity.TOP | Gravity.END);
-            dotLp.setMargins(0, 0, dp(4), 0);
-            iconWrap.addView(dot, dotLp);
+            dot.setBackground(shape(badgeBg(), 999));
+            dot.setMinWidth(dp(16)); dot.setMinHeight(dp(16));
+            dot.setPadding(dp(4), 0, dp(4), 0);
+            FrameLayout.LayoutParams dotLp = new FrameLayout.LayoutParams(-2, dp(16), Gravity.TOP | Gravity.END);
+            pillWrap.addView(dot, dotLp);
         }
-        item.addView(iconWrap, new LinearLayout.LayoutParams(dp(44), dp(24)));
-        space(item, 3);
-        TextView caption = text(title, 11, selectedState ? ink() : muted(), selectedState);
+        item.addView(pillWrap, new LinearLayout.LayoutParams(dp(64), dp(32)));
+        if (selectedState && !firstScreen && ValueAnimator.areAnimatorsEnabled()) {
+            pillBg.setAlpha(0f);
+            pillBg.animate().alpha(1f).setDuration(180).setInterpolator(smooth()).start();
+        }
+        space(item, 4);
+        TextView caption = textSemi(title, 12, selectedState ? accent() : muted());
         caption.setGravity(Gravity.CENTER); item.addView(caption);
         item.setOnClickListener(v -> { if (target != tab) showTab(target); });
         nav.addView(item, new LinearLayout.LayoutParams(0, -1, 1));
     }
     private void makeSearch() {
-        body.addView(text("Search", 21, ink(), true));
-        body.addView(text("Find apps in the catalog", 13, muted(), false));
+        body.addView(textSemi("Search", 28, ink()));
+        body.addView(text("Find apps in the catalog", 14, muted(), false));
         space(body, 12);
         searchBox = new EditText(this);
         searchBox.setSingleLine(true); searchBox.setHint("Search apps");
         searchBox.setHintTextColor(muted()); searchBox.setTextColor(ink());
-        searchBox.setTextSize(15); searchBox.setPadding(dp(18), dp(12), dp(18), dp(12));
+        searchBox.setTextSize(16); searchBox.setPadding(dp(18), dp(12), dp(18), dp(12));
+        searchBox.setMinHeight(dp(56));
         searchBox.setTypeface(interTypeface(0));
         GradientDrawable searchBg = new GradientDrawable();
         searchBg.setColor(inner()); searchBg.setCornerRadius(dp(999));
@@ -1057,8 +1078,8 @@ public class MainActivity extends Activity {
             renderList(filtered(query), false);
         } else if (tab == FAVORITES) {
             body.removeAllViews();
-            body.addView(text("Favorites", 21, ink(), true));
-            body.addView(text("Your saved apps", 13, muted(), false));
+            body.addView(textSemi("Favorites", 28, ink()));
+            body.addView(text("Your saved apps", 14, muted(), false));
             space(body, 6);
             renderList(favoriteApps(), false);
         } else if (tab == UPDATES) {
@@ -1066,8 +1087,8 @@ public class MainActivity extends Activity {
             updateButtons.clear();
             updateRings.clear();
             updateAllLabel = null;
-            body.addView(text("Updates", 21, ink(), true));
-            body.addView(text("Installed apps checked against the catalog", 13, muted(), false));
+            body.addView(textSemi("Updates", 28, ink()));
+            body.addView(text("Installed apps checked against the catalog", 14, muted(), false));
             space(body, 12);
             animIndex = 0;
             JSONArray pending = pendingUpdates();
@@ -1077,6 +1098,9 @@ public class MainActivity extends Activity {
             TextView updateCount = text(pending.length() == 1 ? "1 update available"
                     : pending.length() + " updates available", 17, ink(), true);
             updateHeader.addView(updateCount, weight());
+            FrameLayout updRefresh = iconButton("refresh", "Refresh app catalog");
+            updRefresh.setOnClickListener(v -> { updRefresh.animate().rotationBy(360).setDuration(500).start(); load(); });
+            updateHeader.addView(updRefresh, new LinearLayout.LayoutParams(dp(40), dp(40)));
             if (pending.length() > 0) {
                 updateAllLabel = textSemi("Update all", 12, green());
                 updateAllLabel.setGravity(Gravity.CENTER);
@@ -1121,8 +1145,8 @@ public class MainActivity extends Activity {
                 empty("The store is getting ready", "Approved apps will appear here."); return;
             }
             previousHomeSlugs.clear();
-            body.addView(text("Apps", 21, ink(), true));
-            body.addView(text("Curated open-source apps — every APK signature verified", 13, muted(), false));
+            body.addView(textSemi("Apps", 28, ink()));
+            body.addView(text("Curated open-source apps — every APK signature verified", 14, muted(), false));
             space(body, 10);
             View hero = homeHero();
             body.addView(hero); animateIn(hero, 0);
@@ -1669,14 +1693,14 @@ public class MainActivity extends Activity {
             for (String name : names) {
                 boolean selected = name.equals(activeCategory.isEmpty() ? "All" : activeCategory);
                 LinearLayout chip = new LinearLayout(this); chip.setGravity(Gravity.CENTER_VERTICAL);
-                chip.setPadding(dp(10), dp(8), dp(13), dp(8));
-                chip.setMinimumHeight(dp(48));
-                chip.addView(symbol(categoryIcon(name), 18, selected ? onActive() : ink()), new LinearLayout.LayoutParams(dp(22), dp(22)));
-                TextView caption = text(name, 12, selected ? onActive() : ink(), true);
-                caption.setPadding(dp(5), 0, 0, 0); chip.addView(caption);
+                chip.setPadding(dp(14), 0, dp(16), 0);
+                chip.setMinimumHeight(dp(36));
+                chip.addView(symbol(categoryIcon(name), 18, selected ? onActive() : ink()), new LinearLayout.LayoutParams(dp(20), dp(20)));
+                TextView caption = textSemi(name, 14, selected ? onActive() : ink());
+                caption.setPadding(dp(6), 0, 0, 0); chip.addView(caption);
                 if (selected) chip.setBackground(shape(active(), 999));
                 else { GradientDrawable chipBg = new GradientDrawable(); chipBg.setColor(Color.TRANSPARENT); chipBg.setCornerRadius(dp(999)); chipBg.setStroke(Math.max(1, dp(1)), border()); chip.setBackground(chipBg); }
-                int approximate = Math.min(250, 42 + name.length() * 8);
+                int approximate = Math.min(260, 58 + name.length() * 8);
                 int screen = Math.round(getResources().getDisplayMetrics().widthPixels / getResources().getDisplayMetrics().density) - 32;
                 if (width > 0 && width + approximate > screen) {
                     row = new LinearLayout(this); rows.addView(row); width = 0;
@@ -1803,8 +1827,8 @@ public class MainActivity extends Activity {
         }
     }
     private void listingChip(LinearLayout row, String label, boolean selected, Runnable click) {
-        TextView chip = textSemi(label, 13, selected ? onActive() : ink());
-        chip.setGravity(Gravity.CENTER); chip.setPadding(dp(15), dp(8), dp(15), dp(8)); chip.setMinHeight(dp(40));
+        TextView chip = textSemi(label, 14, selected ? onActive() : ink());
+        chip.setGravity(Gravity.CENTER); chip.setPadding(dp(16), 0, dp(16), 0); chip.setMinHeight(dp(36));
         if (selected) chip.setBackground(shape(active(), 999));
         else { GradientDrawable chipBg = new GradientDrawable(); chipBg.setColor(Color.TRANSPARENT); chipBg.setCornerRadius(dp(999)); chipBg.setStroke(Math.max(1, dp(1)), border()); chip.setBackground(chipBg); }
         chip.setOnClickListener(v -> click.run());
@@ -2029,8 +2053,8 @@ public class MainActivity extends Activity {
         }
     }
     private void renderSettingsPage() {
-        body.addView(text("Settings", 21, ink(), true));
-        body.addView(text("App preferences and account", 13, muted(), false));
+        body.addView(textSemi("Settings", 28, ink()));
+        body.addView(text("App preferences and account", 14, muted(), false));
         space(body, 14);
         renderAccountRow(settingsCard(body));
         settingsSection(body, "Appearance");
