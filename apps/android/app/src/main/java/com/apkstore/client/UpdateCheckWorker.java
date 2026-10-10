@@ -45,6 +45,9 @@ public final class UpdateCheckWorker extends Worker {
                 HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
                 connection.setConnectTimeout(12000); connection.setReadTimeout(12000);
                 connection.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
+                // (v1.1.34) Bearer bhi bhejo — baqi saari Supabase calls (checkSelfUpdate,
+                // CatalogRepository) dono headers bhejti hain; sirf ye loop peeche reh gaya tha.
+                connection.setRequestProperty("Authorization", "Bearer " + BuildConfig.SUPABASE_KEY);
                 Net.gzip(connection);
                 try {
                     // One app's transient failure must not discard the whole batch and

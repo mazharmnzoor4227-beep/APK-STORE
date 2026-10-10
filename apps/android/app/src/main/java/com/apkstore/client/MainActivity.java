@@ -60,6 +60,8 @@ import androidx.work.PeriodicWorkRequest;
 import androidx.work.ExistingPeriodicWorkPolicy;
 import androidx.work.OneTimeWorkRequest;
 import androidx.work.ExistingWorkPolicy;
+import androidx.work.Constraints;
+import androidx.work.NetworkType;
 import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends Activity {
@@ -331,13 +333,18 @@ public class MainActivity extends Activity {
         try {
             if (!CrashReporter.ensureWorkManager(this)) return;
             int hours = WorkPolicy.normalizeUpdateHours(settingsStore.updateHours());
-            PeriodicWorkRequest request = new PeriodicWorkRequest.Builder(UpdateCheckWorker.class, hours, TimeUnit.HOURS).build();
+            // (v1.1.34) Network constraint: baghair network ke worker jagne se sirf
+            // fail/retry hota tha — CrashReportWorker ki tarah CONNECTED lazmi kar diya.
+            Constraints netConstraints = new Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED).build();
+            PeriodicWorkRequest request = new PeriodicWorkRequest.Builder(UpdateCheckWorker.class, hours, TimeUnit.HOURS)
+                    .setConstraints(netConstraints).build();
             WorkManager.getInstance(this).enqueueUniquePeriodicWork("catalog-update-check", ExistingPeriodicWorkPolicy.UPDATE, request);
             // Also run one check shortly after every app start, so update alerts do not
             // wait for the next periodic window. KEEP avoids stacking across restarts;
             // the worker dedupes notifications per slug:version_code.
             OneTimeWorkRequest once = new OneTimeWorkRequest.Builder(UpdateCheckWorker.class)
-                    .setInitialDelay(1, TimeUnit.MINUTES).build();
+                    .setInitialDelay(1, TimeUnit.MINUTES).setConstraints(netConstraints).build();
             WorkManager.getInstance(this).enqueueUniqueWork("update-check-once", ExistingWorkPolicy.KEEP, once);
         } catch (Throwable ignored) { }
     }

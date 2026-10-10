@@ -31,6 +31,9 @@ final class GoogleSignInHelper {
             callback.onResult(null, "Google sign-in is not set up yet.");
             return;
         }
+        // (v1.1.34) Executor try se bahar bana — getCredentialAsync synchronously throw
+        // kare to catch mein shutdown ho sake (pehle har failed attempt par ek thread leak hota tha).
+        ExecutorService exec = Executors.newSingleThreadExecutor();
         try {
             GetGoogleIdOption option = new GetGoogleIdOption.Builder()
                     .setFilterByAuthorizedAccounts(false)
@@ -40,7 +43,6 @@ final class GoogleSignInHelper {
                     .addCredentialOption(option)
                     .build();
             CredentialManager manager = CredentialManager.create(context);
-            ExecutorService exec = Executors.newSingleThreadExecutor();
             manager.getCredentialAsync(context, request, new CancellationSignal(), exec,
                     new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
                         @Override
@@ -83,6 +85,7 @@ final class GoogleSignInHelper {
                         }
                     });
         } catch (Exception e) {
+            exec.shutdown();
             callback.onResult(null, "Google sign-in is unavailable on this device.");
         }
     }
