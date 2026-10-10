@@ -30,7 +30,7 @@
   --ink:#141413; --muted:#5C5850; --faint:#8A857B;
   --acc:#C15F3C; --acc-dark:#A84E2F; --acc-soft:rgba(193,95,60,.08); --acc-ink:#FAF9F5;
   --amber:#A86A12; --green:#43704C;
-  --hdr:#FAF9F5; --shadow:none;
+  --hdr:#FAF9F5; --shadow:none; --ring:rgba(20,20,19,.10);
   --radius:10px; --serif:'Fraunces',Georgia,'Times New Roman',serif;
 }
 .aslot-wrap{margin:20px 4px;min-height:0;overflow:hidden}
@@ -39,7 +39,7 @@
   --ink:#F5F2EC; --muted:#B8B2A7; --faint:#8A857B;
   --acc:#D97757; --acc-dark:#D97757; --acc-soft:rgba(217,119,87,.13); --acc-ink:#201F1D;
   --amber:#E0A458; --green:#8FB996;
-  --hdr:#201F1D; --shadow:none;
+  --hdr:#201F1D; --shadow:none; --ring:rgba(245,242,236,.16);
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{overflow-x:clip}
@@ -131,9 +131,9 @@ header{position:sticky;top:0;z-index:100;background:var(--hdr);border-bottom:1px
 .ud-hero .hf{margin-top:24px;display:flex;gap:10px;align-items:center}
 .ud-dlbtn{background:var(--ink);color:var(--bg);font-weight:600;font-size:14px;padding:11px 24px;border-radius:9px;display:inline-flex;align-items:center;gap:8px;transition:background .18s cubic-bezier(.22,1,.36,1),transform .16s cubic-bezier(.22,1,.36,1)}
 .ud-dlbtn:hover{background:var(--acc)}
-.ud-hero-media{flex:1;min-height:250px;background:var(--surface2)}
-.ud-hero-media img{width:100%;height:100%;object-fit:cover}
-.ud-hero-media.ud-hero-icon{display:flex;align-items:center;justify-content:center;padding:30px}
+.ud-hero-media{flex:1;min-height:250px;background:var(--surface2);position:relative;overflow:hidden}
+.ud-hero-media img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.ud-hero-media.ud-hero-icon{display:block;padding:0}
 
 /* carousel */
 .ud-carousel{position:relative}
@@ -167,9 +167,10 @@ header{position:sticky;top:0;z-index:100;background:var(--hdr);border-bottom:1px
 .trow .more:hover{color:var(--acc)}
 .irow .content{display:flex;gap:14px;overflow-x:auto;padding-bottom:8px;scrollbar-width:none}
 .irow .content::-webkit-scrollbar{display:none}
-.uditem{flex:0 0 116px;width:116px;text-align:left}
+.uditem{flex:0 0 132px;width:132px;text-align:left}
 .uditem .feature{display:none}
-.uditem figure{width:116px;height:116px;border-radius:14px;overflow:hidden;background:var(--surface2);border:1px solid var(--border)}
+.uditem figure{width:132px;height:132px;border-radius:22%;overflow:hidden;background:transparent;position:relative}
+.uditem figure::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 1px var(--ring);pointer-events:none}
 .uditem figure img{width:100%;height:100%;object-fit:cover;transition:transform .32s cubic-bezier(.22,1,.36,1)}
 .uditem:hover figure img{transform:scale(1.04)}
 .uditem .nm{font-size:13.5px;font-weight:600;margin-top:9px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -179,6 +180,7 @@ header{position:sticky;top:0;z-index:100;background:var(--hdr);border-bottom:1px
 /* dense rows */
 .urow{display:flex;align-items:center;gap:13px;padding:13px 6px;border-bottom:1px solid var(--border)}
 .urow:hover{background:var(--surface)}
+.urow img{object-fit:cover}
 .urow .t{flex:1;min-width:0}
 .urow .t b{display:block;font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .urow .t span{font-size:12.5px;color:var(--muted)}
@@ -196,7 +198,7 @@ header{position:sticky;top:0;z-index:100;background:var(--hdr);border-bottom:1px
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:2px 22px;padding:10px 0 8px}
 .gcard{background:transparent;border:none;border-bottom:1px solid var(--border);border-radius:0;padding:18px 6px 16px;text-align:left;display:flex;flex-direction:column;gap:3px;position:relative;width:100%;transition:transform .22s cubic-bezier(.22,1,.36,1),background .18s,border-color .22s}
 .gcard:hover{background:var(--surface);transform:translateY(-2px);border-bottom-color:var(--faint)}
-.gcard img{border-radius:12px;object-fit:cover;background:var(--surface2);transition:transform .3s cubic-bezier(.22,1,.36,1)}
+.gcard img{border-radius:22%;object-fit:cover;background:transparent;transition:transform .3s cubic-bezier(.22,1,.36,1)}
 .gcard:hover img{transform:scale(1.03)}
 .gcard h3{font-size:14.5px;font-weight:600;line-height:1.3;margin-top:9px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .gcard .c{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
@@ -213,7 +215,8 @@ header{position:sticky;top:0;z-index:100;background:var(--hdr);border-bottom:1px
 .ud-crumb a:hover{color:var(--acc)}
 .ud-top{display:flex;gap:18px;align-items:flex-start;padding:14px 0 6px;position:relative}
 .ud-top .di{flex:1;min-width:0}
-.ud-top img{object-fit:cover;background:var(--surface2);border:1px solid var(--border);flex-shrink:0}
+.ud-top img{object-fit:cover;border:none;box-shadow:0 0 0 1px var(--ring);flex-shrink:0}
+@media(max-width:640px){.ud-top>img,.ud-top>span{width:96px!important;height:96px!important;border-radius:22px!important}}
 .ud-top h1{font-family:var(--serif);font-size:30px;font-weight:600;letter-spacing:-.01em;line-height:1.15}
 .ud-top .favbtn{position:static;flex-shrink:0}
 .ud-ver{color:var(--muted);font-size:13px;margin-top:5px}
@@ -322,7 +325,7 @@ footer{margin-top:64px;background:transparent;border-top:1px solid var(--border)
   .ft-cols{grid-template-columns:1fr 1fr}
   .droid{display:none}
   .ud-hero{flex-direction:column}
-  .ud-hero-media{order:-1;min-height:180px;max-height:210px}
+  .ud-hero-media{order:-1;min-height:0;max-height:none;aspect-ratio:16/10}
   .ud-hero-body{padding:22px}
   .ud-hero-body h2{font-size:25px}
   .trust-grid{grid-template-columns:1fr}
@@ -710,7 +713,7 @@ async function loadSiteSettings(){
 let route="home",activeCat="All";
 const $=id=>document.getElementById(id);
 const im=(a,style)=>{ const ch=escHtml((a.title||"A").trim().charAt(0).toUpperCase());
- const fb='<span style="'+style+';display:STYLEDSP;align-items:center;justify-content:center;background:var(--acc-soft);color:var(--acc);font-weight:700;font-size:22px">'+ch+'</span>';
+ const fb='<span style="'+style+';display:STYLEDSP;align-items:center;justify-content:center;background:var(--acc-soft);color:var(--acc);font-weight:700;font-size:var(--ifs,22px)">'+ch+'</span>';
  if(!a.icon) return fb.replace("STYLEDSP","inline-flex");
  return '<img src="'+escAttr(a.icon)+'" alt="'+escAttr((a.title||"App")+" icon")+'" loading="lazy" style="'+style+'" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline-flex\'">'+fb.replace("STYLEDSP","none"); };
 
@@ -800,7 +803,7 @@ function recentsHTML(){ const r=getRecents(); if(!r.length) return "";
  return '<div style="margin-bottom:20px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="font-size:13px;font-weight:600;color:var(--muted)">Recent searches</span><button onclick="clearRecents()" style="font-size:12.5px;color:var(--acc);font-weight:500">Clear</button></div><div class="cats" style="padding:0">'+r.map(x=>'<button class="cat" onclick="goSearch(\''+x.replace(/\\/g,"\\\\").replace(/'/g,"\\'")+'\')">'+escAttr(x)+'</button>').join("")+'</div></div>'; }
 function doLiveSearch(q){ searchQuery=q; const el=$("sres"); if(el) el.innerHTML=searchResultsHTML(q); }
 function searchResultsHTML(q){ q=(q||"").trim().toLowerCase();
- const gcard=a=>'<div class="gcard" onclick="openApp(\''+a.id+'\')">'+im(a,"width:52px;height:52px;border-radius:13px;margin-bottom:10px")+'<h3>'+a.title+'</h3><div class="c">'+a.cat+'</div><div class="m">'+a.ver+' · '+a.size+'</div></div>';
+ const gcard=a=>'<div class="gcard" onclick="openApp(\''+a.id+'\')">'+im(a,"width:100%;aspect-ratio:1/1;height:auto;display:block;border-radius:22%;margin-bottom:12px;--ifs:54px")+'<h3>'+a.title+'</h3><div class="c">'+a.cat+'</div><div class="m">'+a.ver+' · '+a.size+'</div></div>';
  if(!q) return '<div class="trow"><h2>Popular right now</h2></div><div class="grid">'+APPS.map(gcard).join("")+'</div>';
  const list=APPS.filter(a=>(a.title+" "+a.cat+" "+a.pkg+" "+a.desc).toLowerCase().indexOf(q)>=0);
  let h='<p style="color:var(--muted);font-size:13.5px;margin-bottom:12px">'+list.length+' result'+(list.length===1?"":"s")+' for &ldquo;'+escAttr(q)+'&rdquo;</p>';
@@ -1059,7 +1062,7 @@ function vFavs(){
  const list=APPS.filter(function(a){ return isFav(a.slug); });
  if(!list.length) return h+'<div class="empty"><b>No favorites yet</b><br>Tap the heart icon on any app page.</div>';
  return h+'<p class="pg-sub">'+list.length+' saved \u00b7 '+(FAV_CLOUD==="ok"?"synced to your account":"saved on this device")+'</p><div class="grid">'
-  +list.map(function(a){ return '<div class="gcard" onclick="openApp(\''+a.id+'\')">'+im(a,"width:52px;height:52px;border-radius:13px;margin-bottom:10px")+'<h3>'+a.title+'</h3><div class="c">'+a.cat+'</div><div class="m">'+(a.ver?"v"+a.ver:"")+(a.size?" \u00b7 "+a.size:"")+'</div></div>'; }).join("")+'</div>';
+  +list.map(function(a){ return '<div class="gcard" onclick="openApp(\''+a.id+'\')">'+im(a,"width:100%;aspect-ratio:1/1;height:auto;display:block;border-radius:22%;margin-bottom:12px;--ifs:54px")+'<h3>'+a.title+'</h3><div class="c">'+a.cat+'</div><div class="m">'+(a.ver?"v"+a.ver:"")+(a.size?" \u00b7 "+a.size:"")+'</div></div>'; }).join("")+'</div>';
 }
 
 /* Uptodown-style cards + rows (original code, our own markup) */
@@ -1114,7 +1117,7 @@ function paintBanners(){
  });
 }
 function udItem(a){ return '<div class="uditem" onclick="openApp(\''+a.id+'\')">'+featBanner(a)+
- '<figure>'+im(a,"width:40px;height:40px;border-radius:10px;border:2px solid var(--bg);background:var(--surface)")+'</figure>'+
+ '<figure>'+im(a,"width:100%;height:100%;display:block;--ifs:46px")+'</figure>'+
  '<div class="nm">'+a.title+'</div><div class="ds">'+shortDesc(a.desc)+'</div></div>'; }
 function cardHTML(a,toPage){ return udItem(a); }
 function irow(title,list,moreJs){ if(!list.length) return "";
@@ -1122,7 +1125,7 @@ function irow(title,list,moreJs){ if(!list.length) return "";
 
 /* views */
 function heroCard(a){ const shot=(a.shots&&a.shots.length)?a.shots[0]:"";
- const media=shot?'<div class="ud-hero-media"><img src="'+escAttr(shot)+'" alt="'+escAttr(a.title+' screenshot')+'" loading="lazy"></div>':'<div class="ud-hero-media ud-hero-icon">'+im(a,"width:104px;height:104px;border-radius:24px")+'</div>';
+ const media=shot?'<div class="ud-hero-media"><img src="'+escAttr(shot)+'" alt="'+escAttr(a.title+' screenshot')+'" loading="lazy"></div>':'<div class="ud-hero-media ud-hero-icon">'+im(a,"width:100%;height:100%;display:block;--ifs:110px")+'</div>';
  return '<div class="ud-hero" onclick="openApp(\''+a.id+'\')">'
  +'<div class="ud-hero-body"><div class="ud-eyebrow">Featured \u00b7 '+a.cat+'</div><h2>'+a.title+'</h2><p>'+shortDesc(a.desc)+'</p>'
  +'<div class="hm"><span><b>v'+a.ver+'</b> version</span><span><b>'+a.size+'</b></span><span><b>'+a.updated+'</b> updated</span></div>'
@@ -1193,22 +1196,22 @@ function vHome(){
  h+=irow("Recommended",APPS.slice(0,12),"go('apps')");
  CATS.slice(1,4).forEach(c=>{ const list=APPS.filter(a=>a.cat===c); if(list.length) h+=irow(c,list.slice(0,12),"goCat('"+c.replace(/'/g,"\\'")+"')"); });
  h+='<section class="irow"><div class="trow"><h2>Latest uploads</h2><button class="more" aria-label="See more" onclick="go(\'updates\')">'+CHEV_R+'</button></div><div class="grid">'+
-  APPS.slice(0,12).map(a=>'<div class="gcard" onclick="openApp(\''+a.id+'\')">'+im(a,"width:52px;height:52px;border-radius:13px;margin-bottom:10px")+'<h3>'+a.title+'</h3><div class="c">'+a.cat+'</div><div class="m">'+(a.ver?"v"+a.ver:"")+(a.size?" · "+a.size:"")+'</div></div>').join("")+'</div></section>';
+  APPS.slice(0,12).map(a=>'<div class="gcard" onclick="openApp(\''+a.id+'\')">'+im(a,"width:100%;aspect-ratio:1/1;height:auto;display:block;border-radius:22%;margin-bottom:12px;--ifs:54px")+'<h3>'+a.title+'</h3><div class="c">'+a.cat+'</div><div class="m">'+(a.ver?"v"+a.ver:"")+(a.size?" · "+a.size:"")+'</div></div>').join("")+'</div></section>';
  h+=adSlot();
  h+=trustHTML();
  h+='<section class="irow"><div class="trow"><h2>All apps</h2><button class="more" aria-label="See more" onclick="go(\'apps\')">'+CHEV_R+'</button></div><div class="grid">'+
-  APPS.map(a=>'<div class="gcard" onclick="openApp(\''+a.id+'\')">'+im(a,"width:52px;height:52px;border-radius:13px;margin-bottom:10px")+'<h3>'+a.title+'</h3><div class="c">'+a.cat+'</div><div class="m">'+a.ver+' · '+a.size+'</div></div>').join("")+'</div></section>';
+  APPS.map(a=>'<div class="gcard" onclick="openApp(\''+a.id+'\')">'+im(a,"width:100%;aspect-ratio:1/1;height:auto;display:block;border-radius:22%;margin-bottom:12px;--ifs:54px")+'<h3>'+a.title+'</h3><div class="c">'+a.cat+'</div><div class="m">'+a.ver+' · '+a.size+'</div></div>').join("")+'</div></section>';
  return h; }
 function vApps(){ const list=activeCat==="All"?APPS:APPS.filter(a=>a.cat===activeCat);
  let h='<div class="ud-crumb"><a href="#" onclick="go(\'home\');return false">Home</a> / '+(activeCat==="All"?"Apps":activeCat)+'</div>';
  h+='<h1 class="pg-h1">'+(activeCat==="All"?"All apps":activeCat)+'</h1><p class="pg-sub">'+list.length+' apps · signature-verified</p>';
  h+='<div class="cats" style="padding-top:4px">'+CATS.map(c=>'<button class="cat'+(c===activeCat?" on":"")+'" onclick="activeCat=\''+c+'\';render()">'+c+'</button>').join("")+'</div>';
- h+='<div class="grid">'+(list.map(a=>'<div class="gcard" onclick="openApp(\''+a.id+'\')">'+im(a,"width:52px;height:52px;border-radius:13px;margin-bottom:10px")+'<h3>'+a.title+'</h3><div class="c">'+a.cat+'</div><div class="m">'+(a.ver?"v"+a.ver:"")+(a.size?" · "+a.size:"")+'</div></div>').join("")||'<div class="empty">No apps in this category yet.</div>')+'</div>';
+ h+='<div class="grid">'+(list.map(a=>'<div class="gcard" onclick="openApp(\''+a.id+'\')">'+im(a,"width:100%;aspect-ratio:1/1;height:auto;display:block;border-radius:22%;margin-bottom:12px;--ifs:54px")+'<h3>'+a.title+'</h3><div class="c">'+a.cat+'</div><div class="m">'+(a.ver?"v"+a.ver:"")+(a.size?" · "+a.size:"")+'</div></div>').join("")||'<div class="empty">No apps in this category yet.</div>')+'</div>';
  return h; }
 function vCats(){
  let h='<div class="ud-crumb"><a href="#" onclick="go(\'home\');return false">Home</a> / Categories</div><h1 class="pg-h1" style="margin-bottom:16px">Categories</h1><div class="grid">';
  CATS.slice(1).forEach(c=>{ const n=APPS.filter(a=>a.cat===c).length;
-  h+='<div class="gcard" onclick="goCat(\''+c+'\')" style="text-align:center;padding:24px 12px"><span style="width:52px;height:52px;border-radius:13px;margin:0 auto 10px;display:inline-flex;align-items:center;justify-content:center;background:var(--acc-soft);color:var(--acc);font-weight:700;font-size:22px">'+catIcon(c)+'</span><h3>'+c+'</h3><div class="m">'+n+' apps</div></div>'; });
+  h+='<div class="gcard" onclick="goCat(\''+c+'\')" style="text-align:center;padding:24px 12px"><span style="width:52px;height:52px;border-radius:13px;margin:0 auto 10px;display:inline-flex;align-items:center;justify-content:center;background:var(--acc-soft);color:var(--acc);font-weight:700;font-size:var(--ifs,22px)">'+catIcon(c)+'</span><h3>'+c+'</h3><div class="m">'+n+' apps</div></div>'; });
  return h+'</div>'; }
 function vUpdates(){ const dls=getDls(); const upd=[];
  dls.forEach(d=>{ const a=APPS.find(x=>x.slug===d.slug); if(!a) return;
@@ -1217,7 +1220,7 @@ function vUpdates(){ const dls=getDls(); const upd=[];
  let h='<div class="ud-crumb"><a href="#" onclick="go(\'home\');return false">Home</a> / Updates</div><h1 class="pg-h1">Updates</h1><p class="pg-sub">New versions of apps you downloaded</p>';
  if(!upd.length) return h+'<div class="empty"><b>You\u2019re up to date</b><br>Apps you download from here will appear here when a new version arrives.</div>';
  upd.forEach(u=>{ const a=u.a; h+='<div class="urow" onclick="openApp(\''+a.id+'\')">'
-  +im(a,"width:46px;height:46px;border-radius:11px;flex-shrink:0")
+  +im(a,"width:56px;height:56px;border-radius:13px;flex-shrink:0")
   +'<div class="t"><b>'+a.title+'</b><span>'+(u.old?"v"+u.old+" \u2192 ":"")+(a.ver?"v"+a.ver:"")+(a.size?" \u00B7 "+a.size:"")+(a.updated?" \u00B7 "+a.updated:"")+'</span></div>'
   +'<span class="tag">UPDATE</span><button class="g" onclick="event.stopPropagation();dlApp(\''+a.id+'\')">Get</button></div>'; });
  return h; }
@@ -1234,7 +1237,7 @@ function vApp(id){ const a=APPS.find(x=>x.id===id); if(!a)return vHome();
  const rel=hist.length?hist.map((r,i)=>({v:r.version_name,s:fmtSize(r.byte_size),d:fmtDate(r.created_at),cur:i===0})):[{v:a.ver,s:a.size,d:a.updated,cur:1}];
  const minSdk=(hist.length&&hist[0].min_sdk)?hist[0].min_sdk:"";
  let h='<div class="ud-crumb"><a href="#" onclick="go(\'home\');return false">Home</a> / <a href="#" onclick="goCat(\''+a.cat+'\');return false">'+a.cat+'</a> / '+a.title+'</div>';
- h+='<div class="ud-top">'+im(a,"width:100px;height:100px;border-radius:24px;flex-shrink:0")+
+ h+='<div class="ud-top">'+im(a,"width:120px;height:120px;border-radius:27px;flex-shrink:0")+
   '<div class="di"><h1>'+a.title+'</h1><div class="ud-ver">v'+a.ver+(a.pkg?' · '+a.pkg:"")+'</div>'+
   '<a class="ud-catbtn" href="#" onclick="goCat(\''+a.cat+'\');return false">'+a.cat+'</a></div>'
   +'<button class="favbtn'+(isFav(a.slug)?" on":"")+'" onclick="toggleFav(\''+a.slug+'\')" aria-label="Save to favorites">'+HEART_SVG+'</button></div>';
