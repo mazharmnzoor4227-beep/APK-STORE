@@ -117,6 +117,13 @@ public class MainActivity extends Activity {
     private int updateQueueTotal = 0;
     private JSONObject detailApp;
     private TextView detailPrimary, detailSecondary, detailPercent, detailStatus;
+    // Paid apps (v1.1.39). Empty until the paid-apps migration is applied.
+    private final java.util.Map<String, Integer> paidPrices = new java.util.HashMap<>();
+    private final java.util.Set<String> entitledApps = new java.util.HashSet<>();
+    private String purchaseCheckedFor = "";
+    private android.net.Uri pendingProofUri;
+    private TextView proofPickLabel;
+    private static final int REQ_PICK_PROOF = 4101;
     private Runnable detailBack;
     private ProgressRing detailRing;
     private LinearProgressBar detailProgress;
@@ -995,6 +1002,7 @@ public class MainActivity extends Activity {
                         releaseVersions.putAll(versions);
                         synchronized (failedIconUrls) { failedIconUrls.clear(); }
                         if (initial && apps.length() > 0) showTab(tab); else render();
+                        fetchPaidPrices();
                     } });
             } catch (Exception error) {
                 runOnUiThread(() -> { if (request == generation && body != null) {
@@ -3517,6 +3525,286 @@ public class MainActivity extends Activity {
 
     /** Fullscreen screenshot viewer: solid black stage, swipe/arrow navigation crossfades
      *  inside one dialog (no background flash like dismiss-and-recreate). */
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_PICK_PROOF && resultCode == RESULT_OK && data != null && data.getData() != null) {
+            pendingProofUri = data.getData();
+            if (proofPickLabel != null) proofPickLabel.setText("Screenshot attached");
+        }
+    }
+
+
+    // ---------- Paid apps (v1.1.39) ----------
+    // Flow: Purchase -> payment details (from payment_settings) + form ->
+    // purchase_requests row (status pending) + optional proof upload to the
+    // payment-proofs bucket. The owner confirms in the admin panel, which
+    // creates an entitlement; this screen then unlocks Install. There is NO
+    // automatic payment detection, by design.
+
+    private int paidPrice(JSONObject app) {
+        if (app == null) return 0;
+        Integer p = paidPrices.get(app.optString("id"));
+        return p == null ? 0 : p;
+    }
+
+    private boolean paidLocked(JSONObject app, boolean installed) {
+        return paidPrice(app) > 0 && !installed
+                && !entitledApps.contains(app.optString("id"));
+    }
+
+    private android.content.SharedPreferences purchasePrefs() {
+        return getSharedPreferences("purchases", MODE_PRIVATE);
+    }
+
+    private String restSync(String method, String path, String bearer, String jsonBody) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(BuildConfig.SUPABASE_URL + "/rest/v1/" + path).openConnection();
+        c.setConnectTimeout(12000); c.setReadTimeout(25000);
+        c.setRequestMethod(method);
+        c.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
+        c.setRequestProperty("Authorization", "Bearer " + (bearer != null && !bearer.isEmpty() ? bearer : BuildConfig.SUPABASE_KEY));
+        if (jsonBody != null) {
+            c.setDoOutput(true);
+            c.setRequestProperty("Content-Type", "application/json");
+            c.setRequestProperty("Prefer", "return=representation");
+            byte[] bytes = jsonBody.getBytes("UTF-8");
+            c.getOutputStream().write(bytes);
+        }
+        int code = c.getResponseCode();
+        java.io.InputStream in = code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream();
+        String body = in == null ? "" : new String(Io.readAllBytes(in), "UTF-8");
+        if (code < 200 || code >= 300) throw new java.io.IOException("REST " + code + ": " + body);
+        return body;
+    }
+
+    private void fetchPaidPrices() {
+        new Thread(() -> {
+            try {
+                JSONArray rows = new JSONArray(restSync("GET", "apps?select=id,price_pkr&price_pkr=gt.0", null, null));
+                synchronized (paidPrices) {
+                    paidPrices.clear();
+                    for (int i = 0; i < rows.length(); i++) {
+                        JSONObject r = rows.getJSONObject(i);
+                        paidPrices.put(r.optString("id"), r.optInt("price_pkr", 0));
+                    }
+                }
+                runOnUiThread(() -> { if (detailApp != null) refreshDetail(); });
+            } catch (Exception ignored) { /* paid schema not applied yet: store stays all-free */ }
+        }).start();
+    }
+
+    private void checkPurchaseAccess(JSONObject app) {
+        final String appId = app.optString("id");
+        if (appId.isEmpty() || paidPrice(app) <= 0) return;
+        final String reqId = purchasePrefs().getString("req_" + appId, "");
+        final String token = authSession != null && authSession.isSignedIn() ? authSession.accessToken : null;
+        new Thread(() -> {
+            boolean entitled = false;
+            String state = "";
+            if (token != null) {
+                try {
+                    JSONArray rows = new JSONArray(restSync("GET", "entitlements?app_id=eq." + appId + "&select=email", token, null));
+                    if (rows.length() > 0) entitled = true;
+                } catch (Exception ignored) { }
+            }
+            if (!entitled && !reqId.isEmpty()) {
+                try {
+                    JSONArray rows = new JSONArray(restSync("GET", "purchase_requests?id=eq." + reqId + "&select=status", null, null));
+                    if (rows.length() > 0) {
+                        state = rows.getJSONObject(0).optString("status");
+                        if ("confirmed".equals(state)) entitled = true;
+                    }
+                } catch (Exception ignored) { }
+            }
+            final boolean fEntitled = entitled;
+            final String fState = state;
+            if (fEntitled) entitledApps.add(appId);
+            if (!fState.isEmpty()) purchasePrefs().edit().putString("state_" + appId, fState).apply();
+            runOnUiThread(() -> {
+                if (detailApp != null && appId.equals(detailApp.optString("id"))) refreshDetail();
+            });
+        }).start();
+    }
+
+    private void copyToClipboard(String label, String value) {
+        android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (cm != null) cm.setPrimaryClip(android.content.ClipData.newPlainText(label, value));
+        android.widget.Toast.makeText(this, label + " copied", android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    private void showPurchaseSheet(JSONObject app) {
+        final String appId = app.optString("id");
+        final int price = paidPrice(app);
+        pendingProofUri = null;
+        Dialog sheet = new Dialog(this);
+        sheet.setCanceledOnTouchOutside(true);
+        LinearLayout panel = vertical();
+        panel.setPadding(dp(20), dp(15), dp(20), dp(24));
+        panel.setBackground(shape(surface(), 24));
+        LinearLayout grabberRow = new LinearLayout(this); grabberRow.setGravity(Gravity.CENTER);
+        View grabber = new View(this); grabber.setBackground(shape(raised(), 2));
+        grabberRow.addView(grabber, new LinearLayout.LayoutParams(dp(40), dp(4)));
+        panel.addView(grabberRow); space(panel, 14);
+        panel.addView(titleText("Purchase " + app.optString("title", "app"), 20, ink()));
+        space(panel, 4);
+        panel.addView(text("Rs " + price + " \u00b7 pay to one of these accounts, then send the form below. Install unlocks after the store confirms your payment.", 13, muted(), false));
+        space(panel, 14);
+
+        final LinearLayout methods = vertical();
+        panel.addView(methods);
+        methods.addView(text("Loading payment details\u2026", 13, muted(), false));
+        new Thread(() -> {
+            JSONObject settings = null;
+            try {
+                JSONArray rows = new JSONArray(restSync("GET", "payment_settings?id=eq.1&select=bank_name,account_title,iban,easypaisa_number,jazzcash_number", null, null));
+                if (rows.length() > 0) settings = rows.getJSONObject(0);
+            } catch (Exception ignored) { }
+            final JSONObject fSettings = settings;
+            runOnUiThread(() -> {
+                methods.removeAllViews();
+                if (fSettings == null) {
+                    methods.addView(text("Payment details are unavailable right now. Please try again later.", 13, muted(), false));
+                    return;
+                }
+                String[][] fields = {
+                        {"Bank", fSettings.optString("bank_name")},
+                        {"Account title", fSettings.optString("account_title")},
+                        {"IBAN", fSettings.optString("iban")},
+                        {"EasyPaisa", fSettings.optString("easypaisa_number")},
+                        {"JazzCash", fSettings.optString("jazzcash_number")}};
+                int shown = 0;
+                for (String[] f : fields) {
+                    if (f[1] == null || f[1].trim().isEmpty()) continue;
+                    shown++;
+                    LinearLayout row = new LinearLayout(this);
+                    row.setGravity(Gravity.CENTER_VERTICAL);
+                    row.setPadding(dp(12), dp(10), dp(8), dp(10));
+                    row.setBackground(shape(inner(), 12));
+                    LinearLayout col = vertical();
+                    col.addView(text(f[0], 11, muted(), true));
+                    col.addView(text(f[1], 14, ink(), true));
+                    row.addView(col, weight());
+                    TextView copy = textSemi("Copy", 13, ink());
+                    copy.setPadding(dp(10), dp(6), dp(10), dp(6));
+                    final String value = f[1];
+                    final String label = f[0];
+                    copy.setOnClickListener(v -> copyToClipboard(label, value));
+                    row.addView(copy);
+                    methods.addView(row);
+                    space(methods, 8);
+                }
+                if (shown == 0) methods.addView(text("Payments are not set up yet \u2014 please check back soon.", 13, muted(), false));
+            });
+        });
+        space(panel, 6);
+
+        final EditText email = authInput("Your email", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+        if (authSession != null && authSession.isSignedIn() && authSession.email != null) email.setText(authSession.email);
+        panel.addView(email); space(panel, 10);
+        final EditText phone = authInput("Your phone (WhatsApp)", InputType.TYPE_CLASS_PHONE);
+        panel.addView(phone); space(panel, 10);
+
+        proofPickLabel = text("Attach payment screenshot", 14, ink(), true);
+        proofPickLabel.setGravity(Gravity.CENTER);
+        proofPickLabel.setPadding(dp(12), dp(13), dp(12), dp(13));
+        proofPickLabel.setBackground(outline(12, border()));
+        proofPickLabel.setOnClickListener(v -> {
+            try {
+                android.content.Intent pick = new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
+                pick.setType("image/*");
+                pick.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+                startActivityForResult(pick, REQ_PICK_PROOF);
+            } catch (Exception e) {
+                android.widget.Toast.makeText(this, "No image picker available", android.widget.Toast.LENGTH_SHORT).show();
+            }
+        });
+        panel.addView(proofPickLabel); space(panel, 14);
+
+        final TextView error = text("", 13, Color.rgb(224, 36, 36), false);
+        error.setVisibility(View.GONE);
+        panel.addView(error);
+
+        final TextView submit = textSemi("Submit payment request", 15, onActive());
+        submit.setGravity(Gravity.CENTER);
+        submit.setPadding(dp(14), dp(15), dp(14), dp(15));
+        submit.setBackground(shape(active(), 12));
+        pressable(submit);
+        submit.setOnClickListener(v -> {
+            final String em = email.getText().toString().trim();
+            final String ph = phone.getText().toString().trim();
+            if (!em.contains("@") || em.length() < 5) {
+                error.setText("Please enter a valid email \u2014 your unlock is tied to it.");
+                error.setVisibility(View.VISIBLE);
+                return;
+            }
+            error.setVisibility(View.GONE);
+            submit.setEnabled(false);
+            submit.setText("Sending\u2026");
+            final android.net.Uri proof = pendingProofUri;
+            new Thread(() -> {
+                try {
+                    final String reqId = java.util.UUID.randomUUID().toString();
+                    String proofPath = "";
+                    if (proof != null) {
+                        byte[] bytes = Io.readAllBytes(getContentResolver().openInputStream(proof));
+                        if (bytes.length > 6 * 1024 * 1024) throw new Exception("Screenshot is too large (max 6 MB).");
+                        proofPath = reqId + ".jpg";
+                        HttpURLConnection up = (HttpURLConnection) new URL(BuildConfig.SUPABASE_URL + "/storage/v1/object/payment-proofs/" + proofPath).openConnection();
+                        up.setConnectTimeout(15000); up.setReadTimeout(60000);
+                        up.setRequestMethod("POST"); up.setDoOutput(true);
+                        up.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY);
+                        up.setRequestProperty("Authorization", "Bearer " + BuildConfig.SUPABASE_KEY);
+                        up.setRequestProperty("Content-Type", "image/jpeg");
+                        up.setRequestProperty("x-upsert", "true");
+                        up.getOutputStream().write(bytes);
+                        int uc = up.getResponseCode();
+                        if (uc < 200 || uc >= 300) throw new Exception("Screenshot upload failed (" + uc + ")");
+                    }
+                    JSONObject body = new JSONObject();
+                    body.put("id", reqId);
+                    body.put("app_id", appId);
+                    body.put("customer_email", em);
+                    body.put("customer_phone", ph);
+                    body.put("screenshot_path", proofPath);
+                    body.put("amount_pkr", price);
+                    body.put("status", "pending");
+                    restSync("POST", "purchase_requests", null, body.toString());
+                    purchasePrefs().edit()
+                            .putString("req_" + appId, reqId)
+                            .putString("state_" + appId, "pending")
+                            .apply();
+                    runOnUiThread(() -> {
+                        sheet.dismiss();
+                        android.widget.Toast.makeText(this, "Request sent \u2014 we'll unlock Install once payment is confirmed.", android.widget.Toast.LENGTH_LONG).show();
+                        purchaseCheckedFor = "";
+                        if (detailApp != null && appId.equals(detailApp.optString("id"))) refreshDetail();
+                    });
+                } catch (Exception e) {
+                    runOnUiThread(() -> {
+                        submit.setEnabled(true);
+                        submit.setText("Submit payment request");
+                        error.setText("Could not send: " + e.getMessage());
+                        error.setVisibility(View.VISIBLE);
+                    });
+                }
+            }).start();
+        });
+        panel.addView(submit);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(panel);
+        sheet.setContentView(scroll);
+        android.view.Window win = sheet.getWindow();
+        if (win != null) {
+            win.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            win.setLayout(-1, -2);
+            win.setGravity(Gravity.BOTTOM);
+            win.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            win.setDimAmount(0.45f);
+        }
+        sheet.show();
+    }
+
     private class ScreenshotViewer {
         private final JSONArray shots;
         private int current;
@@ -3662,6 +3950,30 @@ public class MainActivity extends Activity {
                 else startDownload(detailApp);
                 refreshDetail();
             });
+        }
+        // Paid gate (v1.1.39): a paid app that is neither installed nor
+        // entitled offers Purchase instead of Install. Installed apps are
+        // never gated. Access is (re)checked once per detail open.
+        String detailAppId = detailApp.optString("id");
+        if (paidPrice(detailApp) > 0 && !detailAppId.equals(purchaseCheckedFor)) {
+            purchaseCheckedFor = detailAppId;
+            checkPurchaseAccess(detailApp);
+        }
+        if (paidLocked(detailApp, installed) && !running && !installing) {
+            detailPrimary.setText("Purchase \u00b7 Rs " + paidPrice(detailApp));
+            detailPrimary.setEnabled(true);
+            detailPrimary.setBackground(shape(active(), 12));
+            detailPrimary.setTextColor(onActive());
+            detailPrimary.setOnClickListener(v -> showPurchaseSheet(detailApp));
+            detailSecondary.setVisibility(View.GONE);
+            String purchaseState = purchasePrefs().getString("state_" + detailAppId, "");
+            if ("pending".equals(purchaseState)) {
+                detailStatus.setText("Verifying \u2014 we'll unlock Install once payment is confirmed.");
+                detailStatus.setVisibility(View.VISIBLE);
+            } else if ("rejected".equals(purchaseState)) {
+                detailStatus.setText("Payment not confirmed \u2014 please check the details and submit again.");
+                detailStatus.setVisibility(View.VISIBLE);
+            }
         }
     }
         /** Opens Android's official uninstall confirmation; the system performs the actual removal. */
