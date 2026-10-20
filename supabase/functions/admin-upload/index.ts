@@ -148,10 +148,26 @@ Deno.serve(async (request) => {
       const { c, insp } = loaded;
       const uploadId = typeof insp.mpUploadId === 'string' && insp.mpUploadId ? insp.mpUploadId : null;
       if (!uploadId) return json({ error: 'Multipart upload not started' }, 409);
-      await r2!.send(new CompleteMultipartUploadCommand({
+      // (backend fix) Ask storage to compute the full-object SHA-256 while
+      // assembling, so inspect can verify the browser-supplied checksum
+      // against storage's own value instead of trusting it blindly. If the
+      // storage backend rejects full-object checksums, fall back to a plain
+      // assembly (previous behavior).
+      const completeParams: Record<string, unknown> = {
         Bucket: r2Bucket!, Key: c.object_key, UploadId: uploadId,
         MultipartUpload: { Parts: norm.map(p => ({ PartNumber: p.partNumber, ETag: p.etag })) },
-      }));
+      };
+      if (clientSha256) { completeParams.ChecksumSHA256 = hexToB64(clientSha256); completeParams.ChecksumType = 'FULL_OBJECT'; }
+      try {
+        await r2!.send(new CompleteMultipartUploadCommand(completeParams as never));
+      } catch (completeError) {
+        if (!clientSha256) throw completeError;
+        const head = await r2!.send(new HeadObjectCommand({ Bucket: r2Bucket!, Key: c.object_key })).catch(() => null);
+        if (!head) {
+          delete completeParams.ChecksumSHA256; delete completeParams.ChecksumType;
+          await r2!.send(new CompleteMultipartUploadCommand(completeParams as never));
+        }
+      }
       const object = await r2!.send(new HeadObjectCommand({ Bucket: r2Bucket!, Key: c.object_key })).catch(() => null);
       if (!object || Number(object.ContentLength) !== Number(c.byte_size)) {
         await r2!.send(new DeleteObjectCommand({ Bucket: r2Bucket!, Key: c.object_key })).catch(() => {});
@@ -233,6 +249,14 @@ Deno.serve(async (request) => {
       const clientSha256 = candidate.inspection && typeof candidate.inspection === 'object'
         ? (candidate.inspection as Record<string, unknown>).clientSha256 : null;
       let apkSha256: string;
+      // 'server' = re-hashed here; 'r2-checksum' = storage's own full-object
+      // SHA-256 matched the browser hash; 'client' = browser hash trusted
+      // (storage had no checksum for the object).
+      let hashVerification = isR2 ? 'client' : 'server';
+      // simple-apk-parser returns no minSdk/targetSdk/permissions at all
+      // (verified against the real package), so those fields were always
+      // empty. Enrichment below fills them when the bytes are at hand.
+      const enriched: { minSdk: number | null; targetSdk: number | null; permissions: string[] } = { minSdk: null, targetSdk: null, permissions: [] };
       if (isR2) {
         // Large file: trust the browser-computed checksum stored at complete time.
         // Re-downloading + re-hashing a multi-hundred-MB file here blows the
@@ -242,17 +266,48 @@ Deno.serve(async (request) => {
         const head = await r2!.send(new HeadObjectCommand({ Bucket: r2Bucket!, Key: candidate.object_key })).catch(() => null);
         if (!head || Number(head.ContentLength) !== Number(candidate.byte_size))
           return json({ error: 'APK size changed after upload' }, 409);
+        // (backend fix) When storage holds its own SHA-256 for the object
+        // (recorded at multipart completion), verify the browser hash
+        // against it instead of trusting it.
+        const headC = await r2!.send(new HeadObjectCommand({ Bucket: r2Bucket!, Key: candidate.object_key, ChecksumMode: 'ENABLED' })).catch(() => null);
+        const storedChecksum = (headC as { ChecksumSHA256?: string } | null)?.ChecksumSHA256;
+        if (typeof storedChecksum === 'string' && storedChecksum) {
+          if (storedChecksum !== hexToB64(clientSha256)) return json({ error: 'APK checksum mismatch — upload the file again' }, 409);
+          hashVerification = 'r2-checksum';
+        }
         apkSha256 = clientSha256;
       } else {
         const download = await fetch(signedUrl, { signal: AbortSignal.timeout(30_000) });
-        if (!download.ok || !download.body) throw new Error('APK could not be read for checksum');
-        const hash = createHash('sha256'); let bytes = 0;
-        for await (const chunk of download.body) { bytes += chunk.byteLength; if (bytes > maxApkSize) throw new Error('APK exceeds size limit'); hash.update(chunk); }
-        if (bytes !== Number(candidate.byte_size)) return json({ error: 'APK size changed after upload' }, 409);
-        apkSha256 = hash.digest('hex');
+        if (!download.ok) throw new Error('APK could not be read for checksum');
+        const buf = new Uint8Array(await download.arrayBuffer());
+        if (buf.byteLength > maxApkSize) throw new Error('APK exceeds size limit');
+        if (buf.byteLength !== Number(candidate.byte_size)) return json({ error: 'APK size changed after upload' }, 409);
+        apkSha256 = createHash('sha256').update(buf).digest('hex');
+        // (backend fix) Best-effort metadata enrichment: app-info-parser
+        // reads uses-sdk + uses-permission from the binary manifest. Any
+        // failure degrades to the previous (empty) values — identity and
+        // the hash above stay authoritative.
+        try {
+          const mod = await import('npm:app-info-parser@1.1.6');
+          const AppInfoParser = (mod as { default?: unknown }).default ?? mod;
+          const tmp = await Deno.makeTempFile({ suffix: '.apk' });
+          try {
+            await Deno.writeFile(tmp, buf);
+            const full = await new (AppInfoParser as new (path: string) => { parse(): Promise<Record<string, unknown>> })(tmp).parse();
+            const usesSdk = (full?.usesSdk ?? {}) as Record<string, unknown>;
+            const ms = Number(usesSdk.minSdkVersion); const ts = Number(usesSdk.targetSdkVersion);
+            if (Number.isSafeInteger(ms) && ms > 0) enriched.minSdk = ms;
+            if (Number.isSafeInteger(ts) && ts > 0) enriched.targetSdk = ts;
+            const rawPerms = Array.isArray(full?.usesPermissions) ? (full.usesPermissions as unknown[]) : [];
+            enriched.permissions = rawPerms
+              .map(p => typeof p === 'string' ? p : (p && typeof (p as { name?: unknown }).name === 'string' ? (p as { name: string }).name : ''))
+              .filter(p => p.length > 0 && p.length <= 200)
+              .slice(0, 300);
+          } finally { await Deno.remove(tmp).catch(() => {}); }
+        } catch { /* enrichment unavailable: keep previous empty values */ }
       }
       const metadata = parsed as typeof parsed & { minSdkVersion?: number; targetSdkVersion?: number; minSdk?: number; targetSdk?: number; permissions?: string[]; abis?: string[] };
-      const inspection = { packageId: parsed.packageName, versionCode: parsed.versionCode, versionName: parsed.versionName || String(parsed.versionCode), certificateSha256: certificates[0], apkSha256, appName: String(parsed.appName || parsed.packageName).slice(0, 100), minSdk: metadata.minSdkVersion || metadata.minSdk || null, targetSdk: metadata.targetSdkVersion || metadata.targetSdk || null, permissions: Array.isArray(metadata.permissions) ? metadata.permissions.slice(0, 300) : [], abis: Array.isArray(metadata.abis) ? metadata.abis.slice(0, 20) : [] };
+      const inspection = { packageId: parsed.packageName, versionCode: parsed.versionCode, versionName: parsed.versionName || String(parsed.versionCode), certificateSha256: certificates[0], apkSha256, appName: String(parsed.appName || parsed.packageName).slice(0, 100), minSdk: enriched.minSdk ?? (metadata.minSdkVersion || metadata.minSdk || null), targetSdk: enriched.targetSdk ?? (metadata.targetSdkVersion || metadata.targetSdk || null), permissions: enriched.permissions.length ? enriched.permissions : (Array.isArray(metadata.permissions) ? metadata.permissions.slice(0, 300) : []), abis: Array.isArray(metadata.abis) ? metadata.abis.slice(0, 20) : [], hashVerification };
       if (parsed.iconBlob && parsed.iconBlob.size <= 1048576 && ['image/png','image/jpeg','image/webp'].includes(parsed.iconBlob.type)) {
         const iconKey = `${id}.${parsed.iconBlob.type.split('/')[1] === 'jpeg' ? 'jpg' : parsed.iconBlob.type.split('/')[1]}`;
         const { error } = await db.storage.from('app-icons').upload(iconKey, parsed.iconBlob, { contentType: parsed.iconBlob.type, upsert: true });
@@ -339,13 +394,30 @@ Deno.serve(async (request) => {
       if (error) throw error;
       const extras: Record<string, unknown> = { short_description: String(input.shortDescription || '').trim().slice(0, 80), is_recommended: input.recommended === true };
       if (candidate.inspection.iconUrl) extras.icon_url = candidate.inspection.iconUrl;
-      if (Number.isInteger(candidate.inspection.minSdk) && candidate.inspection.minSdk > 0) extras.min_sdk = candidate.inspection.minSdk;
+      const minSdkNum = Number(candidate.inspection.minSdk);
+      if (Number.isInteger(minSdkNum) && minSdkNum > 0) extras.min_sdk = minSdkNum;
       if (input.license !== undefined) extras.license = String(input.license).trim().slice(0, 80);
       if (input.priceType !== undefined && ['Free','In-app purchases','In-app purchases or Paid'].includes(input.priceType)) extras.price_type = input.priceType;
       if (sourceUrl !== undefined) extras.source_url = sourceUrl;
       if (fdroidUrl !== undefined) extras.fdroid_url = fdroidUrl;
       const { error: updateError } = await db.from('apps').update(extras).eq('id', appId);
       if (updateError) throw updateError;
+      // (backend fix) publish_candidate predates the releases.changelog /
+      // releases.permissions columns and never fills them, so every uploaded
+      // app showed empty Changelog/Permissions. Mirror the values onto the
+      // new current release (the updated RPC also writes them natively).
+      const releasePatch: Record<string, unknown> = {};
+      if (releaseNotes) releasePatch.changelog = releaseNotes;
+      const inspPerms = (candidate.inspection as Record<string, unknown>).permissions;
+      if (Array.isArray(inspPerms) && inspPerms.length)
+        releasePatch.permissions = inspPerms.filter(p => typeof p === 'string').slice(0, 300);
+      if (Object.keys(releasePatch).length) {
+        const { data: appRow } = await db.from('apps').select('current_release_id').eq('id', appId).maybeSingle();
+        if (appRow?.current_release_id) {
+          const { error: releasePatchError } = await db.from('releases').update(releasePatch).eq('id', appRow.current_release_id);
+          if (releasePatchError) throw releasePatchError;
+        }
+      }
       const { error: auditError } = await db.from('admin_audit').insert({ actor_id: user.id, action: 'publish', subject_id: appId, subject_name: title, details: { rightsConfirmed: true, packageId: candidate.inspection.packageId, manualOverride: Object.keys(ovr).length ? ovr : undefined } });
       if (auditError) throw new Error('App published, but audit record failed: '+auditError.message);
       await bumpCatalogVersion();
@@ -501,6 +573,11 @@ Deno.serve(async (request) => {
   }
 });
 
+function hexToB64(hex: string): string {
+  let bin = '';
+  for (let i = 0; i < hex.length; i += 2) bin += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16));
+  return btoa(bin);
+}
 function validUrl(value: unknown): string {
   const text = String(value || '').trim();
   if (!text) return '';
