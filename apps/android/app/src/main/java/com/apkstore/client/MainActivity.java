@@ -91,6 +91,9 @@ public class MainActivity extends Activity {
     private Runnable pendingSearch;
     private boolean legalPage;
     private boolean firstScreen = true;
+    // (v1.1.37) Last capsule-pill position, so the rebuilt bar glides tab-to-tab.
+    private float lastPillX = -1;
+    private int lastPillW = 0;
     // (v1.1.34) Motion/skeleton state
     private boolean catalogLoading;
     private int animIndex;
@@ -123,7 +126,7 @@ public class MainActivity extends Activity {
     private LinearLayout selfUpdatePage;
     private TextView selfUpdateStatus, selfUpdateProgress;
     private LinearProgressBar selfUpdateBar;
-    private android.widget.Button selfUpdateButton;
+    private TextView selfUpdateButton;
     private Runnable selfUpdateUiPoll;
     private final HashMap<String, Integer> downloadProgress = new HashMap<>();
     private final HashMap<String, UpdateButton> updateButtons = new HashMap<>();
@@ -265,9 +268,34 @@ public class MainActivity extends Activity {
     private int badgeInk() { return light ? Color.WHITE : Color.rgb(104, 0, 10); }
     private GradientDrawable searchPillBg() {
         GradientDrawable d = new GradientDrawable();
-        d.setColor(inner()); d.setCornerRadius(dp(999));
-        d.setStroke(Math.max(1, dp(1)), border());
+        d.setColor(raised()); d.setCornerRadius(dp(999));
         return d;
+    }
+    /* (v1.1.37) Liquid capsule bar tokens — Arrowdrift tab bar values:
+       translucent fill, hairline edge, floating above the content. */
+    private int barFill() { return light ? Color.argb(217, 255, 255, 255) : Color.argb(224, 20, 20, 22); }
+    private int barLine() { return light ? Color.argb(23, 32, 32, 60) : Color.argb(38, 255, 255, 255); }
+    private GradientDrawable capsuleBg() {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(barFill()); d.setCornerRadius(dp(999));
+        d.setStroke(Math.max(1, dp(1)), barLine());
+        return d;
+    }
+    /** Real backdrop blur for sheet/dialog windows (API 31+); no-op below. */
+    private void glassWindow(Window window) {
+        if (window == null || android.os.Build.VERSION.SDK_INT < 31) return;
+        try {
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
+            android.view.WindowManager.LayoutParams attrs = window.getAttributes();
+            attrs.setBlurBehindRadius(dp(18));
+            window.setAttributes(attrs);
+        } catch (Exception ignored) { }
+    }
+    /** Type scale (v1.1.37): Inter SemiBold titles with tight tracking. */
+    private TextView titleText(String value, int size, int color) {
+        TextView t = textSemi(value, size, color);
+        t.setLetterSpacing(size >= 20 ? -0.02f : -0.01f);
+        return t;
     }
     private int dp(int n) { return Math.round(n * getResources().getDisplayMetrics().density); }
 
@@ -630,8 +658,9 @@ public class MainActivity extends Activity {
     }
     private void tap(View view, Runnable next) {
         if (!ValueAnimator.areAnimatorsEnabled()) { next.run(); return; }
-        view.animate().scaleX(.9f).scaleY(.9f).setDuration(85).withEndAction(() -> {
-            view.animate().scaleX(1f).scaleY(1f).setDuration(160).start();
+        view.animate().scaleX(.96f).scaleY(.96f).setDuration(90).withEndAction(() -> {
+            view.animate().scaleX(1f).scaleY(1f).setDuration(200)
+                    .setInterpolator(new android.view.animation.OvershootInterpolator(1.3f)).start();
             next.run();
         }).start();
     }
@@ -649,15 +678,18 @@ public class MainActivity extends Activity {
                 .setStartDelay(Math.min(index, 8) * 35L)
                 .setDuration(240).setInterpolator(new DecelerateInterpolator()).start();
     }
-    /** Halka press feedback (scale .98) — maujooda click listeners ko disturb nahi karta. */
+    /** (v1.1.37) Game-feel press: soft scale .97 in ~90ms, spring back over
+     * ~200ms. Touch listener returns false — click listeners are undisturbed. */
     private void pressable(View v) {
         v.setOnTouchListener((view, event) -> {
             if (!ValueAnimator.areAnimatorsEnabled()) return false;
             int action = event.getAction();
             if (action == MotionEvent.ACTION_DOWN)
-                view.animate().scaleX(.98f).scaleY(.98f).setDuration(100).start();
+                view.animate().scaleX(.97f).scaleY(.97f).setDuration(90)
+                        .setInterpolator(new DecelerateInterpolator()).start();
             else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL)
-                view.animate().scaleX(1f).scaleY(1f).setDuration(160).start();
+                view.animate().scaleX(1f).scaleY(1f).setDuration(200)
+                        .setInterpolator(new android.view.animation.OvershootInterpolator(1.3f)).start();
             return false;
         });
     }
@@ -760,7 +792,7 @@ public class MainActivity extends Activity {
         header.setBackgroundColor(surface());
         header.setPadding(dp(16), dp(10), dp(16), dp(10));
         if (selected == SEARCH) {
-            TextView brand = textSemi("APK Store", 20, ink());
+            TextView brand = titleText("APK Store", 20, ink());
             header.addView(brand);
             header.addView(new View(this), weight());
         } else {
@@ -790,18 +822,35 @@ public class MainActivity extends Activity {
 
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true);
         scroll.setVerticalScrollBarEnabled(false);
-        body = vertical(); body.setPadding(dp(16), dp(14), dp(16), dp(24));
+        body = vertical(); body.setPadding(dp(16), dp(14), dp(16), dp(96));
         scroll.addView(body);
-        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        View navLine = new View(this); navLine.setBackgroundColor(border());
-        root.addView(navLine, new LinearLayout.LayoutParams(-1, Math.max(1, dp(1))));
-        LinearLayout nav = new LinearLayout(this); nav.setGravity(Gravity.CENTER); nav.setBackgroundColor(raised());
-        addNav(nav, "grid", "Apps", APPS);
-        addNav(nav, "search", "Search", SEARCH);
-        addNav(nav, "download", "Updates", UPDATES);
-        addNav(nav, "heart", "Favorites", FAVORITES);
-        addNav(nav, "settings", "Settings", SETTINGS);
-        root.addView(nav, new LinearLayout.LayoutParams(-1, dp(80)));
+        /* (v1.1.37) Floating liquid capsule bar (Arrowdrift pattern): the bar
+           floats over the scrolling content; a shared pill glides to the active
+           tab, positioned from the tab's real rect — never width-division math. */
+        FrameLayout stage = new FrameLayout(this);
+        stage.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
+        FrameLayout capsule = new FrameLayout(this);
+        capsule.setBackground(capsuleBg());
+        capsule.setElevation(dp(10));
+        View navPillView = new View(this);
+        navPillView.setBackground(shape(navPill(), 999));
+        FrameLayout.LayoutParams pillLp = new FrameLayout.LayoutParams(
+                lastPillW > 0 ? lastPillW : dp(60), dp(52), Gravity.TOP | Gravity.START);
+        pillLp.topMargin = dp(6);
+        capsule.addView(navPillView, pillLp);
+        if (lastPillX >= 0) navPillView.setX(lastPillX);
+        LinearLayout nav = new LinearLayout(this); nav.setGravity(Gravity.CENTER);
+        nav.setPadding(dp(5), dp(5), dp(5), dp(5));
+        capsule.addView(nav, new FrameLayout.LayoutParams(-1, -1));
+        addNav(nav, "grid", "Apps", APPS, navPillView, capsule);
+        addNav(nav, "search", "Search", SEARCH, navPillView, capsule);
+        addNav(nav, "download", "Updates", UPDATES, navPillView, capsule);
+        addNav(nav, "heart", "Favorites", FAVORITES, navPillView, capsule);
+        addNav(nav, "settings", "Settings", SETTINGS, navPillView, capsule);
+        FrameLayout.LayoutParams capsuleLp = new FrameLayout.LayoutParams(-1, dp(64), Gravity.BOTTOM);
+        capsuleLp.setMargins(dp(16), 0, dp(16), dp(12));
+        stage.addView(capsule, capsuleLp);
+        root.addView(stage, new LinearLayout.LayoutParams(-1, 0, 1));
 
         if (selected == SEARCH) {
             makeSearch();
@@ -814,21 +863,19 @@ public class MainActivity extends Activity {
             header.animate().alpha(1f).translationY(0).setDuration(220).setInterpolator(new DecelerateInterpolator()).start();
             scroll.setAlpha(0f); scroll.setTranslationY(dp(12));
             scroll.animate().alpha(1f).translationY(0).setDuration(280).setInterpolator(new DecelerateInterpolator()).start();
-            nav.setAlpha(0.85f); nav.animate().alpha(1f).setDuration(230).start();
+            capsule.setAlpha(0.85f); capsule.setTranslationY(dp(8));
+            capsule.animate().alpha(1f).translationY(0).setDuration(230).setInterpolator(new DecelerateInterpolator()).start();
         }
         firstScreen = false;
     }
-    private void addNav(LinearLayout nav, String iconName, String title, int target) {
-        /* (v1.1.36) Material 3 Navigation Bar — app-store-design spec:
-           pill indicator 64x32, icon 24dp, label 12sp, badge = error role. */
+    private void addNav(LinearLayout nav, String iconName, String title, int target, View pill, FrameLayout capsule) {
+        /* (v1.1.37) Capsule bar item: 24dp stroke icon + 12sp label riding over
+           the shared gliding pill. Badge = M3 error role, top-end of the icon. */
         boolean selectedState = target == tab;
         LinearLayout item = vertical(); item.setGravity(Gravity.CENTER);
-        FrameLayout pillWrap = new FrameLayout(this);
-        View pillBg = new View(this);
-        pillBg.setBackground(shape(selectedState ? navPill() : Color.TRANSPARENT, 999));
-        pillWrap.addView(pillBg, new FrameLayout.LayoutParams(dp(64), dp(32), Gravity.CENTER));
+        FrameLayout iconWrap = new FrameLayout(this);
         ImageView icon = lucide(iconName, selectedState ? accent() : muted());
-        pillWrap.addView(icon, new FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER));
+        iconWrap.addView(icon, new FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER));
         int badge = target == UPDATES ? pendingUpdates().length() : 0;
         if (badge > 0) {
             TextView dot = textSemi(String.valueOf(Math.min(badge, 99)), 11, badgeInk());
@@ -837,21 +884,50 @@ public class MainActivity extends Activity {
             dot.setMinWidth(dp(16)); dot.setMinHeight(dp(16));
             dot.setPadding(dp(4), 0, dp(4), 0);
             FrameLayout.LayoutParams dotLp = new FrameLayout.LayoutParams(-2, dp(16), Gravity.TOP | Gravity.END);
-            pillWrap.addView(dot, dotLp);
+            iconWrap.addView(dot, dotLp);
         }
-        item.addView(pillWrap, new LinearLayout.LayoutParams(dp(64), dp(32)));
-        if (selectedState && !firstScreen && ValueAnimator.areAnimatorsEnabled()) {
-            pillBg.setAlpha(0f);
-            pillBg.animate().alpha(1f).setDuration(180).setInterpolator(smooth()).start();
-        }
-        space(item, 4);
+        item.addView(iconWrap, new LinearLayout.LayoutParams(dp(64), dp(30)));
+        space(item, 2);
         TextView caption = textSemi(title, 12, selectedState ? accent() : muted());
         caption.setGravity(Gravity.CENTER); item.addView(caption);
+        item.setContentDescription(title);
+        pressable(item);
         item.setOnClickListener(v -> { if (target != tab) showTab(target); });
         nav.addView(item, new LinearLayout.LayoutParams(0, -1, 1));
+        if (selectedState) {
+            capsule.getViewTreeObserver().addOnGlobalLayoutListener(new android.view.ViewTreeObserver.OnGlobalLayoutListener() {
+                @Override public void onGlobalLayout() {
+                    capsule.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+                    positionNavPill(pill, capsule, item, !firstScreen);
+                }
+            });
+        }
+    }
+    /** Glide the capsule pill onto the active tab. X and width come from the
+     * tab item's real on-screen rect, so the icon sits at the pill's exact
+     * centre (the Arrowdrift v6 fix — no width-division math). The game easing
+     * cubic-bezier(.32,.72,.24,1) over 380ms gives the liquid glide. */
+    private void positionNavPill(View pill, FrameLayout capsule, View item, boolean animate) {
+        if (pill == null || capsule == null || item == null) return;
+        int[] capLoc = new int[2], itemLoc = new int[2];
+        capsule.getLocationOnScreen(capLoc);
+        item.getLocationOnScreen(itemLoc);
+        float targetX = itemLoc[0] - capLoc[0];
+        int targetW = item.getWidth();
+        if (targetW <= 0) return;
+        android.view.ViewGroup.LayoutParams lp = pill.getLayoutParams();
+        if (lp.width != targetW) { lp.width = targetW; pill.setLayoutParams(lp); }
+        pill.animate().cancel();
+        if (animate && ValueAnimator.areAnimatorsEnabled()) {
+            pill.animate().x(targetX).setDuration(380)
+                    .setInterpolator(new android.view.animation.PathInterpolator(0.32f, 0.72f, 0.24f, 1f)).start();
+        } else {
+            pill.setX(targetX);
+        }
+        lastPillX = targetX; lastPillW = targetW;
     }
     private void makeSearch() {
-        body.addView(textSemi("Search", 28, ink()));
+        body.addView(titleText("Search", 28, ink()));
         body.addView(text("Find apps in the catalog", 14, muted(), false));
         space(body, 12);
         searchBox = new EditText(this);
@@ -861,8 +937,7 @@ public class MainActivity extends Activity {
         searchBox.setMinHeight(dp(56));
         searchBox.setTypeface(interTypeface(0));
         GradientDrawable searchBg = new GradientDrawable();
-        searchBg.setColor(inner()); searchBg.setCornerRadius(dp(999));
-        searchBg.setStroke(Math.max(1, dp(1)), border());
+        searchBg.setColor(raised()); searchBg.setCornerRadius(dp(999));
         searchBox.setBackground(searchBg); searchBox.setText(query);
         body.addView(searchBox);
         space(body, 20);
@@ -906,7 +981,7 @@ public class MainActivity extends Activity {
                     if (catalog.length() == 0) {
                         render();
                         empty("Catalog unavailable", error.getMessage());
-                        TextView retry = text("Retry", 16, green(), true);
+                        TextView retry = textSemi("Retry", 15, green());
                         retry.setMinHeight(dp(48)); retry.setOnClickListener(v -> load());
                         body.addView(retry);
                     }
@@ -1078,7 +1153,7 @@ public class MainActivity extends Activity {
             renderList(filtered(query), false);
         } else if (tab == FAVORITES) {
             body.removeAllViews();
-            body.addView(textSemi("Favorites", 28, ink()));
+            body.addView(titleText("Favorites", 28, ink()));
             body.addView(text("Your saved apps", 14, muted(), false));
             space(body, 6);
             renderList(favoriteApps(), false);
@@ -1087,7 +1162,7 @@ public class MainActivity extends Activity {
             updateButtons.clear();
             updateRings.clear();
             updateAllLabel = null;
-            body.addView(textSemi("Updates", 28, ink()));
+            body.addView(titleText("Updates", 28, ink()));
             body.addView(text("Installed apps checked against the catalog", 14, muted(), false));
             space(body, 12);
             animIndex = 0;
@@ -1095,14 +1170,14 @@ public class MainActivity extends Activity {
             // Reference-style header: "N updates available" left, "Update all"/"Cancel all" right.
             LinearLayout updateHeader = new LinearLayout(this);
             updateHeader.setGravity(Gravity.CENTER_VERTICAL);
-            TextView updateCount = text(pending.length() == 1 ? "1 update available"
-                    : pending.length() + " updates available", 17, ink(), true);
+            TextView updateCount = textSemi(pending.length() == 1 ? "1 update available"
+                    : pending.length() + " updates available", 17, ink());
             updateHeader.addView(updateCount, weight());
             FrameLayout updRefresh = iconButton("refresh", "Refresh app catalog");
             updRefresh.setOnClickListener(v -> { updRefresh.animate().rotationBy(360).setDuration(500).start(); load(); });
             updateHeader.addView(updRefresh, new LinearLayout.LayoutParams(dp(40), dp(40)));
             if (pending.length() > 0) {
-                updateAllLabel = textSemi("Update all", 12, green());
+                updateAllLabel = textSemi("Update all", 13, green());
                 updateAllLabel.setGravity(Gravity.CENTER);
                 updateAllLabel.setPadding(dp(13), dp(7), dp(13), dp(7));
                 updateAllLabel.setBackground(pillOutline(green()));
@@ -1145,7 +1220,7 @@ public class MainActivity extends Activity {
                 empty("The store is getting ready", "Approved apps will appear here."); return;
             }
             previousHomeSlugs.clear();
-            body.addView(textSemi("Apps", 28, ink()));
+            body.addView(titleText("Apps", 28, ink()));
             body.addView(text("Curated open-source apps — every APK signature verified", 14, muted(), false));
             space(body, 10);
             View hero = homeHero();
@@ -1204,7 +1279,7 @@ public class MainActivity extends Activity {
             super(MainActivity.this);
             this.app = app;
             this.slug = app.optString("slug");
-            label = textSemi("", 13, green());
+            label = textSemi("", 14, green());
             label.setGravity(Gravity.CENTER);
             label.setPadding(dp(16), 0, dp(16), 0);
             addView(label, new FrameLayout.LayoutParams(-2, -1, Gravity.CENTER));
@@ -1333,7 +1408,7 @@ public class MainActivity extends Activity {
         String saved = getPreferences(0).getString("recent_searches", "");
         if (saved.isEmpty()) return;
         LinearLayout row = new LinearLayout(this);
-        row.addView(text("Recent searches", 16, ink(), true), weight());
+        row.addView(textSemi("Recent searches", 16, ink()), weight());
         TextView clear = text("Clear", 14, green(), true); clear.setMinHeight(dp(48));
         clear.setOnClickListener(v -> { getPreferences(0).edit().remove("recent_searches").apply(); render(); });
         row.addView(clear); body.addView(row);
@@ -1351,7 +1426,7 @@ public class MainActivity extends Activity {
         java.util.List<String> ready = new java.util.ArrayList<>(completedDownloads.keySet());
         if (!active.isEmpty()) {
             any = true;
-            page.addView(text("Downloading", 15, ink(), true));
+            page.addView(textSemi("Downloading", 15, ink()));
             space(page, 8);
             for (String slug : active) {
                 JSONObject app = appForDownload(slug);
@@ -1368,14 +1443,17 @@ public class MainActivity extends Activity {
                 row.addView(dlWrap,
                         new LinearLayout.LayoutParams(dp(64), dp(64)));
                 LinearLayout labels = vertical(); labels.setPadding(dp(12), 0, 0, 0);
-                TextView title = text(app != null ? app.optString("title") : slug, 16, ink(), true); title.setSingleLine(true);
+                TextView title = textSemi(app != null ? app.optString("title") : slug, 15, ink()); title.setSingleLine(true);
                 labels.addView(title);
                 TextView status = text("Downloading… " + downloadProgress.getOrDefault(slug, 0) + "%", 12, muted(), false);
                 labels.addView(status);
                 downloadRowStatus.put(slug, status);
                 row.addView(labels, weight());
-                TextView cancel = text("Cancel", 14, ink(), true);
-                cancel.setMinHeight(dp(48)); cancel.setPadding(dp(12), 0, dp(12), 0); cancel.setGravity(Gravity.CENTER_VERTICAL);
+                TextView cancel = textSemi("Cancel", 13, ink());
+                cancel.setGravity(Gravity.CENTER);
+                cancel.setPadding(dp(13), dp(7), dp(13), dp(7));
+                cancel.setBackground(pillOutline(border()));
+                pressable(cancel);
                 cancel.setOnClickListener(v -> cancelDownload(rowSlug));
                 row.addView(cancel);
                 if (app != null && installedVersion(app.optString("package_id")) >= 0) addInstalledTick(row, app);
@@ -1388,7 +1466,7 @@ public class MainActivity extends Activity {
         }
         if (!ready.isEmpty()) {
             any = true;
-            page.addView(text("Downloaded", 15, ink(), true));
+            page.addView(textSemi("Downloaded", 15, ink()));
             space(page, 8);
             for (String slug : ready) {
                 JSONObject app = appForDownload(slug);
@@ -1401,7 +1479,7 @@ public class MainActivity extends Activity {
         JSONArray attempts = history.attempts();
         if (attempts.length() > 0) {
             any = true;
-            page.addView(text("History", 15, ink(), true));
+            page.addView(textSemi("History", 15, ink()));
             space(page, 4);
             TextView clear = text("Clear history", 14, green(), true);
             clear.setMinHeight(dp(48)); clear.setOnClickListener(v -> { history.clear(); showDownloads(); });
@@ -1415,7 +1493,7 @@ public class MainActivity extends Activity {
                 JSONObject app = appForDownload(slug);
                 if (app != null) row.addView(icon(app, 56), new LinearLayout.LayoutParams(dp(56), dp(56)));
                 LinearLayout labels = vertical(); labels.setPadding(dp(12), 0, 0, 0);
-                TextView title = text(attempt.optString("title"), 16, ink(), true); title.setSingleLine(true);
+                TextView title = textSemi(attempt.optString("title"), 15, ink()); title.setSingleLine(true);
                 labels.addView(title);
                 String date = android.text.format.DateFormat.format("dd MMM yyyy", attempt.optLong("time")).toString();
                 labels.addView(text(status + " · " + date, 12, muted(), false));
@@ -1441,7 +1519,7 @@ public class MainActivity extends Activity {
         LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
         row.addView(icon(app, 56), new LinearLayout.LayoutParams(dp(56), dp(56)));
         LinearLayout labels = vertical(); labels.setPadding(dp(12), 0, 0, 0);
-        TextView title = text(app.optString("title"), 16, ink(), true); title.setSingleLine(true);
+        TextView title = textSemi(app.optString("title"), 15, ink()); title.setSingleLine(true);
         labels.addView(title);
         labels.addView(text(status, 12, muted(), false));
         row.addView(labels, weight());
@@ -1731,7 +1809,7 @@ public class MainActivity extends Activity {
             card.animate().alpha(1f).translationY(0).setDuration(260)
                     .setInterpolator(new DecelerateInterpolator()).start();
         }
-        card.addView(text(title, 18, ink(), true)); space(card, 7);
+        card.addView(textSemi(title, 18, ink())); space(card, 7);
         card.addView(text(detail, 13, muted(), false)); body.addView(card);
     }
     private void showListing(String heading, boolean updates) {
@@ -1756,18 +1834,14 @@ public class MainActivity extends Activity {
         openAnimWindow();
         LinearLayout root = vertical(); root.setBackgroundColor(bg()); applySafeArea(root);
         setContentView(root); root.requestApplyInsets();
-        LinearLayout top = new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL); top.setPadding(dp(12), 0, dp(12), 0);
-        TextView back = action("arrow_back", "Back"); back.setOnClickListener(v -> showTab(APPS));
-        top.addView(back, new LinearLayout.LayoutParams(dp(48), dp(56)));
-        top.addView(text(heading, 22, ink(), true), weight());
-        TextView search = action("search", "Search this list");
-        search.setOnClickListener(v -> {
-            EditText field = new EditText(this); field.setSingleLine(true); field.setText(listSearch);
-            new AlertDialog.Builder(this).setTitle("Search " + heading).setView(field)
-                    .setPositiveButton("Search", (d, w) -> { listSearch = field.getText().toString().trim(); listCount = 30; renderListing(heading); })
-                    .setNegativeButton("Cancel", null).show();
-        });
-        top.addView(search, new LinearLayout.LayoutParams(dp(48), dp(56))); root.addView(top);
+        LinearLayout top = new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL); top.setPadding(dp(8), dp(2), dp(8), dp(2));
+        FrameLayout back = iconButton("back", "Back"); back.setOnClickListener(v -> showTab(APPS));
+        top.addView(back, new LinearLayout.LayoutParams(dp(48), dp(52)));
+        top.addView(titleText(heading, 22, ink()), weight());
+        FrameLayout search = iconButton("search", "Search this list");
+        search.setOnClickListener(v -> inputDialog("Search " + heading, listSearch, "Search apps",
+                value -> { listSearch = value.trim(); listCount = 30; renderListing(heading); }));
+        top.addView(search, new LinearLayout.LayoutParams(dp(48), dp(52))); root.addView(top);
         HorizontalScrollView filters = new HorizontalScrollView(this); filters.setHorizontalScrollBarEnabled(false);
         LinearLayout chips = new LinearLayout(this); chips.setPadding(dp(16), dp(6), dp(16), dp(10));
         listingChip(chips, listCategory.isEmpty() ? "All" : listCategory, !listCategory.isEmpty(), () -> {
@@ -1834,6 +1908,44 @@ public class MainActivity extends Activity {
         chip.setOnClickListener(v -> click.run());
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2); lp.setMargins(0, 0, dp(8), 0); row.addView(chip, lp);
     }
+    /** (v1.1.37) Themed single-field input dialog in the app design system. */
+    private void inputDialog(String title, String initial, String hint, java.util.function.Consumer<String> onSubmit) {
+        LinearLayout panel = vertical();
+        panel.setPadding(dp(22), dp(20), dp(22), dp(22));
+        panel.setBackground(shape(surface(), 24));
+        panel.addView(titleText(title, 20, ink()));
+        space(panel, 14);
+        EditText field = authInput(hint, InputType.TYPE_CLASS_TEXT);
+        field.setText(initial);
+        field.setSelection(field.getText().length());
+        panel.addView(field);
+        space(panel, 16);
+        LinearLayout btns = new LinearLayout(this);
+        TextView cancel = textSemi("Cancel", 14, ink());
+        cancel.setGravity(Gravity.CENTER); cancel.setPadding(0, dp(13), 0, dp(13));
+        cancel.setBackground(outline(12, border()));
+        TextView ok = textSemi("Search", 14, onActive());
+        ok.setGravity(Gravity.CENTER); ok.setPadding(0, dp(13), 0, dp(13));
+        ok.setBackground(shape(active(), 12));
+        btns.addView(cancel, new LinearLayout.LayoutParams(0, -2, 1));
+        View gap = new View(this); btns.addView(gap, new LinearLayout.LayoutParams(dp(10), 1));
+        btns.addView(ok, new LinearLayout.LayoutParams(0, -2, 1));
+        panel.addView(btns);
+        Dialog d = new Dialog(this);
+        d.setContentView(panel);
+        Window window = d.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawableResource(android.R.color.transparent);
+            android.view.WindowManager.LayoutParams attrs = window.getAttributes();
+            attrs.width = -1; attrs.height = -2; attrs.gravity = Gravity.CENTER;
+            window.setAttributes(attrs);
+            glassWindow(window);
+        }
+        cancel.setOnClickListener(v -> d.dismiss());
+        ok.setOnClickListener(v -> { String value = field.getText().toString(); d.dismiss(); onSubmit.accept(value); });
+        pressable(ok); pressable(cancel);
+        d.show();
+    }
     private void showChoiceSheet(String title, String[] choices, String selected, java.util.function.Consumer<String> onChoose) {
         Dialog sheet = new Dialog(this);
         LinearLayout panel = vertical(); panel.setBackground(shape(surface(), 28));
@@ -1847,7 +1959,7 @@ public class MainActivity extends Activity {
         pillHandleView.setLayoutParams(pillHandleLp);
         pillHandleView.setBackground(pillHandle);
         panel.addView(pillHandleView);
-        panel.addView(text(title, 20, ink(), true)); space(panel, 10);
+        panel.addView(titleText(title, 20, ink())); space(panel, 10);
         ScrollView scroll = new ScrollView(this); scroll.setVerticalScrollBarEnabled(false);
         LinearLayout list = vertical();
         for (String choice : choices) {
@@ -1865,6 +1977,7 @@ public class MainActivity extends Activity {
             window.setBackgroundDrawableResource(android.R.color.transparent);
             window.setGravity(Gravity.BOTTOM);
             window.setLayout(-1, -2);
+            glassWindow(window);
         }
         sheet.show(); if (window != null) window.setLayout(-1, -2);
     }
@@ -1918,7 +2031,7 @@ public class MainActivity extends Activity {
         avatar.setGravity(Gravity.CENTER);
         acct.addView(avatar, new LinearLayout.LayoutParams(ad, ad));
         LinearLayout copy = vertical(); copy.setPadding(dp(14), 0, dp(8), 0);
-        copy.addView(text(signedIn ? (email.isEmpty() ? "Account" : email) : "Sign in", 17, ink(), true));
+        copy.addView(textSemi(signedIn ? (email.isEmpty() ? "Account" : email) : "Sign in", 17, ink()));
         copy.addView(text(signedIn ? "Signed in \u00b7 Tap to sign out" : "Sync favorites across devices", 13, muted(), false));
         acct.addView(copy, weight());
         acct.addView(symbol("chevron_right", 22, muted()), new LinearLayout.LayoutParams(dp(28), dp(28)));
@@ -1968,6 +2081,7 @@ public class MainActivity extends Activity {
             attributes.gravity = Gravity.BOTTOM;
             attributes.dimAmount = 0.55f;
             window.setAttributes(attributes);
+            glassWindow(window);
         }
         // Hide until positioned: without this the fully-open sheet flashes for a
         // frame before the slide-up starts — the stutter users see on open.
@@ -2021,7 +2135,7 @@ public class MainActivity extends Activity {
             if (app != null && installedVersion(app.optString("package_id")) >= 0) {
                 LinearLayout item = new LinearLayout(this); item.setGravity(Gravity.CENTER_VERTICAL); item.setMinimumHeight(dp(76));
                 item.addView(icon(app, 56), new LinearLayout.LayoutParams(dp(56), dp(56)));
-                TextView label = text(app.optString("title"), 16, ink(), true);
+                TextView label = textSemi(app.optString("title"), 15, ink());
                 label.setPadding(dp(12), 0, 0, 0); item.addView(label);
                 item.setOnClickListener(v -> showDetail(app, this::showMyApps));
                 page.addView(item); count++;
@@ -2041,7 +2155,7 @@ public class MainActivity extends Activity {
             }
             LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setMinimumHeight(dp(64));
             if (match != null) row.addView(icon(match, 44), new LinearLayout.LayoutParams(dp(44), dp(44)));
-            TextView label = text(match == null ? slug : match.optString("title"), 16, ink(), true);
+            TextView label = textSemi(match == null ? slug : match.optString("title"), 15, ink());
             label.setPadding(dp(12), 0, dp(12), 0); row.addView(label, weight());
             TextView remove = text("Remove", 14, green(), true); remove.setGravity(Gravity.CENTER);
             remove.setMinWidth(dp(72)); remove.setMinHeight(dp(48)); row.addView(remove);
@@ -2053,7 +2167,7 @@ public class MainActivity extends Activity {
         }
     }
     private void renderSettingsPage() {
-        body.addView(textSemi("Settings", 28, ink()));
+        body.addView(titleText("Settings", 28, ink()));
         body.addView(text("App preferences and account", 14, muted(), false));
         space(body, 14);
         renderAccountRow(settingsCard(body));
@@ -2164,7 +2278,8 @@ public class MainActivity extends Activity {
         f.setTextColor(ink());
         f.setHintTextColor(muted());
         f.setPadding(dp(14), dp(14), dp(14), dp(14));
-        f.setBackground(shape(inner(), 12));
+        f.setTypeface(interTypeface(0));
+        f.setBackground(cardShape(inner(), 12));
         return f;
     }
 
@@ -2223,14 +2338,20 @@ public class MainActivity extends Activity {
         avatar.setBackground(shape(active(), ad / 2));
         head.addView(avatar, new LinearLayout.LayoutParams(ad, ad));
         LinearLayout titles = vertical(); titles.setPadding(dp(14), 0, dp(8), 0);
-        TextView title = text(signupMode[0] ? "Create account" : "Welcome back", 20, ink(), true);
+        TextView title = titleText(signupMode[0] ? "Create account" : "Welcome back", 20, ink());
         titles.addView(title);
         TextView subtitle = text(signupMode[0] ? "Create your free account" : "Login to sync your favorites", 13, muted(), false);
         titles.addView(subtitle);
         head.addView(titles, weight());
-        TextView close = action("cancel", "Close");
-        close.setOnClickListener(v -> { if (dialogRef[0] != null) dialogRef[0].dismiss(); });
-        head.addView(close, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        FrameLayout closeBtn = new FrameLayout(this);
+        ImageView closeIcon = new ImageView(this);
+        closeIcon.setImageResource(R.drawable.ic_close);
+        closeIcon.setColorFilter(ink());
+        closeIcon.setContentDescription("Close");
+        closeBtn.addView(closeIcon, new FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER));
+        closeBtn.setContentDescription("Close");
+        closeBtn.setOnClickListener(v -> { if (dialogRef[0] != null) dialogRef[0].dismiss(); });
+        head.addView(closeBtn, new LinearLayout.LayoutParams(dp(44), dp(44)));
         panel.addView(head);
         space(panel, 14);
 
@@ -2264,11 +2385,12 @@ public class MainActivity extends Activity {
         panel.addView(hint);
         space(panel, 14);
 
-        TextView primary = text(signupMode[0] ? "Create account" : "Login", 16,
-                onActive(), true);
+        TextView primary = textSemi(signupMode[0] ? "Create account" : "Login", 16,
+                onActive());
         primary.setGravity(Gravity.CENTER);
         primary.setPadding(dp(16), dp(15), dp(16), dp(15));
         primary.setBackground(shape(active(), 12));
+        pressable(primary);
         panel.addView(primary, new LinearLayout.LayoutParams(-1, -2));
         space(panel, 10);
 
@@ -2364,6 +2486,7 @@ public class MainActivity extends Activity {
             View gSpace = new View(this);
             google.addView(gSpace, new LinearLayout.LayoutParams(dp(10), dp(1)));
             google.addView(text("Continue with Google", 16, ink(), true));
+            pressable(google);
             panel.addView(google, new LinearLayout.LayoutParams(-1, -2));
             google.setOnClickListener(v -> tap(google, () -> {
                 error.setVisibility(View.GONE);
@@ -2402,6 +2525,7 @@ public class MainActivity extends Activity {
             attrs.width = -1; attrs.height = -2;
             attrs.gravity = Gravity.CENTER;
             window.setAttributes(attrs);
+            glassWindow(window);
         }
         dialogRef[0] = d;
         d.show();
@@ -2425,7 +2549,7 @@ public class MainActivity extends Activity {
         avatar.setBackground(shape(active(), dp(30)));
         panel.addView(avatar, new LinearLayout.LayoutParams(dp(60), dp(60)));
         space(panel, 14);
-        TextView title = text("Sign out?", 19, ink(), true);
+        TextView title = titleText("Sign out?", 19, ink());
         title.setGravity(Gravity.CENTER);
         panel.addView(title);
         space(panel, 8);
@@ -2438,12 +2562,12 @@ public class MainActivity extends Activity {
         TextView cancel = text("Cancel", 15, ink(), true);
         cancel.setGravity(Gravity.CENTER);
         cancel.setPadding(0, dp(13), 0, dp(13));
-        cancel.setBackground(outline(16, muted()));
+        cancel.setBackground(outline(12, border()));
         TextView out = text("Sign out", 15, Color.WHITE, true);
         out.setGravity(Gravity.CENTER);
         out.setPadding(0, dp(13), 0, dp(13));
         GradientDrawable outBg = new GradientDrawable();
-        outBg.setCornerRadius(dp(16));
+        outBg.setCornerRadius(dp(12));
         outBg.setColor(Color.rgb(176, 42, 42));
         out.setBackground(outBg);
         btns.addView(cancel, new LinearLayout.LayoutParams(0, -2, 1));
@@ -2471,6 +2595,7 @@ public class MainActivity extends Activity {
             attrs.width = -1; attrs.height = -2;
             attrs.gravity = Gravity.CENTER;
             window.setAttributes(attrs);
+            glassWindow(window);
         }
         dialogRef[0] = d;
         d.show();
@@ -2494,7 +2619,7 @@ public class MainActivity extends Activity {
         avatar.setBackground(shape(active(), dp(38)));
         head.addView(avatar, new LinearLayout.LayoutParams(dp(76), dp(76)));
         space(head, 12);
-        TextView em = text(email.isEmpty() ? "Account" : email, 17, ink(), true);
+        TextView em = textSemi(email.isEmpty() ? "Account" : email, 17, ink());
         em.setGravity(Gravity.CENTER);
         head.addView(em);
         space(head, 4);
@@ -2599,10 +2724,12 @@ public class MainActivity extends Activity {
         return row;
     }
     private void intervalDialog() {
-        new AlertDialog.Builder(this)
-                .setItems(new String[]{"6 hours", "12 hours"}, (dialog, which) -> {
-                    settingsStore.setUpdateHours(which == 0 ? 6 : 12); scheduleUpdates(); showTab(SETTINGS);
-                }).show();
+        String current = settingsStore.updateHours() == 6 ? "6 hours" : "12 hours";
+        showChoiceSheet("Update check interval", new String[]{"6 hours", "12 hours"}, current,
+                choice -> {
+                    settingsStore.setUpdateHours("6 hours".equals(choice) ? 6 : 12);
+                    scheduleUpdates(); showTab(SETTINGS);
+                });
     }
     private void settingsCheckRow(LinearLayout card) {
         LinearLayout row = settingsRowShell(card);
@@ -2650,7 +2777,7 @@ public class MainActivity extends Activity {
         row.setPadding(dp(12), dp(4), dp(12), dp(4));
         TextView icon = action(glyph, title);
         row.addView(icon, new LinearLayout.LayoutParams(dp(44), dp(48)));
-        row.addView(text(title, 16, ink(), false), weight());
+        row.addView(textSemi(title, 15, ink()), weight());
         row.setOnClickListener(v -> { dismiss.run(); onClick.run(); });
         rows.addView(row);
     }
@@ -2661,10 +2788,13 @@ public class MainActivity extends Activity {
         downloadRowStatus.clear();
         LinearLayout root = vertical(); root.setBackgroundColor(bg());
         applySafeArea(root); setContentView(root); root.requestApplyInsets();
-        TextView back = text("‹  " + title, 20, ink(), true);
-        back.setPadding(dp(18), dp(14), dp(18), dp(14));
-        back.setOnClickListener(v -> backAction.run());
-        root.addView(back);
+        LinearLayout topBar = new LinearLayout(this); topBar.setGravity(Gravity.CENTER_VERTICAL);
+        topBar.setPadding(dp(8), dp(2), dp(16), dp(2));
+        FrameLayout backBtn = iconButton("back", "Back");
+        backBtn.setOnClickListener(v -> backAction.run());
+        topBar.addView(backBtn, new LinearLayout.LayoutParams(dp(48), dp(52)));
+        topBar.addView(titleText(title, 20, ink()));
+        root.addView(topBar);
         ScrollView scroll = new ScrollView(this); scroll.setVerticalScrollBarEnabled(false);
         LinearLayout page = vertical();
         page.setPadding(dp(20), dp(16), dp(20), dp(36));
@@ -2674,7 +2804,7 @@ public class MainActivity extends Activity {
     private void showAbout() {
         legalPage = false;
         LinearLayout page = informationPage("About", () -> showTab(tab));
-        page.addView(text("APK STORE", 24, ink(), true)); space(page, 4);
+        page.addView(titleText("APK STORE", 24, ink())); space(page, 4);
         page.addView(text("Independent Android apps, published after owner approval.", 14, muted(), false));
         space(page, 14);
         settingsSection(page, "About");
@@ -2742,35 +2872,92 @@ public class MainActivity extends Activity {
             }
         });
     }
-    /** Checks whether a newer APK STORE release is published (slug: apk-store-client). */
+    /** (v1.1.37) Self-update page, Kodex pattern: content scrolls while a
+     * pinned bottom cluster carries the live status, percent and progress
+     * line plus the action button — checking -> downloading % -> installing
+     * -> ready, and the install starts from that same cluster. */
     private void checkSelfUpdate() {
-        LinearLayout page = informationPage("App update", this::showAbout);
+        infoPageOpen = true;
+        downloadsPageOpen = false;
+        downloadRowRings.clear();
+        downloadRowStatus.clear();
+        LinearLayout root = vertical(); root.setBackgroundColor(bg());
+        applySafeArea(root); setContentView(root); root.requestApplyInsets();
+        LinearLayout topBar = new LinearLayout(this); topBar.setGravity(Gravity.CENTER_VERTICAL);
+        topBar.setPadding(dp(8), dp(2), dp(16), dp(2));
+        FrameLayout backBtn = iconButton("back", "Back");
+        backBtn.setOnClickListener(v -> showAbout());
+        topBar.addView(backBtn, new LinearLayout.LayoutParams(dp(48), dp(52)));
+        topBar.addView(titleText("App update", 20, ink()));
+        root.addView(topBar);
+        ScrollView scroll = new ScrollView(this); scroll.setVerticalScrollBarEnabled(false);
+        LinearLayout page = vertical();
+        page.setPadding(dp(20), dp(16), dp(20), dp(24));
+        scroll.addView(page);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        LinearLayout cluster = vertical();
+        cluster.setBackgroundColor(surface());
+        View clusterLine = new View(this); clusterLine.setBackgroundColor(border());
+        cluster.addView(clusterLine, new LinearLayout.LayoutParams(-1, Math.max(1, dp(1))));
+        LinearLayout clusterBody = vertical();
+        clusterBody.setPadding(dp(20), dp(14), dp(20), dp(16));
+        LinearLayout statusRow = new LinearLayout(this); statusRow.setGravity(Gravity.CENTER_VERTICAL);
+        selfUpdateStatus = textSemi("Checking for updates…", 15, ink());
+        statusRow.addView(selfUpdateStatus, weight());
+        selfUpdateProgress = text("", 13, muted(), false);
+        selfUpdateProgress.setGravity(Gravity.END);
+        statusRow.addView(selfUpdateProgress);
+        clusterBody.addView(statusRow);
+        selfUpdateBar = new LinearProgressBar();
+        LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(-1, dp(6));
+        barLp.topMargin = dp(10);
+        clusterBody.addView(selfUpdateBar, barLp);
+        selfUpdateButton = textSemi("Update now", 15, onActive());
+        selfUpdateButton.setGravity(Gravity.CENTER);
+        selfUpdateButton.setPadding(dp(14), dp(15), dp(14), dp(15));
+        selfUpdateButton.setMinHeight(dp(54));
+        selfUpdateButton.setBackground(shape(active(), 12));
+        pressable(selfUpdateButton);
+        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(-1, -2);
+        btnLp.topMargin = dp(14);
+        clusterBody.addView(selfUpdateButton, btnLp);
+        cluster.addView(clusterBody);
+        cluster.setVisibility(View.GONE);
+        root.addView(cluster);
         TextView status = text("Checking for updates…", 15, muted(), false);
         page.addView(status); space(page, 16);
         LinearLoadingBar checkingBar = new LinearLoadingBar();
         page.addView(checkingBar, new LinearLayout.LayoutParams(-1, dp(4)));
-        space(page, 8);
         fetchSelfUpdate((self, error) -> runOnUiThread(() -> {
             if (error != null) {
                 page.removeView(checkingBar);
                 status.setText("Couldn't check for updates: " + error.getMessage());
-                android.widget.Button retry = new android.widget.Button(this);
-                retry.setText("Retry");
+                TextView retry = textSemi("Retry", 14, ink());
+                retry.setGravity(Gravity.CENTER);
+                retry.setPadding(dp(16), dp(13), dp(16), dp(13));
+                retry.setBackground(outline(12, border()));
                 retry.setOnClickListener(v -> checkSelfUpdate());
-                page.addView(retry);
+                pressable(retry);
+                LinearLayout.LayoutParams retryLp = new LinearLayout.LayoutParams(-2, -2);
+                retryLp.topMargin = dp(12);
+                page.addView(retry, retryLp);
                 return;
             }
             JSONObject rel = self.optJSONObject("release");
             long latest = rel == null ? 0 : rel.optLong("version_code");
             String latestName = rel == null ? "" : rel.optString("version_name", String.valueOf(latest));
             page.removeAllViews();
-                    page.addView(text("App update", 22, ink(), true)); space(page, 12);
                     if (latest <= BuildConfig.VERSION_CODE) {
-                        page.addView(text("You're up to date.", 16, ink(), true)); space(page, 8);
-                        page.addView(text("Version " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ") is the latest.", 14, muted(), false));
+                        LinearLayout card = vertical();
+                        card.setBackground(cardShape(surface(), 16));
+                        card.setPadding(dp(18), dp(20), dp(18), dp(20));
+                        card.addView(textSemi("You're up to date", 17, ink()));
+                        space(card, 6);
+                        card.addView(text("Version " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ") is the latest.", 14, muted(), false));
+                        page.addView(card);
                     } else {
                         selfUpdatePage = page;
-                        page.addView(text("Update available", 16, green(), true)); space(page, 10);
+                        page.addView(textSemi("Update available", 16, green())); space(page, 10);
                         // Card: app identity + version, looks like the app rows elsewhere in the app.
                         LinearLayout card = vertical();
                         card.setBackground(cardShape(surface(), 16));
@@ -2778,29 +2965,23 @@ public class MainActivity extends Activity {
                         LinearLayout head = new LinearLayout(this); head.setGravity(Gravity.CENTER_VERTICAL);
                         head.addView(icon(self, 56), new LinearLayout.LayoutParams(dp(56), dp(56)));
                         LinearLayout headCopy = vertical(); headCopy.setPadding(dp(12), 0, 0, 0);
-                        headCopy.addView(text(self.optString("title", "APK STORE"), 17, ink(), true));
+                        headCopy.addView(textSemi(self.optString("title", "APK STORE"), 17, ink()));
                         headCopy.addView(text("Version " + latestName + " (" + latest + ")", 13, muted(), false));
                         head.addView(headCopy, weight());
                         card.addView(head);
                         String notes = rel.optString("release_notes");
                         if (notes.isEmpty()) notes = rel.optString("changelog");
-                        if (!notes.isEmpty()) { space(card, 10); card.addView(text("What's new", 14, ink(), true)); space(card, 4); card.addView(text(notes, 14, muted(), false)); }
+                        if (!notes.isEmpty()) { space(card, 10); card.addView(textSemi("What's new", 14, ink())); space(card, 4); card.addView(text(notes, 14, muted(), false)); }
                         long bytes = rel.optLong("byte_size");
                         if (bytes > 0) { space(card, 8); card.addView(text(String.format(java.util.Locale.ROOT, "%.1f MB", bytes / 1048576.0), 13, muted(), false)); }
-                        page.addView(card); space(page, 14);
-                        // Long horizontal progress: status line, bar, percent line, then the action button.
-                        selfUpdateStatus = text("Ready to update", 15, ink(), true);
-                        page.addView(selfUpdateStatus); space(page, 8);
-                        selfUpdateBar = new LinearProgressBar();
+                        page.addView(card);
+                        selfUpdateStatus.setText("Ready to update");
+                        selfUpdateProgress.setText("");
                         selfUpdateBar.setVisibility(View.GONE);
-                        page.addView(selfUpdateBar, new LinearLayout.LayoutParams(-1, dp(6)));
-                        space(page, 8);
-                        selfUpdateProgress = text("", 13, muted(), false);
-                        page.addView(selfUpdateProgress); space(page, 14);
-                        selfUpdateButton = new android.widget.Button(this);
                         selfUpdateButton.setText("Update now");
+                        selfUpdateButton.setEnabled(true);
                         selfUpdateButton.setOnClickListener(v -> startSelfUpdate(self));
-                        page.addView(selfUpdateButton, new LinearLayout.LayoutParams(-1, -2));
+                        cluster.setVisibility(View.VISIBLE);
                         updateSelfUpdateUi();
                     }
         }));
@@ -2882,20 +3063,67 @@ public class MainActivity extends Activity {
 
     private void informationLink(LinearLayout page, String title, String subtitle, Runnable open) {
         LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setBackground(shape(surface(), 13)); row.setPadding(dp(16), dp(14), dp(16), dp(14));
+        row.setBackground(cardShape(surface(), 16)); row.setPadding(dp(16), dp(14), dp(16), dp(14));
         LinearLayout copy = vertical();
-        copy.addView(text(title, 16, ink(), true)); space(copy, 4);
+        copy.addView(textSemi(title, 15, ink())); space(copy, 4);
         copy.addView(text(subtitle, 12, muted(), false));
-        row.addView(copy, weight()); row.addView(symbol("chevron_right", 24, green()));
+        row.addView(copy, weight());
+        FrameLayout chevWrap = new FrameLayout(this);
+        chevWrap.addView(lucide("chev", muted()), new FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER));
+        row.addView(chevWrap, new LinearLayout.LayoutParams(dp(24), dp(24)));
         row.setOnClickListener(v -> open.run());
+        pressable(row);
         page.addView(row); space(page, 12);
     }
+    /** (v1.1.37) Policy/info pages as real content pages: page heading, meta
+     * line, section headings and readable body from the type scale — the
+     * underlying text blocks keep their wording; a short lead line above a
+     * paragraph renders as that section's heading. */
     private void showLegal(String title, String content) {
         legalPage = true;
         LinearLayout page = informationPage(title, this::showAbout);
-        TextView text = text(content, 15, ink(), false);
-        text.setLineSpacing(dp(4), 1f);
-        page.addView(text);
+        page.addView(titleText(title, 22, ink()));
+        space(page, 10);
+        boolean firstBlock = true;
+        for (String raw : content.split("\n\n")) {
+            String block = raw.trim();
+            if (block.isEmpty()) continue;
+            if (block.startsWith("Updated ") && !block.contains("\n")) {
+                TextView meta = text(block, 12, muted(), false);
+                LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(-1, -2);
+                mlp.bottomMargin = dp(6);
+                page.addView(meta, mlp);
+                firstBlock = false;
+                continue;
+            }
+            String heading = null, bodyText = block;
+            int nl = block.indexOf('\n');
+            if (nl > 0) {
+                String lead = block.substring(0, nl).trim();
+                if (lead.length() <= 42 && !lead.endsWith(".")) {
+                    heading = lead;
+                    bodyText = block.substring(nl + 1).trim();
+                }
+            } else if (block.length() <= 42 && !block.endsWith(".")) {
+                heading = block;
+                bodyText = "";
+            }
+            if (heading != null) {
+                TextView h = titleText(heading, 17, ink());
+                LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(-1, -2);
+                hlp.topMargin = dp(firstBlock ? 2 : 16);
+                hlp.bottomMargin = dp(6);
+                page.addView(h, hlp);
+            }
+            if (!bodyText.isEmpty()) {
+                TextView p = text(bodyText.replace("\n", " "), 15, ink(), false);
+                p.setLineSpacing(dp(3), 1.15f);
+                LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(-1, -2);
+                plp.bottomMargin = dp(10);
+                page.addView(p, plp);
+            }
+            firstBlock = false;
+        }
     }
     private String privacyPolicy() {
         return "Updated 27 September 2026\n\n"
@@ -2999,7 +3227,7 @@ public class MainActivity extends Activity {
         iconFrame.addView(detailRing, new FrameLayout.LayoutParams(dp(120), dp(120), Gravity.CENTER));
         appHeader.addView(iconFrame, new LinearLayout.LayoutParams(dp(120), dp(120)));
         LinearLayout identity = vertical(); identity.setPadding(dp(16), 0, 0, 0);
-        TextView appName = text(app.optString("title"), 22, ink(), true);
+        TextView appName = titleText(app.optString("title"), 22, ink());
         appName.setMaxLines(2); identity.addView(appName);
         identity.addView(text(app.optString("github_owner", "Developer"), 14, muted(), false));
         JSONObject currentRelease = app.optJSONObject("release");
@@ -3009,7 +3237,7 @@ public class MainActivity extends Activity {
         detailPercent = text("", 13, green(), true); page.addView(detailPercent);
         detailStatus = text("", 12, muted(), false); page.addView(detailStatus); space(page, 9);
         LinearLayout actions = new LinearLayout(this); actions.setGravity(Gravity.CENTER_VERTICAL);
-        detailPrimary = text("Install", 15, onActive(), true);
+        detailPrimary = textSemi("Install", 15, onActive());
         detailPrimary.setGravity(Gravity.CENTER); detailPrimary.setPadding(dp(14), dp(15), dp(14), dp(15));
         detailPrimary.setMinHeight(dp(54));
         detailPrimary.setBackground(shape(active(), 12));
@@ -3073,7 +3301,7 @@ public class MainActivity extends Activity {
         if (release != null) expandable(page, "Changelog", release.optString("changelog", release.optString("release_notes")));
         JSONArray screenshots = app.optJSONArray("screenshots");
         if (screenshots != null && screenshots.length() > 0) {
-            page.addView(text("Screenshots", 19, ink(), true));
+            page.addView(textSemi("Screenshots", 17, ink()));
             HorizontalScrollView strip = new HorizontalScrollView(this);
         strip.setHorizontalScrollBarEnabled(false);
             LinearLayout tiles = new LinearLayout(this);
@@ -3124,7 +3352,7 @@ public class MainActivity extends Activity {
                     candidate.optString("category").equals(app.optString("category"))) suggested.put(candidate);
         }
         if (suggested.length() > 0) {
-            space(page, 26); page.addView(text("More from this category", 19, ink(), true));
+            space(page, 26); page.addView(textSemi("More from this category", 17, ink()));
             HorizontalScrollView suggestions = new HorizontalScrollView(this);
         suggestions.setHorizontalScrollBarEnabled(false);
             LinearLayout row = new LinearLayout(this);
@@ -3156,7 +3384,7 @@ public class MainActivity extends Activity {
         String key = title.startsWith("Changelog") ? "history" : title.startsWith("Permissions") ? "shield" :
                 title.startsWith("Sources") ? "inventory_2" : "info";
         header.addView(symbol(key, 23, ink()), new LinearLayout.LayoutParams(dp(40), dp(48)));
-        header.addView(text(title, 16, ink(), true), weight());
+        header.addView(textSemi(title, 16, ink()), weight());
         TextView chevron = symbol("expand_more", 22, muted());
         header.addView(chevron, new LinearLayout.LayoutParams(dp(40), dp(48)));
         TextView detail = text(content.isEmpty() ? "No information supplied" : content, 15, muted(), false);
