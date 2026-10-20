@@ -13,7 +13,7 @@ const headers = { 'Access-Control-Allow-Origin': allowedOrigins[0], 'Access-Cont
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
 const auth = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { auth: { persistSession: false } });
 const ownerEmail = 'mazharmanzoor4117@gmail.com';
-const maxApkSize = 700 * 1024 * 1024;
+const maxApkSize = 2 * 1024 * 1024 * 1024; // 2 GiB: owner uploads ~1 GB APKs via R2 multipart (16 MiB parts, direct to R2)
 const smallLimit = 50 * 1024 * 1024;
 const r2Bucket = Deno.env.get('R2_BUCKET');
 const r2 = Deno.env.get('R2_ACCOUNT_ID') && Deno.env.get('R2_ACCESS_KEY_ID') && Deno.env.get('R2_SECRET_ACCESS_KEY') && r2Bucket
@@ -73,7 +73,7 @@ Deno.serve(async (request) => {
       const filename = String(input.filename || '');
       const byteSize = Number(input.byteSize);
       if (!/^[^/\\]{1,160}\.apk$/i.test(filename) || !Number.isSafeInteger(byteSize) || byteSize < 1 || byteSize > maxApkSize)
-        return json({ error: 'Select an APK up to 700 MB' }, 400);
+        return json({ error: 'Select an APK up to 2 GB' }, 400);
       if (byteSize > smallLimit && !r2) return json({ error: 'Large APK storage is not configured yet.' }, 503);
       const id = crypto.randomUUID();
       const objectKey = byteSize > smallLimit ? `r2/pending/${user.id}/${id}.apk` : `pending/${user.id}/${id}.apk`;
