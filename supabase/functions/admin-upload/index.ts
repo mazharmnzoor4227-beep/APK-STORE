@@ -407,6 +407,11 @@ Deno.serve(async (request) => {
         if (!['Free','In-app purchases','In-app purchases or Paid'].includes(input.price_type)) return json({ error: 'Invalid price type' }, 400);
         changes.price_type = input.price_type;
       }
+      if (input.price_pkr !== undefined) {
+        const price = Number(input.price_pkr);
+        if (!Number.isInteger(price) || price < 0 || price > 10000000) return json({ error: 'Invalid price' }, 400);
+        changes.price_pkr = price;
+      }
       if (input.screenshots !== undefined) {
         if (!Array.isArray(input.screenshots) || input.screenshots.length > 8) return json({ error: 'Use up to 8 screenshots' }, 400);
         const prefix = db.storage.from('app-screenshots').getPublicUrl('admin/').data.publicUrl;
